@@ -10,6 +10,8 @@ from modules.commands import HELP_TEXT, format_status, set_env_value  # noqa: E4
 def test_help_lists_all_commands():
     assert "/help" in HELP_TEXT
     assert "/status" in HELP_TEXT
+    assert "/stop" in HELP_TEXT
+    assert "/steer" in HELP_TEXT
     assert "/brain" in HELP_TEXT
     assert "/new" in HELP_TEXT
 
@@ -45,6 +47,9 @@ def test_format_status_includes_model_usage_and_context():
 
     assert "Brain: codex" in text
     assert "Model: gpt-test" in text
+    assert "Turn: active" in format_status(
+        {"brain": "codex", "model": "gpt-test", "turn_state": "active"}
+    )
     assert "Thread tokens: 10,000 cumulative" in text
     assert "Latest turn: 5,000 / 100,000 token window (5%)" in text
     assert "5-hour: 12% used, 88% left" in text

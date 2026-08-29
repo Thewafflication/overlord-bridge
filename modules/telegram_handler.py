@@ -68,7 +68,10 @@ class TelegramHandler(threading.Thread):
         self._ready = threading.Event()
 
         self.application.add_handler(
-            CommandHandler(("new", "help", "status", "brain"), self._handle_command)
+            CommandHandler(
+                ("new", "help", "status", "stop", "steer", "brain"),
+                self._handle_command,
+            )
         )
         self.application.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message)
@@ -97,10 +100,17 @@ class TelegramHandler(threading.Thread):
             return
         parts = (update.message.text or "").strip().split(maxsplit=1)
         command = parts[0].split("@", 1)[0].lower() if parts else ""
-        if command not in {"/new", "/help", "/status", "/brain"}:
+        if command not in {
+            "/new",
+            "/help",
+            "/status",
+            "/stop",
+            "/steer",
+            "/brain",
+        }:
             return
         normalized = command
-        if command == "/brain" and len(parts) > 1:
+        if command in {"/brain", "/steer"} and len(parts) > 1:
             normalized += " " + parts[1].strip()
         self.inbound_queue.put((chat_id, normalized))
         log.info("Owner requested %s", normalized)

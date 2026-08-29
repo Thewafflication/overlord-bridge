@@ -295,6 +295,8 @@ class Bridge:
         self.brain_name = _BRAIN_NAME
         self.brain = build_brain(self.gate, self.brain_name)
         self._brain_lock = asyncio.Lock()
+        self._active_turn_task: asyncio.Task[None] | None = None
+        self._status_cache: dict[str, Any] = self._basic_status()
         self._conversation_history = SharedConversationHistory(HANDOFF_CONTEXT_CHARS)
         self._conversation_history.mark_seen(self.brain_name)
         self._pending_handoff: Handoff | None = None
@@ -480,6 +482,8 @@ class Bridge:
             self.telegram.send(OWNER, f"⚠️ Failed to start {self.brain.name}: {exc}")
             return
 
+        asyncio.create_task(self._refresh_status(self.brain))
+
         log.info(
             "Overlord online (brain=%s, cwd=%s, resumed=%s, auto_approve=%s)",
             self.brain.name,
@@ -521,11 +525,19 @@ class Bridge:
                 if text.strip() == "/status":
                     await self._handle_status(chat_id)
                     continue
+                if text.strip() == "/stop":
+                    await self._handle_stop(chat_id)
+                    continue
+                if text.strip().lower().split(maxsplit=1)[0] == "/steer":
+                    await self._handle_steer(chat_id, text)
+                    continue
                 if text.strip().lower().split(maxsplit=1)[0] == "/brain":
                     await self._handle_brain(chat_id, text)
                     continue
-                await self._handle_turn(chat_id, text)
+                self._start_turn(chat_id, text)
         finally:
+            if self._turn_is_active():
+                await self._stop_active_turn()
             await self.brain.disconnect()
             self.telegram.stop()
 
@@ -686,14 +698,85 @@ class Bridge:
         log.info("Session reset via /new")
 
     async def _handle_status(self, chat_id: int) -> None:
-        try:
-            async with self._brain_lock:
-                status = await self.brain.status()
-        except Exception as exc:  # noqa: BLE001 - status must not stop the bridge
-            log.exception("Status request failed")
-            self.telegram.send(chat_id, f"⚠️ Could not read status: {exc}")
-            return
+        status = dict(
+            self._status_cache
+            if self._status_cache.get("brain") == self.brain.name
+            else self._basic_status()
+        )
+        status["brain"] = self.brain.name
+        status["model"] = getattr(self.brain, "model", None) or status.get("model")
+        status["session_id"] = getattr(self.brain, "session_id", None)
+        status["turn_state"] = "active" if self._turn_is_active() else "idle"
         self.telegram.send(chat_id, format_status(status))
+        asyncio.create_task(self._refresh_status(self.brain))
+
+    def _basic_status(self) -> dict[str, Any]:
+        return {
+            "brain": self.brain.name,
+            "model": getattr(self.brain, "model", None) or "default",
+            "session_id": getattr(self.brain, "session_id", None),
+            "usage": None,
+        }
+
+    async def _refresh_status(self, brain: Brain) -> None:
+        try:
+            status = await brain.status()
+        except Exception as exc:  # noqa: BLE001 - status must not stop the bridge
+            log.warning("Background status refresh failed: %s", exc)
+            return
+
+        if brain is self.brain:
+            self._status_cache = status
+
+    def _turn_is_active(self) -> bool:
+        return self._active_turn_task is not None and not self._active_turn_task.done()
+
+    def _start_turn(self, chat_id: int, text: str) -> bool:
+        if self._turn_is_active():
+            self.telegram.send(
+                chat_id,
+                "⏳ A turn is already active. Use /steer <message> to redirect it "
+                "or /stop to cancel it.",
+            )
+            return False
+        self._active_turn_task = asyncio.create_task(self._handle_turn(chat_id, text))
+        return True
+
+    async def _stop_active_turn(self) -> bool:
+        task = self._active_turn_task
+        if task is None or task.done():
+            return False
+        interrupted = await self.brain.interrupt_active_turn()
+        if not interrupted:
+            task.cancel()
+        try:
+            await asyncio.wait_for(asyncio.shield(task), timeout=5)
+        except asyncio.CancelledError:
+            pass
+        except asyncio.TimeoutError:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        return True
+
+    async def _handle_stop(self, chat_id: int) -> None:
+        if not self._turn_is_active():
+            self.telegram.send(chat_id, "Nothing is running.")
+            return
+        self.telegram.send(chat_id, "⏹️ Stopping the active turn…")
+        await self._stop_active_turn()
+
+    async def _handle_steer(self, chat_id: int, text: str) -> None:
+        parts = text.strip().split(maxsplit=1)
+        if len(parts) == 1 or not parts[1].strip():
+            self.telegram.send(chat_id, "Usage: /steer <new guidance>")
+            return
+        if self._turn_is_active():
+            self.telegram.send(chat_id, "↪️ Steering the active turn…")
+        await self._stop_active_turn()
+        self._start_turn(chat_id, parts[1].strip())
 
     async def _handle_brain(self, chat_id: int, text: str) -> None:
         parts = text.strip().lower().split(maxsplit=1)
@@ -782,6 +865,9 @@ class Bridge:
                 self._conversation_history.append_exchange(text, "\n\n".join(chunks))
                 self._conversation_history.mark_seen(self.brain.name)
                 self._pending_handoff = None
+        except asyncio.CancelledError:
+            log.info("Active turn cancelled")
+            raise
         except Exception as exc:  # noqa: BLE001 - report any turn failure to phone
             log.exception("Turn failed")
             self.telegram.send(chat_id, f"⚠️ Error: {exc}")

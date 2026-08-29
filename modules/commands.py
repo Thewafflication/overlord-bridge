@@ -10,6 +10,8 @@ HELP_TEXT = """Overlord commands
 
 /help — list available commands
 /status — show the active brain, model, and usage
+/stop — stop the active AI turn
+/steer <message> — stop the active turn and replace it with new guidance
 /brain — show or switch the active brain
 /new — start a clean conversation"""
 
@@ -87,6 +89,10 @@ def format_status(status: dict[str, Any]) -> str:
     brain = str(status.get("brain") or "unknown")
     model = str(status.get("model") or "default")
     lines = ["🤖 Overlord status", f"Brain: {brain}", f"Model: {model}"]
+
+    turn_state = status.get("turn_state")
+    if turn_state:
+        lines.append(f"Turn: {turn_state}")
 
     provider = status.get("model_provider")
     if provider:

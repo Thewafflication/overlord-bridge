@@ -72,7 +72,11 @@ Telegram commands:
 
 - `/help` lists the available commands.
 - `/status` shows the active brain, resolved model, session state, token context,
-  and available usage-limit windows without consuming a model turn.
+  and the latest cached usage-limit windows immediately, without consuming a
+  model turn. The cache refreshes in the background.
+- `/stop` interrupts the active AI turn.
+- `/steer <message>` interrupts the active turn and starts the replacement
+  guidance after the engine has cleaned up.
 - `/brain` shows the current brain; `/brain claude` and `/brain codex` switch
   immediately and persist the selection for the next restart. Recent Telegram
   conversation is handed to the newly selected brain with the next real user
