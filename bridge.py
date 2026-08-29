@@ -39,6 +39,12 @@ from typing import Any
 
 from modules import cli_notify
 from modules.brain import Brain, PermissionGate
+from modules.commands import HELP_TEXT, VALID_BRAINS, format_status, set_env_value
+from modules.conversation_history import (
+    Handoff,
+    SharedConversationHistory,
+    add_handoff_to_turn,
+)
 from modules.telegram_handler import TelegramHandler
 from modules.workers import DEFAULT_AIDER_CONTEXT_TOKENS, WorkerManager
 
@@ -147,6 +153,9 @@ WORKER_TELEGRAM_TAIL_CHARS = max(0, env_int("WORKER_TELEGRAM_TAIL_CHARS", 12000)
 WORKER_REPORT_EVENTS_MAX_BYTES = max(
     0, env_int("WORKER_REPORT_EVENTS_MAX_BYTES", 1024 * 1024)
 )
+HANDOFF_CONTEXT_CHARS = max(
+    1_000, env_int("OVERLORD_HANDOFF_CONTEXT_CHARS", 12_000)
+)
 
 # Live terminal delivery (dual delivery alongside Telegram, brain-neutral —
 # see modules/cli_notify.py). CLI_FEED is the durable, always-on, safe path:
@@ -170,13 +179,22 @@ OWNER = int(OWNER_RAW)
 # interchangeable, so each brain keeps its own pinned thread across brain
 # switches. Normalize unknown brains to "claude".
 _BRAIN_NAME = "codex" if BRAIN == "codex" else "claude"
-SESSION_FILE = BASE_DIR / f".session.{_BRAIN_NAME}"
+
+
+def session_file_for(brain_name: str) -> Path:
+    """Return the incompatible, per-brain conversation pin."""
+    normalized = "codex" if brain_name == "codex" else "claude"
+    return BASE_DIR / f".session.{normalized}"
+
+
+SESSION_FILE = session_file_for(_BRAIN_NAME)
 # The `overlord` launcher names its tmux session "overlord-<brain>" to match.
 WORKER_REPORT_TMUX_SESSION = WORKER_REPORT_TMUX_SESSION or f"overlord-{_BRAIN_NAME}"
 # One-time migration: the original single ".session" held the Claude id.
 _LEGACY_SESSION = BASE_DIR / ".session"
-if _BRAIN_NAME == "claude" and _LEGACY_SESSION.exists() and not SESSION_FILE.exists():
-    _LEGACY_SESSION.rename(SESSION_FILE)
+_CLAUDE_SESSION_FILE = session_file_for("claude")
+if _LEGACY_SESSION.exists() and not _CLAUDE_SESSION_FILE.exists():
+    _LEGACY_SESSION.rename(_CLAUDE_SESSION_FILE)
 
 
 def format_worker_thread_report(report: dict[str, Any]) -> str:
@@ -224,9 +242,11 @@ def format_worker_inline_report(report: dict[str, Any]) -> str:
     )
 
 
-def build_brain(gate: PermissionGate) -> Brain:
+def build_brain(gate: PermissionGate, brain_name: str | None = None) -> Brain:
     """Instantiate the configured brain. Default and unknown values -> claude."""
-    if BRAIN == "codex":
+    selected = (brain_name or BRAIN).strip().lower()
+    session_file = session_file_for(selected)
+    if selected == "codex":
         # Imported lazily so the Claude path never needs codex deps and vice versa.
         from modules.codex_brain import CodexBrain
 
@@ -234,7 +254,7 @@ def build_brain(gate: PermissionGate) -> Brain:
             gate=gate,
             cwd=CWD,
             model=CODEX_MODEL,
-            session_file=SESSION_FILE,
+            session_file=session_file,
             codex_bin=CODEX_BIN,
             approval_policy=CODEX_APPROVAL_POLICY,
             sandbox=CODEX_SANDBOX,
@@ -242,8 +262,8 @@ def build_brain(gate: PermissionGate) -> Brain:
             app_server_socket=CODEX_APP_SERVER_SOCKET or None,
         )
 
-    if BRAIN not in ("claude", ""):
-        log.warning("Unknown OVERLORD_BRAIN=%r; falling back to 'claude'.", BRAIN)
+    if selected not in ("claude", ""):
+        log.warning("Unknown OVERLORD_BRAIN=%r; falling back to 'claude'.", selected)
 
     from modules.claude_brain import ClaudeBrain
 
@@ -251,7 +271,7 @@ def build_brain(gate: PermissionGate) -> Brain:
         gate=gate,
         cwd=CWD,
         model=MODEL,
-        session_file=SESSION_FILE,
+        session_file=session_file,
     )
 
 
@@ -272,8 +292,12 @@ class Bridge:
             on_permission_response=self.gate.on_permission_response,
         )
         self.gate.telegram = self.telegram
-        self.brain = build_brain(self.gate)
+        self.brain_name = _BRAIN_NAME
+        self.brain = build_brain(self.gate, self.brain_name)
         self._brain_lock = asyncio.Lock()
+        self._conversation_history = SharedConversationHistory(HANDOFF_CONTEXT_CHARS)
+        self._conversation_history.mark_seen(self.brain_name)
+        self._pending_handoff: Handoff | None = None
         self._thread_report_unsupported_logged = False
         self._visible_report_unsupported_logged = False
         # Brain-agnostic worker dispatch: watches dispatch/ and pushes worker
@@ -448,7 +472,7 @@ class Bridge:
             log.error("Telegram handler failed to start within 30s")
             return
 
-        resumed = SESSION_FILE.exists()
+        resumed = session_file_for(self.brain_name).exists()
         try:
             await self.brain.connect()
         except Exception as exc:
@@ -490,6 +514,15 @@ class Bridge:
                     break
                 if text.strip() == "/new":
                     await self._reset_session(chat_id)
+                    continue
+                if text.strip() == "/help":
+                    self.telegram.send(chat_id, HELP_TEXT)
+                    continue
+                if text.strip() == "/status":
+                    await self._handle_status(chat_id)
+                    continue
+                if text.strip().lower().split(maxsplit=1)[0] == "/brain":
+                    await self._handle_brain(chat_id, text)
                     continue
                 await self._handle_turn(chat_id, text)
         finally:
@@ -640,6 +673,9 @@ class Bridge:
         try:
             async with self._brain_lock:
                 await self.brain.reset()
+                self._conversation_history.clear()
+                self._conversation_history.mark_seen(self.brain.name)
+                self._pending_handoff = None
         except Exception as exc:
             log.exception("Brain reset failed")
             self.telegram.send(chat_id, f"⚠️ Could not reset session: {exc}")
@@ -649,13 +685,103 @@ class Bridge:
         )
         log.info("Session reset via /new")
 
-    async def _handle_turn(self, chat_id: int, text: str) -> None:
-        log.info("Dispatching turn: %s", text)
+    async def _handle_status(self, chat_id: int) -> None:
         try:
             async with self._brain_lock:
-                async for chunk in self.brain.query(text):
+                status = await self.brain.status()
+        except Exception as exc:  # noqa: BLE001 - status must not stop the bridge
+            log.exception("Status request failed")
+            self.telegram.send(chat_id, f"⚠️ Could not read status: {exc}")
+            return
+        self.telegram.send(chat_id, format_status(status))
+
+    async def _handle_brain(self, chat_id: int, text: str) -> None:
+        parts = text.strip().lower().split(maxsplit=1)
+        if len(parts) == 1:
+            self.telegram.send(
+                chat_id,
+                f"Active brain: {self.brain.name}\n"
+                "Switch with /brain claude or /brain codex.",
+            )
+            return
+
+        target = parts[1].strip()
+        if target not in VALID_BRAINS:
+            self.telegram.send(
+                chat_id,
+                f"Unknown brain: {target}\nChoose: {', '.join(VALID_BRAINS)}",
+            )
+            return
+        if target == self.brain.name:
+            self.telegram.send(chat_id, f"Already using {target}.")
+            return
+
+        resumed = session_file_for(target).exists()
+        candidate = build_brain(self.gate, target)
+        async with self._brain_lock:
+            try:
+                await candidate.connect()
+            except Exception as exc:  # noqa: BLE001 - keep the current brain alive
+                log.exception("Could not switch brain to %s", target)
+                try:
+                    await candidate.disconnect()
+                except Exception:  # noqa: BLE001 - failed candidate cleanup only
+                    pass
+                self.telegram.send(
+                    chat_id,
+                    f"⚠️ Could not switch to {target}; still using "
+                    f"{self.brain.name}: {exc}",
+                )
+                return
+
+            previous = self.brain
+            self.brain = candidate
+            self.brain_name = target
+            self._pending_handoff = self._conversation_history.handoff_for(target)
+            os.environ["OVERLORD_BRAIN"] = target
+            persisted = True
+            try:
+                set_env_value(BASE_DIR / ".env", "OVERLORD_BRAIN", target)
+            except OSError as exc:
+                persisted = False
+                log.warning("Brain switched but .env persistence failed: %s", exc)
+            try:
+                await previous.disconnect()
+            except Exception as exc:  # noqa: BLE001 - new brain is already healthy
+                log.warning("Previous brain disconnect after switch failed: %s", exc)
+
+        resume_text = "resumed its saved session" if resumed else "started a new session"
+        handoff_text = (
+            f" {self._pending_handoff.entry_count} recent messages will be handed "
+            "over with your next request."
+            if self._pending_handoff is not None
+            else " It is already caught up."
+        )
+        persistence_text = "" if persisted else " (restart selection was not saved)"
+        self.telegram.send(
+            chat_id,
+            f"🔄 Switched to {target} — {resume_text}.{handoff_text}"
+            f"{persistence_text}",
+        )
+        log.info("Runtime brain switch complete: %s -> %s", previous.name, target)
+
+    async def _handle_turn(self, chat_id: int, text: str) -> None:
+        log.info("Dispatching turn: %s", text)
+        chunks: list[str] = []
+        try:
+            async with self._brain_lock:
+                query_text = (
+                    add_handoff_to_turn(self._pending_handoff, text)
+                    if self._pending_handoff is not None
+                    else text
+                )
+                async for chunk in self.brain.query(query_text):
                     if chunk and chunk.strip():
+                        chunks.append(chunk.strip())
                         self.telegram.send(chat_id, chunk)
+                self._conversation_history.append_exchange(text, "\n\n".join(chunks))
+                self._conversation_history.mark_seen(self.brain.name)
+                self._pending_handoff = None
         except Exception as exc:  # noqa: BLE001 - report any turn failure to phone
             log.exception("Turn failed")
             self.telegram.send(chat_id, f"⚠️ Error: {exc}")

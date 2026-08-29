@@ -67,7 +67,9 @@ class TelegramHandler(threading.Thread):
         self.loop: Optional[asyncio.AbstractEventLoop] = None
         self._ready = threading.Event()
 
-        self.application.add_handler(CommandHandler("new", self._handle_new))
+        self.application.add_handler(
+            CommandHandler(("new", "help", "status", "brain"), self._handle_command)
+        )
         self.application.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message)
         )
@@ -85,16 +87,23 @@ class TelegramHandler(threading.Thread):
         self.inbound_queue.put((chat_id, text))
         log.info("Message from owner: %s", text)
 
-    async def _handle_new(self, update: Update, context: CallbackContext) -> None:
-        """Owner-only /new -> enqueue a reset sentinel for the bridge."""
+    async def _handle_command(self, update: Update, context: CallbackContext) -> None:
+        """Normalize owner-only Telegram commands for the bridge main loop."""
         if update.message is None:
             return
         chat_id = update.message.chat_id
         if chat_id != self.owner_chat_id:
-            log.warning("Dropping /new from unauthorized chat_id=%s", chat_id)
+            log.warning("Dropping command from unauthorized chat_id=%s", chat_id)
             return
-        self.inbound_queue.put((chat_id, "/new"))
-        log.info("Owner requested /new session")
+        parts = (update.message.text or "").strip().split(maxsplit=1)
+        command = parts[0].split("@", 1)[0].lower() if parts else ""
+        if command not in {"/new", "/help", "/status", "/brain"}:
+            return
+        normalized = command
+        if command == "/brain" and len(parts) > 1:
+            normalized += " " + parts[1].strip()
+        self.inbound_queue.put((chat_id, normalized))
+        log.info("Owner requested %s", normalized)
 
     async def _handle_callback(self, update: Update, context: CallbackContext) -> None:
         """Handle Allow/Deny taps from a permission prompt."""

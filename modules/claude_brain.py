@@ -29,10 +29,13 @@ a fresh process lands on the same id with no fork.
 from __future__ import annotations
 
 import asyncio
+import datetime
+import json
 import logging
 from pathlib import Path
 from typing import Any, AsyncIterator
 
+import aiohttp
 from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
@@ -49,6 +52,10 @@ from modules.brain import Brain, PermissionGate, collect_candidates
 
 log = logging.getLogger("overlord.claude")
 
+CLAUDE_USAGE_CACHE = Path.home() / ".cache" / "near-limit-handoff" / "usage.json"
+CLAUDE_CREDENTIALS = Path.home() / ".claude" / ".credentials.json"
+CLAUDE_USAGE_API = "https://api.anthropic.com/api/oauth/usage"
+
 # Tool-input keys that carry a filesystem path.
 PATH_KEYS = ("file_path", "path", "notebook_path", "directory")
 
@@ -62,6 +69,75 @@ PATH_KEYS = ("file_path", "path", "notebook_path", "directory")
 # where the message came in from, which is occasionally load-bearing: he can't see
 # a rendered diff or click a file path on a phone, and he may not be at the desk.
 TELEGRAM_TAG = "📱 [via Telegram]\n\n"
+
+
+def _claude_usage_window(data: Any) -> dict[str, Any] | None:
+    if not isinstance(data, dict) or data.get("utilization") is None:
+        return None
+    try:
+        used = round(float(data["utilization"]), 1)
+    except (TypeError, ValueError):
+        return None
+    return {
+        "used": used,
+        "gas": max(0, round(100 - used, 1)),
+        "resets_at": data.get("resets_at"),
+    }
+
+
+def _normalize_claude_usage(data: Any) -> dict[str, Any] | None:
+    if not isinstance(data, dict):
+        return None
+    session = _claude_usage_window(data.get("five_hour"))
+    weekly = _claude_usage_window(data.get("seven_day"))
+    if session is None and weekly is None:
+        return None
+    return {
+        "session": session,
+        "weekly": weekly,
+        "plan_type": None,
+        "source": "anthropic_usage",
+    }
+
+
+async def _claude_usage_payload(max_cache_age: int = 120) -> tuple[dict[str, Any] | None, bool]:
+    """Return Claude cap data and whether it came from a stale cache."""
+    cached: dict[str, Any] | None = None
+    try:
+        raw = json.loads(CLAUDE_USAGE_CACHE.read_text(encoding="utf-8"))
+        if isinstance(raw, dict):
+            cached = raw
+            age = datetime.datetime.now().timestamp() - CLAUDE_USAGE_CACHE.stat().st_mtime
+            if age < max_cache_age:
+                return cached, False
+    except (OSError, ValueError, TypeError):
+        pass
+
+    try:
+        credentials = json.loads(CLAUDE_CREDENTIALS.read_text(encoding="utf-8"))
+        token = (credentials.get("claudeAiOauth") or {}).get("accessToken")
+        if not token:
+            return cached, cached is not None
+        timeout = aiohttp.ClientTimeout(total=6)
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "anthropic-beta": "oauth-2025-04-20",
+        }
+        async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+            async with session.get(CLAUDE_USAGE_API) as response:
+                if response.status != 200:
+                    return cached, cached is not None
+                data = await response.json()
+        if not isinstance(data, dict):
+            return cached, cached is not None
+        try:
+            CLAUDE_USAGE_CACHE.parent.mkdir(parents=True, exist_ok=True)
+            CLAUDE_USAGE_CACHE.write_text(json.dumps(data), encoding="utf-8")
+        except OSError:
+            pass
+        return data, False
+    except (OSError, ValueError, TypeError, aiohttp.ClientError, asyncio.TimeoutError):
+        return cached, cached is not None
 
 
 class ClaudeBrain(Brain):
@@ -78,6 +154,7 @@ class ClaudeBrain(Brain):
         self.gate = gate
         self.cwd = cwd
         self.model = model
+        self._active_model = model
         self.session_file = session_file
         self._session_id: str | None = None
 
@@ -182,6 +259,18 @@ class ClaudeBrain(Brain):
     async def disconnect(self) -> None:
         # Nothing to tear down: no client is held outside an active turn.
         return
+
+    async def status(self) -> dict[str, Any]:
+        payload, stale = await _claude_usage_payload()
+        usage = _normalize_claude_usage(payload)
+        note = "Usage is from the last cached update." if stale else None
+        return {
+            "brain": self.name,
+            "model": self._active_model or self.model,
+            "session_id": self.session_id,
+            "usage": usage,
+            "usage_note": note,
+        }
 
     async def _watch_and_push(
         self,
@@ -329,6 +418,8 @@ class ClaudeBrain(Brain):
             sent_text = False
             async for msg in client.receive_response():
                 if isinstance(msg, AssistantMessage):
+                    if msg.model:
+                        self._active_model = msg.model
                     for block in msg.content:
                         if isinstance(block, TextBlock) and block.text.strip():
                             sent_text = True

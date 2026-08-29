@@ -204,6 +204,15 @@ class Brain(abc.ABC):
         """Interrupt the currently active turn, if the brain supports it."""
         return False
 
+    async def status(self) -> dict[str, Any]:
+        """Return model/session metadata and usage exposed by this brain."""
+        return {
+            "brain": self.name,
+            "model": getattr(self, "model", None) or "default",
+            "session_id": self.session_id,
+            "usage": None,
+        }
+
 
 def collect_candidates(tool_input: dict[str, Any], path_keys: tuple[str, ...]) -> list[str]:
     """Pull path-like / command strings out of a tool-input dict for scanning."""

@@ -68,6 +68,17 @@ Foreground (for a first test):
 ```
 You should get a `🟢 Overlord online` message in Telegram. Send it a task.
 
+Telegram commands:
+
+- `/help` lists the available commands.
+- `/status` shows the active brain, resolved model, session state, token context,
+  and available usage-limit windows without consuming a model turn.
+- `/brain` shows the current brain; `/brain claude` and `/brain codex` switch
+  immediately and persist the selection for the next restart. Recent Telegram
+  conversation is handed to the newly selected brain with the next real user
+  message, bounded by `OVERLORD_HANDOFF_CONTEXT_CHARS` (default 12,000).
+- `/new` starts a clean conversation.
+
 As a managed service:
 ```bash
 cp overlord-bridge.service ~/.config/systemd/user/
@@ -76,6 +87,47 @@ systemctl --user enable --now overlord-bridge
 systemctl --user status overlord-bridge
 journalctl --user -u overlord-bridge -f      # logs
 ```
+
+### Windows (native PowerShell)
+
+The Telegram bridge and the private Codex app-server transport run natively on
+Windows. The shared Unix-socket/tmux terminal mode and Claude background-job PTY
+attachment remain Linux-only; leave `OVERLORD_CODEX_APP_SERVER_PROXY=false`.
+
+From PowerShell:
+
+```powershell
+.\run-windows.ps1 -Install
+notepad .env
+.\run-windows.ps1
+```
+
+The first command creates `.venv`, installs the pinned dependencies, and creates
+`.env` from `.env.example` when needed. In `.env`, fill in
+`TELEGRAM_BOT_TOKEN` and `OWNER_CHAT_ID`, then add or uncomment:
+
+```ini
+OVERLORD_BRAIN=codex
+OVERLORD_CODEX_APP_SERVER_PROXY=false
+```
+
+The launcher uses the directory from which you invoke it as the Codex workspace
+unless `OVERLORD_CWD` or `-WorkingDirectory` specifies another directory. It
+also discovers the native `codex.exe` bundled with Codex Desktop when ordinary
+PowerShell does not have `codex` on `PATH`. To validate without starting:
+
+```powershell
+..\overlord-bridge\run-windows.ps1 -Check
+```
+
+For a writable project workspace, set
+`OVERLORD_CODEX_SANDBOX=workspace-write` in `.env`. Use `-Help` or `/?` for the
+launcher options.
+
+Install and authenticate Codex first if `codex --version` or `codex login` has
+not already been run. Keep the PowerShell window open while testing. For an
+always-on native Windows install, run this same script through Task Scheduler;
+the included `.service` files are for Linux systemd only.
 
 To keep it running while you're logged out (true "away from terminal"):
 ```bash

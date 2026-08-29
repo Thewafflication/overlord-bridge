@@ -39,17 +39,25 @@ through ``attach`` (untested — see PROGRESS.md).
 
 from __future__ import annotations
 
-import fcntl
 import json
 import logging
 import os
-import pty
 import struct
 import subprocess
-import termios
 import time
 from dataclasses import dataclass
 from pathlib import Path
+
+try:
+    import fcntl
+    import pty
+    import termios
+except ImportError:  # Windows: shared Claude PTY attachment is optional.
+    fcntl = None
+    pty = None
+    termios = None
+
+PTY_ATTACH_SUPPORTED = all(module is not None for module in (fcntl, pty, termios))
 
 log = logging.getLogger("overlord.shared_job")
 
@@ -567,6 +575,10 @@ def inject(
       half-typed terminal line no longer blocks delivery -- so this is now rare.
       The caller must not wipe the pin.
     """
+    if not PTY_ATTACH_SUPPORTED:
+        log.info("Shared Claude job attachment is unavailable on this platform.")
+        return None
+
     transcript = transcript_for(job)
     if transcript is None:
         log.warning("No transcript found for shared job %s.", job.job_id)

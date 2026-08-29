@@ -10,6 +10,8 @@ import signal
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from modules.workers import (  # noqa: E402
@@ -52,6 +54,8 @@ def test_sigterm_without_restart_is_interrupted_but_blamed_externally():
 
 
 def test_sigkill_is_also_interrupted():
+    if not hasattr(signal, "SIGKILL"):
+        pytest.skip("Windows does not expose SIGKILL")
     v = classify_worker_exit(-int(signal.SIGKILL), shutting_down=False)
     assert v["status"] == "interrupted"
     assert v["failed"] is False

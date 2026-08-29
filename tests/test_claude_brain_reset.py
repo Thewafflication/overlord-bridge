@@ -57,6 +57,28 @@ def make_brain(tmp_path: Path) -> ClaudeBrain:
     )
 
 
+def test_claude_status_reports_live_usage(tmp_path, monkeypatch):
+    brain = make_brain(tmp_path)
+    brain._session_id = "session-1"
+    brain._active_model = "claude-resolved"
+
+    async def fake_usage():
+        return (
+            {
+                "five_hour": {"utilization": 14.0, "resets_at": "soon"},
+                "seven_day": {"utilization": 31.0, "resets_at": "later"},
+            },
+            False,
+        )
+
+    monkeypatch.setattr("modules.claude_brain._claude_usage_payload", fake_usage)
+    status = asyncio.run(brain.status())
+
+    assert status["model"] == "claude-resolved"
+    assert status["usage"]["session"]["gas"] == 86.0
+    assert status["usage"]["weekly"]["gas"] == 69.0
+
+
 async def drain(brain: ClaudeBrain, text: str) -> list[str]:
     return [chunk async for chunk in brain.query(text)]
 

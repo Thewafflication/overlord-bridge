@@ -59,6 +59,7 @@ M_THREAD_RESUME = "thread/resume"
 M_THREAD_INJECT_ITEMS = "thread/inject_items"
 M_TURN_START = "turn/start"
 M_TURN_INTERRUPT = "turn/interrupt"
+M_ACCOUNT_RATE_LIMITS_READ = "account/rateLimits/read"
 # Client -> server notifications
 M_INITIALIZED = "initialized"
 # Server -> client streaming notifications
@@ -87,9 +88,10 @@ class CodexError(RuntimeError):
 
 def _find_rate_limits(obj: Any) -> dict[str, Any] | None:
     if isinstance(obj, dict):
-        rate_limits = obj.get("rate_limits")
-        if isinstance(rate_limits, dict):
-            return rate_limits
+        for key in ("rate_limits", "rateLimits"):
+            rate_limits = obj.get(key)
+            if isinstance(rate_limits, dict):
+                return rate_limits
         for value in obj.values():
             found = _find_rate_limits(value)
             if found is not None:
@@ -113,10 +115,10 @@ def _codex_usage_from_rate_limits(
         if not isinstance(data, dict):
             return None
         try:
-            used = float(data.get("used_percent") or 0)
+            used = float(data.get("used_percent", data.get("usedPercent", 0)) or 0)
         except (TypeError, ValueError):
             used = 0.0
-        resets_at = data.get("resets_at")
+        resets_at = data.get("resets_at", data.get("resetsAt"))
         reset_passed = isinstance(resets_at, (int, float)) and resets_at <= now
         effective_used = 0.0 if reset_passed else used
         return {
@@ -130,7 +132,9 @@ def _codex_usage_from_rate_limits(
     for candidate in (rate_limits.get("primary"), rate_limits.get("secondary")):
         if not isinstance(candidate, dict):
             continue
-        minutes = candidate.get("window_minutes")
+        minutes = candidate.get(
+            "window_minutes", candidate.get("windowDurationMins")
+        )
         if minutes == 300:
             windows["session"] = window(candidate)
         elif minutes == 10080:
@@ -141,9 +145,29 @@ def _codex_usage_from_rate_limits(
         "session": windows.get("session"),
         "weekly": windows.get("weekly"),
         "age_hours": 0.0,
-        "plan_type": rate_limits.get("plan_type"),
+        "plan_type": rate_limits.get("plan_type", rate_limits.get("planType")),
         "source": "codex_app_server",
     }
+
+
+def _write_codex_usage_cache(usage: dict[str, Any]) -> None:
+    try:
+        CODEX_USAGE_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        CODEX_USAGE_CACHE.write_text(json.dumps(usage), encoding="utf-8")
+    except OSError as exc:
+        log.debug("Could not write Codex usage cache: %s", exc)
+
+
+def _read_codex_usage_cache() -> dict[str, Any] | None:
+    try:
+        usage = json.loads(CODEX_USAGE_CACHE.read_text(encoding="utf-8"))
+        if isinstance(usage, dict):
+            age = datetime.datetime.now().timestamp() - CODEX_USAGE_CACHE.stat().st_mtime
+            usage["age_hours"] = round(max(0, age) / 3600, 1)
+            return usage
+    except (OSError, ValueError, TypeError):
+        pass
+    return None
 
 
 def _record_codex_usage_cache_from_message(msg: dict[str, Any]) -> None:
@@ -153,11 +177,7 @@ def _record_codex_usage_cache_from_message(msg: dict[str, Any]) -> None:
     usage = _codex_usage_from_rate_limits(rate_limits)
     if usage is None:
         return
-    try:
-        CODEX_USAGE_CACHE.parent.mkdir(parents=True, exist_ok=True)
-        CODEX_USAGE_CACHE.write_text(json.dumps(usage), encoding="utf-8")
-    except OSError as exc:
-        log.debug("Could not write Codex usage cache: %s", exc)
+    _write_codex_usage_cache(usage)
 
 
 class UnixWebSocketTransport:
@@ -311,6 +331,9 @@ class CodexBrain(Brain):
         self._write_lock = asyncio.Lock()
         self._visible_report_turn_active = False
         self._active_turn_id: str | None = None
+        self._active_model: str | None = self.model
+        self._model_provider: str | None = None
+        self._thread_token_usage: dict[str, Any] | None = None
         # mtime of the thread's rollout file at our last load — used to detect
         # terminal `codex resume` turns on the SAME thread so Telegram picks
         # them up (parity with the Claude brain). See _maybe_refresh.
@@ -336,7 +359,7 @@ class CodexBrain(Brain):
             self._proc.stdin.write(data)
             await self._proc.stdin.drain()
 
-    async def _request(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+    async def _request(self, method: str, params: Any) -> dict[str, Any]:
         """Send a client->server request and await its result."""
         if self._reader_task is not None and self._reader_task.done():
             raise CodexError("Codex app-server stream closed.")
@@ -485,6 +508,21 @@ class CodexBrain(Brain):
 
     # ---------------------------------------------------------------- streaming
     def _handle_notification(self, method: str, params: dict[str, Any]) -> None:
+        if method == "thread/tokenUsage/updated":
+            token_usage = params.get("tokenUsage")
+            if isinstance(token_usage, dict):
+                total = token_usage.get("total")
+                if isinstance(total, dict):
+                    last = token_usage.get("last")
+                    self._thread_token_usage = {
+                        **total,
+                        "lastTotalTokens": (
+                            last.get("totalTokens") if isinstance(last, dict) else None
+                        ),
+                        "modelContextWindow": token_usage.get("modelContextWindow"),
+                    }
+            return
+
         if method == N_AGENT_DELTA:
             # Buffer deltas per item; flush as one message on item/completed so
             # Telegram gets coherent replies, not a flood of fragments.
@@ -801,6 +839,9 @@ class CodexBrain(Brain):
         thread_id = thread.get("id")
         if not thread_id:
             raise CodexError(f"Codex did not return a thread id: {result}")
+        self._active_model = result.get("model") or self.model or "default"
+        self._model_provider = result.get("modelProvider")
+        self._thread_token_usage = None
         self._save_thread_id(thread_id)
 
     async def connect(self, resume: str | None = None) -> None:
@@ -849,6 +890,36 @@ class CodexBrain(Brain):
                 pass
         # In shared TUI mode the app-server owns the user's live terminal socket.
         # Leave it running across bridge restarts; the next bridge process will reconnect.
+
+    async def status(self) -> dict[str, Any]:
+        """Fetch current rate limits without consuming a model turn."""
+        usage: dict[str, Any] | None = None
+        usage_note: str | None = None
+        try:
+            result = await asyncio.wait_for(
+                self._request(M_ACCOUNT_RATE_LIMITS_READ, None), timeout=5
+            )
+            rate_limits = _find_rate_limits(result)
+            if rate_limits is not None:
+                usage = _codex_usage_from_rate_limits(rate_limits)
+                if usage is not None:
+                    _write_codex_usage_cache(usage)
+        except Exception as exc:  # noqa: BLE001 - cached status remains useful
+            log.warning("Could not refresh Codex rate limits for /status: %s", exc)
+            usage_note = "Usage is from the last cached update."
+        if usage is None:
+            usage = _read_codex_usage_cache()
+            if usage is not None and usage_note is None:
+                usage_note = "Usage is from the last cached update."
+        return {
+            "brain": self.name,
+            "model": self._active_model or self.model or "default",
+            "model_provider": self._model_provider,
+            "session_id": self.session_id,
+            "usage": usage,
+            "usage_note": usage_note,
+            "tokens": self._thread_token_usage,
+        }
 
     async def query(self, text: str) -> AsyncIterator[str]:
         if self._thread_id is None:
