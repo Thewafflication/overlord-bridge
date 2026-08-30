@@ -6,8 +6,9 @@ Codex (the `codex app-server`), selected with one env flag.
 
 The Overlord runs in `/home/user`, so it can dispatch agents into any
 `~/Projects/*` or `~/Documents/*` folder. Any action that isn't pre-approved is
-bounced to your phone as an **Allow / Deny** prompt, and an off-limits backstop
-auto-denies obvious secrets — both apply regardless of which brain is active.
+bounced to your phone as an **Allow once / Deny / Always allow** prompt, and an
+off-limits backstop auto-denies obvious secrets — both apply regardless of
+which brain is active.
 
 It's a slimmed-down descendant of the `Joshua` assistant: same threaded
 `python-telegram-bot` handler + queue pump, with a pluggable brain behind a
@@ -18,10 +19,10 @@ common interface and a remote permission gate added.
 | File | Purpose |
 |------|---------|
 | `bridge.py` | Main loop: queue pump → `Brain` → streamed replies; selects the brain from `OVERLORD_BRAIN` |
-| `modules/brain.py` | `Brain` ABC + shared `PermissionGate` (off-limits backstop + Telegram Allow/Deny + timeout) |
+| `modules/brain.py` | `Brain` ABC + shared `PermissionGate` (off-limits backstop + Telegram approval choices + timeout) |
 | `modules/claude_brain.py` | `ClaudeBrain`: the Claude Agent SDK behind the interface |
 | `modules/codex_brain.py` | `CodexBrain`: the Codex App Server (JSON-RPC over stdio or WebSocket) behind the interface |
-| `modules/telegram_handler.py` | Threaded Telegram I/O (owner-gated, chunked, Allow/Deny buttons) |
+| `modules/telegram_handler.py` | Threaded Telegram I/O (owner-gated, chunked, three-choice permission buttons) |
 | `modules/workers.py` | Dispatch-folder worker runner for Claude, Codex, and local-agent workers; Telegram completion push; worker report audit store |
 | `modules/fetch_relay.py` | Localhost-only headless-Chromium fetch endpoint (`GET /fetch?url=`) for sites that domain-block WebFetch or bot-wall curl; standalone process, own service |
 | `AGENTS.example.md` | Sanitized template of the canonical shared Overlord instruction file (role, dispatch rules, off-limits). Copy to `AGENTS.md`, edit for your machine, then symlink it as `~/.claude/CLAUDE.md` + `~/AGENTS.md` so Claude and Codex share one file. (Your real `AGENTS.md` stays local — it's gitignored.) |
@@ -39,7 +40,7 @@ Set `OVERLORD_BRAIN` in `.env`:
   [Codex setup](#codex-brain-setup) below.
 
 Both brains share the same Telegram I/O, the `.session` persistence file, the
-`/new` reset, and the `PermissionGate` (off-limits auto-deny + Allow/Deny +
+`/new` reset, and the `PermissionGate` (off-limits auto-deny + approval choices +
 timeout). Switching brains is just changing the flag and restarting the service.
 
 ## Setup
@@ -82,6 +83,13 @@ Telegram commands:
   conversation is handed to the newly selected brain with the next real user
   message, bounded by `OVERLORD_HANDOFF_CONTEXT_CHARS` (default 12,000).
 - `/new` starts a clean conversation.
+
+When Claude or Codex needs a short clarification or offers several discrete
+paths, Overlord asks it to use its native interactive-input tool. Telegram then
+shows one button per option, including the model's descriptions, plus
+**Type another answer**. Multi-question requests are shown sequentially, and a
+plain typed reply supplies a custom answer. Secret-input requests are never
+forwarded to Telegram.
 
 As a managed service:
 ```bash
@@ -129,13 +137,13 @@ For a writable project workspace, set
 launcher options.
 
 While running on Windows, Overlord places an icon in the notification area.
-Right-click it and choose **Show Console** to open/focus a dedicated Tk rich-text
-console, **Hide Console** to tuck it away again, or **Stop Overlord** for a
-graceful shutdown. The console has colored log levels, live updates, Copy All,
-Clear, and Autoscroll controls over a rotating 2 MB log. During AI
-turns, Telegram continuously shows the typing indicator; transient Telegram
-send failures are retried automatically so replies and permission prompts are
-not dropped after a single network hiccup.
+Right-click it and choose the dynamic **Show Console** / **Hide Console** entry
+to toggle a dedicated Tk rich-text console, or **Stop Overlord** for a graceful
+shutdown. The console has Claude and Codex status cards, colored log levels,
+live updates, Copy All, Clear, and Autoscroll controls over a rotating 2 MB log.
+During AI turns, Telegram continuously shows the typing indicator; transient
+Telegram send failures are retried automatically so replies, model questions,
+and permission prompts are not dropped after a single network hiccup.
 
 Overlord also holds an operating-system singleton lock. Starting a second copy
 on the same machine user session exits immediately with a clear error instead
@@ -310,7 +318,7 @@ guardrails come from three places:
   `read-only`) and `OVERLORD_CODEX_APPROVAL_POLICY` (default `on-request`),
   passed to `thread/start` / `thread/resume`. The Overlord is rooted at
   `/home/user`, so read-only is the conservative default; write actions, such as
-  dropping worker dispatch files, become Allow/Deny prompts on your phone.
+  dropping worker dispatch files, become permission prompts on your phone.
 - **`PermissionGate`** (shared with the Claude path) auto-denies off-limits
   paths/commands and routes everything else to the phone, timing out into a deny.
 
@@ -323,7 +331,7 @@ guardrails come from three places:
 `codex app-server` speaks JSON-RPC 2.0 over stdio for the private bridge mode,
 or over WebSocket when the shared Unix-socket mode is enabled. When the agent
 needs approval it sends a **server-initiated request** that pauses the turn
-until the bridge replies. The bridge maps that onto the same Telegram Allow/Deny
+until the bridge replies. The bridge maps that onto the same Telegram permission
 mechanism the Claude path uses:
 
 | Codex server request | Telegram tap | Reply sent to Codex |
@@ -468,5 +476,7 @@ tmux, which does own the pty of an interactive session:
 - Idle until you send a task. Say *"let's work on Plexorcist"* and the Overlord
   spawns an agent scoped to `~/Projects/plexorcist`, works, reports back, done.
 - One persistent conversation, so it remembers context across messages.
-- Anything outside the allowlist → you get **Allow / Deny** buttons. No answer
+- Anything outside the allowlist → you get **Allow once**, **Deny**, and
+  **Always allow (this run)** buttons. The runtime-wide choice lasts until
+  Overlord restarts and never bypasses the hard off-limits checks. No answer
   within `OVERLORD_PERMISSION_TIMEOUT` (default 5 min) = auto-deny.

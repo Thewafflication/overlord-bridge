@@ -146,3 +146,53 @@ def test_codex_tracks_current_thread_token_usage(tmp_path):
     assert brain._thread_token_usage["totalTokens"] == 1000
     assert brain._thread_token_usage["lastTotalTokens"] == 200
     assert brain._thread_token_usage["modelContextWindow"] == 10000
+
+
+def test_codex_user_input_request_uses_telegram_choices(tmp_path):
+    class FakeTelegram:
+        def __init__(self):
+            self.messages = []
+
+        def send(self, owner, text):
+            self.messages.append((owner, text))
+
+    class FakeGate:
+        owner = 42
+
+        def __init__(self):
+            self.telegram = FakeTelegram()
+            self.choices = []
+
+        async def choose(self, prompt, options):
+            self.choices.append((prompt, options))
+            return "SQLite"
+
+    gate = FakeGate()
+    brain = cb.CodexBrain(
+        gate=gate,
+        cwd=str(tmp_path),
+        model="gpt-test",
+        session_file=tmp_path / ".session.codex",
+        developer_instructions="",
+    )
+
+    response = asyncio.run(
+        brain._request_user_input(
+            {
+                "questions": [
+                    {
+                        "id": "database",
+                        "header": "Database",
+                        "question": "Which database should we use?",
+                        "options": [
+                            {"label": "Postgres", "description": "Server"},
+                            {"label": "SQLite", "description": "Embedded"},
+                        ],
+                    }
+                ]
+            }
+        )
+    )
+
+    assert response == {"answers": {"database": {"answers": ["SQLite"]}}}
+    assert gate.choices[0][1][1] == ("SQLite", "Embedded")

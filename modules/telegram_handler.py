@@ -12,8 +12,9 @@ Improvements over the original:
   * **Graceful shutdown** via ``stop()`` so the systemd service stops cleanly.
   * **4096-char chunking** so long Overlord replies don't get rejected by the
     Telegram API.
-  * **Permission prompts** -- ``ask_permission`` sends an Allow/Deny inline
-    keyboard; taps are routed back through ``on_permission_response``.
+  * **Permission prompts** -- ``ask_permission`` sends Allow once, Deny, and
+    runtime-scoped Always allow buttons; taps route through
+    ``on_permission_response``.
   * No Joshua-specific dependencies (uses stdlib ``logging``).
 """
 
@@ -55,13 +56,15 @@ class TelegramHandler(threading.Thread):
         token: str,
         inbound_queue: "Queue[tuple[int, str]]",
         owner_chat_id: int,
-        on_permission_response: Optional[Callable[[str, bool], None]] = None,
+        on_permission_response: Optional[Callable[[str, str], None]] = None,
+        on_choice_response: Optional[Callable[[str, str], None]] = None,
     ) -> None:
         super().__init__(daemon=True, name="telegram-handler")
         self.token = token
         self.inbound_queue = inbound_queue
         self.owner_chat_id = int(owner_chat_id)
         self.on_permission_response = on_permission_response
+        self.on_choice_response = on_choice_response
 
         self.application = Application.builder().token(token).build()
         # Reuse the application's initialized bot and HTTP connection pool for
@@ -70,6 +73,8 @@ class TelegramHandler(threading.Thread):
         self.loop: Optional[asyncio.AbstractEventLoop] = None
         self._ready = threading.Event()
         self._typing_tasks: dict[int, asyncio.Task] = {}
+        self._choice_for_chat: dict[int, str] = {}
+        self._choice_options: dict[str, list[str]] = {}
 
         self.application.add_handler(
             CommandHandler(
@@ -90,6 +95,13 @@ class TelegramHandler(threading.Thread):
         text = update.message.text or ""
         if chat_id != self.owner_chat_id:
             log.warning("Dropping message from unauthorized chat_id=%s", chat_id)
+            return
+        request_id = self._choice_for_chat.pop(chat_id, None)
+        if request_id is not None:
+            self._choice_options.pop(request_id, None)
+            if self.on_choice_response is not None:
+                self.on_choice_response(request_id, text)
+            log.info("Owner supplied a typed choice response")
             return
         self.inbound_queue.put((chat_id, text))
         log.info("Message from owner: %s", text)
@@ -120,7 +132,7 @@ class TelegramHandler(threading.Thread):
         log.info("Owner requested %s", normalized)
 
     async def _handle_callback(self, update: Update, context: CallbackContext) -> None:
-        """Handle Allow/Deny taps from a permission prompt."""
+        """Handle permission and model-question inline keyboards."""
         query = update.callback_query
         if query is None:
             return
@@ -128,20 +140,59 @@ class TelegramHandler(threading.Thread):
         chat_id = query.message.chat_id if query.message else None
         if chat_id != self.owner_chat_id:
             return
-        # callback_data format: "perm:<request_id>:<allow|deny>"
+        # callback_data: "perm:<id>:<decision>" or "choice:<id>:<index|other>".
         try:
-            _, request_id, decision = (query.data or "").split(":", 2)
+            kind, request_id, decision = (query.data or "").split(":", 2)
         except ValueError:
             return
-        allow = decision == "allow"
+        if kind == "choice":
+            await self._handle_choice_callback(query, chat_id, request_id, decision)
+            return
+        if kind != "perm":
+            return
+        verdicts = {
+            "allow": "✅ Allowed once",
+            "deny": "⛔ Denied",
+            "always": "⚡ Always allowing until Overlord restarts",
+        }
+        verdict = verdicts.get(decision)
+        if verdict is None:
+            return
         try:
             original = query.message.text if query.message else ""
-            verdict = "✅ Allowed" if allow else "⛔ Denied"
             await query.edit_message_text(f"{original}\n\n{verdict}")
         except Exception as exc:  # editing is best-effort
             log.debug("Could not edit permission message: %s", exc)
         if self.on_permission_response is not None:
-            self.on_permission_response(request_id, allow)
+            self.on_permission_response(request_id, decision)
+
+    async def _handle_choice_callback(
+        self, query, chat_id: int, request_id: str, decision: str
+    ) -> None:
+        options = self._choice_options.get(request_id)
+        if options is None or self._choice_for_chat.get(chat_id) != request_id:
+            return
+        original = query.message.text if query.message else ""
+        if decision == "other":
+            try:
+                await query.edit_message_text(
+                    f"{original}\n\n✍️ Reply with your own answer."
+                )
+            except Exception as exc:
+                log.debug("Could not edit choice message: %s", exc)
+            return
+        try:
+            answer = options[int(decision)]
+        except (ValueError, IndexError):
+            return
+        self._choice_for_chat.pop(chat_id, None)
+        self._choice_options.pop(request_id, None)
+        try:
+            await query.edit_message_text(f"{original}\n\n✅ Selected: {answer}")
+        except Exception as exc:
+            log.debug("Could not edit choice message: %s", exc)
+        if self.on_choice_response is not None:
+            self.on_choice_response(request_id, answer)
 
     # ------------------------------------------------------------------ outbound
     def send(self, chat_id: int, text: str) -> None:
@@ -249,7 +300,7 @@ class TelegramHandler(threading.Thread):
             task.cancel()
 
     def ask_permission(self, chat_id: int, prompt_text: str, request_id: str) -> None:
-        """Send an Allow/Deny prompt; the answer arrives via on_permission_response."""
+        """Send a three-choice permission prompt."""
         if self.loop is None:
             return
         asyncio.run_coroutine_threadsafe(
@@ -263,11 +314,17 @@ class TelegramHandler(threading.Thread):
             [
                 [
                     InlineKeyboardButton(
-                        "✅ Allow", callback_data=f"perm:{request_id}:allow"
+                        "✅ Allow once", callback_data=f"perm:{request_id}:allow"
                     ),
                     InlineKeyboardButton(
                         "⛔ Deny", callback_data=f"perm:{request_id}:deny"
                     ),
+                ],
+                [
+                    InlineKeyboardButton(
+                        "⚡ Always allow (this run)",
+                        callback_data=f"perm:{request_id}:always",
+                    )
                 ]
             ]
         )
@@ -282,7 +339,81 @@ class TelegramHandler(threading.Thread):
         if not delivered and self.on_permission_response is not None:
             # Do not leave the brain blocked until the full permission timeout
             # when the owner never had a prompt they could approve.
-            self.on_permission_response(request_id, False)
+            self.on_permission_response(request_id, "deny")
+
+    def ask_choice(
+        self,
+        chat_id: int,
+        prompt_text: str,
+        request_id: str,
+        options: list[tuple[str, str]],
+    ) -> None:
+        """Send model-authored choices; a tap or typed reply resolves them."""
+        if self.loop is None:
+            return
+        asyncio.run_coroutine_threadsafe(
+            self._ask_choice(chat_id, prompt_text, request_id, options), self.loop
+        )
+
+    async def _ask_choice(
+        self,
+        chat_id: int,
+        prompt_text: str,
+        request_id: str,
+        options: list[tuple[str, str]],
+    ) -> None:
+        labels = [label for label, _description in options]
+        self._choice_for_chat[chat_id] = request_id
+        self._choice_options[request_id] = labels
+        rows = [
+            [
+                InlineKeyboardButton(
+                    label[:64], callback_data=f"choice:{request_id}:{index}"
+                )
+            ]
+            for index, label in enumerate(labels)
+        ]
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    "✍️ Type another answer",
+                    callback_data=f"choice:{request_id}:other",
+                )
+            ]
+        )
+        details = "\n".join(
+            f"• {label}: {description}"
+            for label, description in options
+            if description
+        )
+        text = prompt_text
+        if details:
+            text += f"\n\n{details}"
+        text += "\n\nTap an option or reply with your own answer."
+        delivered = await self._telegram_call(
+            "ask_choice",
+            lambda: self.bot.send_message(
+                chat_id=chat_id,
+                text=text[:MAX_MESSAGE_LEN],
+                reply_markup=InlineKeyboardMarkup(rows),
+            ),
+        )
+        if not delivered:
+            self._choice_for_chat.pop(chat_id, None)
+            self._choice_options.pop(request_id, None)
+            if self.on_choice_response is not None:
+                self.on_choice_response(request_id, "")
+
+    def cancel_choice(self, chat_id: int, request_id: str) -> None:
+        """Forget a timed-out/cancelled question without consuming later chat."""
+        if self.loop is None:
+            return
+        self.loop.call_soon_threadsafe(self._cancel_choice, chat_id, request_id)
+
+    def _cancel_choice(self, chat_id: int, request_id: str) -> None:
+        if self._choice_for_chat.get(chat_id) == request_id:
+            self._choice_for_chat.pop(chat_id, None)
+        self._choice_options.pop(request_id, None)
 
     # ------------------------------------------------------------------ lifecycle
     async def _initialize_application(self) -> bool:

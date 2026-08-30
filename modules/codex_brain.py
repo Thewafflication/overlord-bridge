@@ -15,7 +15,7 @@ brain:
     (``item/commandExecution/requestApproval``,
     ``item/fileChange/requestApproval``) by routing them through the SAME
     :class:`PermissionGate` the Claude path uses (off-limits pre-screen +
-    Telegram Allow/Deny + timeout). Allow -> ``accept``; Deny -> ``decline``;
+    Telegram permission choices + timeout). Allow -> ``accept``; Deny -> ``decline``;
     timeout -> ``cancel``.
 
 Protocol method names, params, and the approval decision values were checked
@@ -468,8 +468,11 @@ class CodexBrain(Brain):
             await self._respond(req_id, {"decision": decision})
             return
 
-        if method in (R_TOOL_USER_INPUT, R_MCP_ELICITATION):
-            # We have no interactive text channel beyond Allow/Deny; decline.
+        if method == R_TOOL_USER_INPUT:
+            await self._respond(req_id, await self._request_user_input(params))
+            return
+
+        if method == R_MCP_ELICITATION:
             log.info("Declining unsupported server request %s", method)
             await self._respond(req_id, {"decision": DECISION_DECLINE})
             return
@@ -486,6 +489,45 @@ class CodexBrain(Brain):
         log.warning("Declining %s during bridge visible worker-report turn", method)
         decision = DECISION_CANCEL if method in APPROVAL_METHODS else DECISION_DECLINE
         await self._respond(req_id, {"decision": decision})
+
+    async def _request_user_input(
+        self, params: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Render Codex request_user_input questions as Telegram buttons."""
+        answers: dict[str, dict[str, list[str]]] = {}
+        questions = params.get("questions")
+        if not isinstance(questions, list):
+            return {"answers": answers}
+        for item in questions[:4]:
+            if not isinstance(item, dict):
+                continue
+            question_id = str(item.get("id") or "").strip()
+            question = str(item.get("question") or "").strip()
+            if not question_id or not question:
+                continue
+            if item.get("isSecret"):
+                self.gate.telegram.send(
+                    self.gate.owner,
+                    "🔒 Codex requested secret input. Overlord will not collect "
+                    "secrets through Telegram.",
+                )
+                answers[question_id] = {"answers": []}
+                continue
+            header = str(item.get("header") or "Question").strip()
+            options = []
+            for option in item.get("options") or []:
+                if not isinstance(option, dict):
+                    continue
+                label = str(option.get("label") or "").strip()
+                if label:
+                    options.append(
+                        (label, str(option.get("description") or "").strip())
+                    )
+            answer = await self.gate.choose(
+                f"❓ {header}\n\n{question}", options[:8]
+            )
+            answers[question_id] = {"answers": [answer] if answer else []}
+        return {"answers": answers}
 
     async def _approve(self, method: str, params: dict[str, Any]) -> bool:
         """Route a Codex approval through the shared gate. True=accept."""

@@ -13,7 +13,7 @@ Architecture:
                                                               |
                                               Brain (Claude SDK | Codex App Server)
                                                               |
-                                       PermissionGate  -->  Allow/Deny buttons
+                                       PermissionGate  -->  Telegram choices
                                                             back on the phone
 
 Security:
@@ -66,6 +66,13 @@ log = logging.getLogger("overlord.bridge")
 BASE_DIR = Path(__file__).resolve().parent
 CONSOLE_LOG_FILE = BASE_DIR / "run" / "overlord.log"
 CONSOLE_STATUS_FILE = BASE_DIR / "run" / "brain-status.json"
+TELEGRAM_CHOICE_INSTRUCTIONS = (
+    "When you need the user to choose among discrete options or answer a short "
+    "clarifying question, use your native interactive user-input tool instead "
+    "of printing a numbered list. Overlord renders that tool as Telegram buttons "
+    "and also accepts a typed custom answer. Never request passwords, tokens, "
+    "private keys, or other secrets through this Telegram input surface."
+)
 
 
 def configure_file_logging() -> None:
@@ -158,7 +165,7 @@ CLAUDE_AUTO_APPROVE_EDITS = env_bool(
 )
 PERMISSION_TIMEOUT = int(os.environ.get("OVERLORD_PERMISSION_TIMEOUT", "300"))
 # Auto-approve every action EXCEPT off-limits secrets (which are always denied).
-# Trades the per-tool Telegram Allow/Deny prompt for "just do it".
+# Trades per-tool Telegram prompts for "just do it".
 AUTO_APPROVE = os.environ.get("OVERLORD_AUTO_APPROVE", "0").strip().lower() in (
     "1",
     "true",
@@ -298,7 +305,10 @@ def build_brain(gate: PermissionGate, brain_name: str | None = None) -> Brain:
     """Instantiate the configured brain. Default and unknown values -> claude."""
     selected = (brain_name or BRAIN).strip().lower()
     session_file = session_file_for(selected)
-    developer_instructions = load_shared_instructions()
+    shared_instructions = load_shared_instructions()
+    developer_instructions = "\n\n".join(
+        part for part in (shared_instructions, TELEGRAM_CHOICE_INSTRUCTIONS) if part
+    )
     if selected == "codex":
         # Imported lazily so the Claude path never needs codex deps and vice versa.
         from modules.codex_brain import CodexBrain
@@ -346,6 +356,7 @@ class Bridge:
             self.inbound,
             OWNER,
             on_permission_response=self.gate.on_permission_response,
+            on_choice_response=self.gate.on_choice_response,
         )
         self.gate.telegram = self.telegram
         self.brain_name = _BRAIN_NAME

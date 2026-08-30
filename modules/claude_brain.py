@@ -6,8 +6,8 @@ This is the original Overlord logic, moved verbatim in behavior:
     ``setting_sources=[user, project, local]`` so ~/.claude/CLAUDE.md +
     settings.json (the strict-allowlist deny rules) load as a hard floor.
   * ``can_use_tool`` routes each tool call through the shared
-    :class:`PermissionGate` (off-limits pre-screen + Telegram Allow/Deny +
-    timeout -> deny).
+    :class:`PermissionGate` (off-limits pre-screen + Telegram permission
+    choices + timeout -> deny).
   * Session persistence via a ``.session`` file passed as ``resume=`` on
     startup, with a stale-session fallback. ``reset`` wipes it.
 
@@ -188,6 +188,8 @@ class ClaudeBrain(Brain):
     async def can_use_tool(
         self, tool_name: str, tool_input: dict[str, Any], context: ToolPermissionContext
     ) -> PermissionResultAllow | PermissionResultDeny:
+        if tool_name == "AskUserQuestion":
+            return await self._answer_user_questions(tool_input)
         candidates = collect_candidates(tool_input, PATH_KEYS)
         if self.auto_approve_edits and self._is_safe_workspace_edit(
             tool_name, candidates
@@ -199,6 +201,46 @@ class ClaudeBrain(Brain):
         if allow:
             return PermissionResultAllow()
         return PermissionResultDeny(message="Denied by operator via Telegram.")
+
+    async def _answer_user_questions(
+        self, tool_input: dict[str, Any]
+    ) -> PermissionResultAllow | PermissionResultDeny:
+        questions = tool_input.get("questions")
+        if not isinstance(questions, list) or not questions:
+            return PermissionResultDeny(message="No valid question was provided.")
+        answers: dict[str, str] = {}
+        for item in questions[:4]:
+            if not isinstance(item, dict):
+                continue
+            question = str(item.get("question") or "").strip()
+            if not question:
+                continue
+            header = str(item.get("header") or "Question").strip()
+            options = []
+            for option in item.get("options") or []:
+                if not isinstance(option, dict):
+                    continue
+                label = str(option.get("label") or "").strip()
+                if label:
+                    options.append(
+                        (label, str(option.get("description") or "").strip())
+                    )
+            prompt = f"❓ {header}\n\n{question}"
+            if item.get("multiSelect"):
+                prompt += (
+                    "\n\nYou may reply with multiple choices separated by commas."
+                )
+            answer = await self.gate.choose(prompt, options[:8])
+            if answer is None:
+                return PermissionResultDeny(
+                    message="The operator did not answer the Telegram question."
+                )
+            answers[question] = answer
+        if not answers:
+            return PermissionResultDeny(message="No valid question was provided.")
+        return PermissionResultAllow(
+            updated_input={**tool_input, "answers": answers}
+        )
 
     def _is_safe_workspace_edit(self, tool_name: str, candidates: list[str]) -> bool:
         if tool_name not in EDIT_TOOLS or not candidates:

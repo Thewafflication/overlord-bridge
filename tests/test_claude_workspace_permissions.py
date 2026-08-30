@@ -11,12 +11,17 @@ from modules.claude_brain import ClaudeBrain
 class FakeGate:
     def __init__(self):
         self.requests = []
+        self.choices = []
 
     offlimits_match = staticmethod(PermissionGate.offlimits_match)
 
     async def request(self, title, detail, candidates):
         self.requests.append((title, detail, candidates))
         return False
+
+    async def choose(self, prompt, options):
+        self.choices.append((prompt, options))
+        return "JWT"
 
 
 def make_brain(tmp_path: Path, gate: FakeGate) -> ClaudeBrain:
@@ -66,3 +71,34 @@ def test_windows_style_offlimits_path_is_detected():
         [r"C:\Users\owner\.ssh\id_ed25519"]
     )
     assert match == "/.ssh"
+
+
+def test_claude_question_tool_is_answered_through_telegram(tmp_path):
+    gate = FakeGate()
+    brain = make_brain(tmp_path, gate)
+
+    result = asyncio.run(
+        brain.can_use_tool(
+            "AskUserQuestion",
+            {
+                "questions": [
+                    {
+                        "header": "Auth",
+                        "question": "Which authentication method?",
+                        "multiSelect": False,
+                        "options": [
+                            {"label": "OAuth", "description": "Hosted login"},
+                            {"label": "JWT", "description": "Stateless tokens"},
+                        ],
+                    }
+                ]
+            },
+            SimpleNamespace(),
+        )
+    )
+
+    assert isinstance(result, PermissionResultAllow)
+    assert result.updated_input["answers"] == {
+        "Which authentication method?": "JWT"
+    }
+    assert gate.choices[0][1][1] == ("JWT", "Stateless tokens")

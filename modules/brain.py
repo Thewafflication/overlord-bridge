@@ -47,7 +47,7 @@ OFFLIMITS_FRAGMENTS = (
 
 
 class PermissionGate:
-    """Shared approval logic: off-limits pre-screen + Telegram Allow/Deny + timeout.
+    """Shared approval logic with one-time and runtime-wide Telegram choices.
 
     A brain calls :meth:`request` with a human-readable description of what the
     agent wants to do plus a list of strings to scan for off-limits fragments
@@ -66,22 +66,48 @@ class PermissionGate:
         self.telegram = telegram
         self.owner = owner
         self.timeout = timeout
-        # When True, skip the Telegram Allow/Deny round-trip and auto-allow —
+        # When True, skip the Telegram permission round-trip and auto-allow —
         # BUT only after the off-limits pre-screen below. "Trust me, stop asking"
         # must never extend to reading secrets, so the hard floor still applies.
         self.auto_approve = auto_approve
         # request_id -> (loop, future); the Telegram thread resolves the future
         # created on this loop when a button is tapped.
         self.pending: dict[str, tuple[asyncio.AbstractEventLoop, asyncio.Future]] = {}
+        self.choice_pending: dict[
+            str, tuple[asyncio.AbstractEventLoop, asyncio.Future]
+        ] = {}
 
-    def on_permission_response(self, request_id: str, allow: bool) -> None:
-        """Called from the Telegram thread when an Allow/Deny button is tapped."""
+    def on_permission_response(self, request_id: str, decision: str | bool) -> None:
+        """Resolve a Telegram permission decision on the requesting event loop."""
         item = self.pending.pop(request_id, None)
         if item is None:
             return
         loop, fut = item
         if not fut.done():
-            loop.call_soon_threadsafe(fut.set_result, allow)
+            normalized = (
+                "allow"
+                if decision is True
+                else "deny"
+                if decision is False
+                else decision
+            )
+            if normalized == "always":
+                self.auto_approve = True
+                log.warning(
+                    "Operator enabled runtime auto-approval; off-limits checks remain active"
+                )
+            loop.call_soon_threadsafe(
+                fut.set_result, normalized in ("allow", "always")
+            )
+
+    def on_choice_response(self, request_id: str, answer: str) -> None:
+        """Resolve a model-authored Telegram question."""
+        item = self.choice_pending.pop(request_id, None)
+        if item is None:
+            return
+        loop, fut = item
+        if not fut.done():
+            loop.call_soon_threadsafe(fut.set_result, answer)
 
     @staticmethod
     def offlimits_match(candidates: list[str]) -> str | None:
@@ -104,8 +130,10 @@ class PermissionGate:
         """Ask the owner to approve an action; return True=allow, False=deny.
 
         *candidates* are scanned against ``OFFLIMITS_FRAGMENTS`` first; a match
-        is auto-denied without bothering the phone. Otherwise an Allow/Deny
-        prompt is sent and we await the tap, denying on timeout.
+        is auto-denied without bothering the phone. Otherwise a Telegram
+        prompt is sent and we await Allow once, Deny, or Always allow. The last
+        choice enables auto-approval only for this process lifetime; off-limits
+        checks still run before it.
         """
         frag = self.offlimits_match(candidates)
         if frag is not None:
@@ -127,7 +155,10 @@ class PermissionGate:
         header = f"\U0001f510 Permission request: {title}"
         if detail:
             header += f"\n\n{detail[:1500]}"
-        header += "\n\nAllow this?"
+        header += (
+            "\n\nAllow this? “Always allow” applies until Overlord restarts; "
+            "off-limits paths remain denied."
+        )
         self.telegram.ask_permission(self.owner, header, request_id)
 
         try:
@@ -138,6 +169,29 @@ class PermissionGate:
                 self.owner, f"⏱ Permission timed out for {title} — denied."
             )
             return False
+
+    async def choose(
+        self,
+        prompt: str,
+        options: list[tuple[str, str]],
+    ) -> str | None:
+        """Ask the owner a model-authored question over Telegram."""
+        request_id = uuid.uuid4().hex[:8]
+        loop = asyncio.get_running_loop()
+        fut: asyncio.Future = loop.create_future()
+        self.choice_pending[request_id] = (loop, fut)
+        self.telegram.ask_choice(self.owner, prompt, request_id, options)
+        try:
+            answer = await asyncio.wait_for(fut, timeout=self.timeout)
+            if not isinstance(answer, str):
+                return None
+            return answer.strip() or None
+        except asyncio.TimeoutError:
+            self.telegram.send(self.owner, "⏱ Question timed out — no answer sent.")
+            return None
+        finally:
+            self.choice_pending.pop(request_id, None)
+            self.telegram.cancel_choice(self.owner, request_id)
 
 
 class Brain(abc.ABC):
