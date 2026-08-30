@@ -2,11 +2,12 @@ name: Build WPM package
 
 # Builds Overlord Bridge into a native WPM package (overlord-any-<version>.zip).
 #
-# - Every push/PR/dispatch builds an unsigned package and uploads it as a CI
-#   artifact.
-# - Pushing a v* tag signs the package with the WPM_RELEASE_PRIVATE_KEY secret,
-#   verifies it against release_keys/wpm-release.public, generates the WPM
-#   repository index.json, and publishes everything to the GitHub Release.
+# Development run (push to main, PR, or manual run_type=development):
+#   builds an unsigned package and uploads it as a CI artifact.
+# Release run (pushing a version tag, or manual run_type=release):
+#   signs the package with the WPM_RELEASE_PRIVATE_KEY secret, verifies it
+#   against release_keys/wpm-release.public, generates the WPM repository
+#   index.json, and publishes everything to the GitHub Release.
 #
 # The WPM CLI is Windows-only, so this runs on windows-latest. wpm.exe is
 # downloaded from the latest release of Thewafflication/wpm; it is statically
@@ -15,9 +16,23 @@ name: Build WPM package
 on:
   push:
     branches: [main]
-    tags: ['v*']
+    tags:
+      - 'v*'        # v1.0.0
+      - '[0-9]*'    # 1.0.0
   pull_request:
   workflow_dispatch:
+    inputs:
+      run_type:
+        description: 'Run type'
+        type: choice
+        options:
+          - development
+          - release
+        default: development
+      version:
+        description: 'Release version for a release run (e.g. 1.0.0). Ignored for development runs.'
+        type: string
+        default: ''
 
 permissions:
   contents: write
@@ -27,28 +42,41 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Check out overlord-bridge
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
-      - name: Determine package version
+      - name: Determine build parameters
         id: version
         shell: pwsh
         run: |
-          if ($env:GITHUB_REF -like 'refs/tags/v*') {
-            $version = $env:GITHUB_REF -replace '^refs/tags/v', ''
-            if ($version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$') {
-              throw "Release tag must be v<semver>, e.g. v1.0.0. Got: $version"
-            }
+          $ErrorActionPreference = 'Stop'
+          $isTag = $env:GITHUB_REF -like 'refs/tags/*'
+          $dispatchRelease = ('${{ github.event_name }}' -eq 'workflow_dispatch') -and ('${{ github.event.inputs.run_type }}' -eq 'release')
+          $release = $isTag -or $dispatchRelease
+          if ($isTag) {
+            $tag = $env:GITHUB_REF -replace '^refs/tags/', ''
+            $version = $tag -replace '^v', ''
+          } elseif ($dispatchRelease) {
+            $version = ('${{ github.event.inputs.version }}').Trim() -replace '^v', ''
+            if (-not $version) { throw 'A version input is required for a release run (for example 1.0.0).' }
+            $tag = $version
           } else {
             $version = "0.0.0-dev+$($env:GITHUB_SHA.Substring(0,7))"
+            $tag = ''
+          }
+          if ($release -and $version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$') {
+            throw "Release version must be semantic (for example 1.0.0). Got: $version"
           }
           "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          Write-Host "Package version: $version"
+          "release=$($release.ToString().ToLower())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "version=$version release=$release tag=$tag"
 
       - name: Download WPM CLI from latest release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          $ErrorActionPreference = 'Stop'
           $dl = Join-Path $env:RUNNER_TEMP 'wpm-cli'
           New-Item -ItemType Directory -Force -Path $dl | Out-Null
           gh release download --repo Thewafflication/wpm --pattern 'wpm-x64-*.zip' --dir $dl
@@ -76,8 +104,7 @@ jobs:
             /XD .git .github .venv packaging tests wsp .pytest_cache __pycache__ run dispatch worker_reports .staged-validation research .wpm .claude .agents dist *.egg-info release_keys `
             /XF .env .session.* AGENTS.md COLLABORATION.md *.log *.pyc | Out-Null
           # robocopy uses exit codes 0-7 for success (1 = files copied). Only >= 8
-          # is a real failure. Capture it, then clear $LASTEXITCODE so the non-zero
-          # success code does not fail the step.
+          # is a real failure.
           $robocopy = $LASTEXITCODE
           if ($robocopy -ge 8) { throw "robocopy failed with exit code $robocopy" }
 
@@ -94,13 +121,14 @@ jobs:
           "STAGING=$staging" | Out-File -FilePath $env:GITHUB_ENV -Append
           exit 0
 
-      - name: Materialize signing key (tagged releases)
+      - name: Materialize signing key (release runs)
         id: sign
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: steps.version.outputs.release == 'true'
         shell: pwsh
         env:
           WPM_RELEASE_PRIVATE_KEY: ${{ secrets.WPM_RELEASE_PRIVATE_KEY }}
         run: |
+          $ErrorActionPreference = 'Stop'
           if ($env:WPM_RELEASE_PRIVATE_KEY) {
             $keyPath = Join-Path $env:RUNNER_TEMP 'wpm-release.private'
             [IO.File]::WriteAllText($keyPath, $env:WPM_RELEASE_PRIVATE_KEY, [Text.UTF8Encoding]::new($false))
@@ -114,6 +142,7 @@ jobs:
       - name: Build WPM package
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           $out = Join-Path $env:RUNNER_TEMP 'dist'
           New-Item -ItemType Directory -Force -Path $out | Out-Null
           if ('${{ steps.sign.outputs.signed }}' -eq 'true') {
@@ -129,6 +158,7 @@ jobs:
         if: steps.sign.outputs.signed == 'true'
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           if (-not (Test-Path -LiteralPath 'release_keys/wpm-release.public')) {
             throw 'Signing is enabled but release_keys/wpm-release.public is missing.'
           }
@@ -145,11 +175,12 @@ jobs:
         shell: pwsh
         run: Remove-Item -LiteralPath '${{ steps.sign.outputs.key_path }}' -Force -ErrorAction SilentlyContinue
 
-      - name: Create WPM repository index (tagged releases)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Create WPM repository index (release runs)
+        if: steps.version.outputs.release == 'true'
         shell: pwsh
         run: |
-          $tag = '${{ github.ref_name }}'
+          $ErrorActionPreference = 'Stop'
+          $tag = '${{ steps.version.outputs.tag }}'
           $assets = $env:DIST
           # Publish the public key so installers can `wpm trust add` it.
           Copy-Item release_keys/wpm-release.public (Join-Path $assets 'wpm-release.public') -Force
@@ -173,19 +204,20 @@ jobs:
           Get-Content -LiteralPath (Join-Path $assets 'index.json')
 
       - name: Upload package artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: overlord-wpm-package
           path: ${{ env.DIST }}/*
           if-no-files-found: error
 
       - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: steps.version.outputs.release == 'true'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = '${{ github.ref_name }}'
+          $ErrorActionPreference = 'Stop'
+          $tag = '${{ steps.version.outputs.tag }}'
           gh release view $tag --repo '${{ github.repository }}' *> $null
           if ($LASTEXITCODE -ne 0) {
             gh release create $tag --repo '${{ github.repository }}' --target '${{ github.sha }}' --generate-notes --title $tag
