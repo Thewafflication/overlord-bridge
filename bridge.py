@@ -33,6 +33,7 @@ import logging
 import os
 import signal
 import sys
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from queue import Queue
 from typing import Any
@@ -46,6 +47,8 @@ from modules.conversation_history import (
     add_handoff_to_turn,
 )
 from modules.telegram_handler import TelegramHandler
+from modules.single_instance import AlreadyRunningError, SingleInstance
+from modules.windows_tray import WindowsTray
 from modules.workers import DEFAULT_AIDER_CONTEXT_TOKENS, WorkerManager
 
 logging.basicConfig(
@@ -60,6 +63,29 @@ logging.getLogger("telegram").setLevel(logging.WARNING)
 log = logging.getLogger("overlord.bridge")
 
 BASE_DIR = Path(__file__).resolve().parent
+CONSOLE_LOG_FILE = BASE_DIR / "run" / "overlord.log"
+
+
+def configure_file_logging() -> None:
+    """Keep a bounded log for the tray's fallback console viewer."""
+    try:
+        CONSOLE_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        handler = RotatingFileHandler(
+            CONSOLE_LOG_FILE,
+            maxBytes=2 * 1024 * 1024,
+            backupCount=2,
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        log.warning("Could not enable tray console log: %s", exc)
+        return
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s")
+    )
+    logging.getLogger().addHandler(handler)
+
+
+configure_file_logging()
 
 
 def load_env(path: Path) -> None:
@@ -124,6 +150,10 @@ TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 OWNER_RAW = os.environ.get("OWNER_CHAT_ID", "")
 CWD = os.environ.get("OVERLORD_CWD", str(Path.home()))
 MODEL = os.environ.get("OVERLORD_MODEL", "opus")
+INSTRUCTIONS_FILE = os.environ.get("OVERLORD_INSTRUCTIONS_FILE", "").strip()
+CLAUDE_AUTO_APPROVE_EDITS = env_bool(
+    "OVERLORD_CLAUDE_AUTO_APPROVE_EDITS", False
+)
 PERMISSION_TIMEOUT = int(os.environ.get("OVERLORD_PERMISSION_TIMEOUT", "300"))
 # Auto-approve every action EXCEPT off-limits secrets (which are always denied).
 # Trades the per-tool Telegram Allow/Deny prompt for "just do it".
@@ -225,6 +255,26 @@ def format_worker_thread_report(report: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def load_shared_instructions() -> str:
+    """Load one canonical instruction file for both supported brains."""
+    candidates = []
+    if INSTRUCTIONS_FILE:
+        candidates.append(Path(INSTRUCTIONS_FILE).expanduser())
+    candidates.append(BASE_DIR / "AGENTS.md")
+    for path in candidates:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            log.warning("Could not read shared instructions from %s: %s", path, exc)
+            continue
+        if text.strip():
+            log.info("Loaded shared brain instructions from %s", path)
+            return text.strip()
+    return ""
+
+
 def format_worker_inline_report(report: dict[str, Any]) -> str:
     """Single-line summary safe for tmux ``send-keys -l`` (no embedded newline)."""
     name = report.get("name") or "worker"
@@ -246,6 +296,7 @@ def build_brain(gate: PermissionGate, brain_name: str | None = None) -> Brain:
     """Instantiate the configured brain. Default and unknown values -> claude."""
     selected = (brain_name or BRAIN).strip().lower()
     session_file = session_file_for(selected)
+    developer_instructions = load_shared_instructions()
     if selected == "codex":
         # Imported lazily so the Claude path never needs codex deps and vice versa.
         from modules.codex_brain import CodexBrain
@@ -260,6 +311,7 @@ def build_brain(gate: PermissionGate, brain_name: str | None = None) -> Brain:
             sandbox=CODEX_SANDBOX,
             app_server_proxy=CODEX_APP_SERVER_PROXY,
             app_server_socket=CODEX_APP_SERVER_SOCKET or None,
+            developer_instructions=developer_instructions or None,
         )
 
     if selected not in ("claude", ""):
@@ -272,6 +324,8 @@ def build_brain(gate: PermissionGate, brain_name: str | None = None) -> Brain:
         cwd=CWD,
         model=MODEL,
         session_file=session_file,
+        developer_instructions=developer_instructions,
+        auto_approve_edits=CLAUDE_AUTO_APPROVE_EDITS,
     )
 
 
@@ -300,6 +354,7 @@ class Bridge:
         self._conversation_history = SharedConversationHistory(HANDOFF_CONTEXT_CHARS)
         self._conversation_history.mark_seen(self.brain_name)
         self._pending_handoff: Handoff | None = None
+        self.tray = WindowsTray(self.request_shutdown, log_path=CONSOLE_LOG_FILE)
         self._thread_report_unsupported_logged = False
         self._visible_report_unsupported_logged = False
         # Brain-agnostic worker dispatch: watches dispatch/ and pushes worker
@@ -491,6 +546,7 @@ class Bridge:
             resumed,
             AUTO_APPROVE,
         )
+        self.tray.start(self.brain.name)
         approve_note = (
             "\n⚡ Auto-approve ON — actions run without asking (secrets still blocked)."
             if AUTO_APPROVE
@@ -539,7 +595,7 @@ class Bridge:
             if self._turn_is_active():
                 await self._stop_active_turn()
             await self.brain.disconnect()
-            self.telegram.stop()
+            self.tray.stop()
 
     def _inbound_get_with_shutdown(self) -> tuple[int | None, str | None]:
         if self._shutdown_event.is_set():
@@ -820,6 +876,7 @@ class Bridge:
             previous = self.brain
             self.brain = candidate
             self.brain_name = target
+            self.tray.set_brain(target)
             self._pending_handoff = self._conversation_history.handoff_for(target)
             os.environ["OVERLORD_BRAIN"] = target
             persisted = True
@@ -851,6 +908,7 @@ class Bridge:
     async def _handle_turn(self, chat_id: int, text: str) -> None:
         log.info("Dispatching turn: %s", text)
         chunks: list[str] = []
+        self.telegram.begin_typing(chat_id)
         try:
             async with self._brain_lock:
                 query_text = (
@@ -871,6 +929,8 @@ class Bridge:
         except Exception as exc:  # noqa: BLE001 - report any turn failure to phone
             log.exception("Turn failed")
             self.telegram.send(chat_id, f"⚠️ Error: {exc}")
+        finally:
+            self.telegram.end_typing(chat_id)
 
 
 async def _run_bridge() -> None:
@@ -891,10 +951,21 @@ async def _run_bridge() -> None:
 
 
 def main() -> None:
+    singleton = SingleInstance()
+    try:
+        singleton.acquire()
+    except AlreadyRunningError:
+        log.error(
+            "Overlord is already running on this machine. Use the notification-"
+            "area icon to stop it before starting another instance."
+        )
+        return
     try:
         asyncio.run(_run_bridge())
     except (KeyboardInterrupt, SystemExit):
         log.info("Shutting down Overlord bridge")
+    finally:
+        singleton.release()
 
 
 if __name__ == "__main__":

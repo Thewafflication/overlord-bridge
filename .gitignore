@@ -1,6 +1,11 @@
 .venv/
 __pycache__/
 *.pyc
+
+# Python package build artifacts (produced by `python -m build` / CI)
+build/
+dist/
+*.egg-info/
 .env
 .session
 .session.*

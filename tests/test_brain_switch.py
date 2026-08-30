@@ -8,9 +8,24 @@ from modules.conversation_history import SharedConversationHistory
 class FakeTelegram:
     def __init__(self):
         self.messages = []
+        self.activity = []
 
     def send(self, chat_id, text):
         self.messages.append((chat_id, text))
+
+    def begin_typing(self, chat_id):
+        self.activity.append(("begin", chat_id))
+
+    def end_typing(self, chat_id):
+        self.activity.append(("end", chat_id))
+
+
+class FakeTray:
+    def __init__(self):
+        self.brains = []
+
+    def set_brain(self, brain_name):
+        self.brains.append(brain_name)
 
 
 class FakeBrain:
@@ -43,6 +58,7 @@ def make_bridge(active_brain):
     instance._conversation_history = SharedConversationHistory()
     instance._conversation_history.mark_seen(active_brain.name)
     instance._pending_handoff = None
+    instance.tray = FakeTray()
     return instance
 
 
@@ -69,6 +85,7 @@ def test_brain_switch_connects_replacement_before_disconnect_and_persists(
     assert instance.brain_name == "codex"
     assert events == ["connect:codex", "disconnect:claude"]
     assert persisted == [("OVERLORD_BRAIN", "codex")]
+    assert instance.tray.brains == ["codex"]
     assert "Switched to codex" in instance.telegram.messages[-1][1]
 
 
@@ -131,3 +148,9 @@ def test_first_turn_after_switch_receives_handoff_once():
     assert brain.queries[0].endswith("What next?")
     assert brain.queries[1] == "And now?"
     assert instance._pending_handoff is None
+    assert instance.telegram.activity == [
+        ("begin", 42),
+        ("end", 42),
+        ("begin", 42),
+        ("end", 42),
+    ]

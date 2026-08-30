@@ -69,6 +69,7 @@ PATH_KEYS = ("file_path", "path", "notebook_path", "directory")
 # where the message came in from, which is occasionally load-bearing: he can't see
 # a rendered diff or click a file path on a phone, and he may not be at the desk.
 TELEGRAM_TAG = "📱 [via Telegram]\n\n"
+EDIT_TOOLS = {"Edit", "MultiEdit", "Write", "NotebookEdit"}
 
 
 def _claude_usage_window(data: Any) -> dict[str, Any] | None:
@@ -150,12 +151,16 @@ class ClaudeBrain(Brain):
         cwd: str,
         model: str,
         session_file: Path,
+        developer_instructions: str = "",
+        auto_approve_edits: bool = False,
     ) -> None:
         self.gate = gate
         self.cwd = cwd
         self.model = model
         self._active_model = model
         self.session_file = session_file
+        self.developer_instructions = developer_instructions.strip()
+        self.auto_approve_edits = auto_approve_edits
         self._session_id: str | None = None
 
     @property
@@ -184,11 +189,29 @@ class ClaudeBrain(Brain):
         self, tool_name: str, tool_input: dict[str, Any], context: ToolPermissionContext
     ) -> PermissionResultAllow | PermissionResultDeny:
         candidates = collect_candidates(tool_input, PATH_KEYS)
+        if self.auto_approve_edits and self._is_safe_workspace_edit(
+            tool_name, candidates
+        ):
+            log.info("Auto-approved %s inside workspace", tool_name)
+            return PermissionResultAllow()
         detail = self._format_detail(tool_name, tool_input, context)
         allow = await self.gate.request(tool_name, detail, candidates)
         if allow:
             return PermissionResultAllow()
         return PermissionResultDeny(message="Denied by operator via Telegram.")
+
+    def _is_safe_workspace_edit(self, tool_name: str, candidates: list[str]) -> bool:
+        if tool_name not in EDIT_TOOLS or not candidates:
+            return False
+        if self.gate.offlimits_match(candidates) is not None:
+            return False
+        workspace = Path(self.cwd).resolve()
+        for candidate in candidates:
+            path = Path(candidate).expanduser()
+            resolved = (workspace / path).resolve() if not path.is_absolute() else path.resolve()
+            if not resolved.is_relative_to(workspace):
+                return False
+        return True
 
     # ---------------------------------------------------------------- session
     def _load_session(self) -> str | None:
@@ -212,7 +235,11 @@ class ClaudeBrain(Brain):
         return ClaudeAgentOptions(
             cwd=self.cwd,
             model=self.model,
-            system_prompt={"type": "preset", "preset": "claude_code"},
+            system_prompt={
+                "type": "preset",
+                "preset": "claude_code",
+                "append": self.developer_instructions,
+            },
             setting_sources=["user", "project", "local"],
             permission_mode="default",
             can_use_tool=self.can_use_tool,

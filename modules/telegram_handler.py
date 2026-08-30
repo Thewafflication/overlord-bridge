@@ -23,14 +23,15 @@ import asyncio
 import logging
 import threading
 from queue import Queue
-from typing import Callable, Iterator, Optional
+from typing import Awaitable, Callable, Iterator, Optional
 
 from telegram import (
-    Bot,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     Update,
 )
+from telegram.constants import ChatAction
+from telegram.error import Conflict, NetworkError, RetryAfter, TelegramError
 from telegram.ext import (
     Application,
     CallbackContext,
@@ -62,10 +63,13 @@ class TelegramHandler(threading.Thread):
         self.owner_chat_id = int(owner_chat_id)
         self.on_permission_response = on_permission_response
 
-        self.bot = Bot(token=token)
         self.application = Application.builder().token(token).build()
+        # Reuse the application's initialized bot and HTTP connection pool for
+        # polling, replies, typing indicators, and permission prompts.
+        self.bot = self.application.bot
         self.loop: Optional[asyncio.AbstractEventLoop] = None
         self._ready = threading.Event()
+        self._typing_tasks: dict[int, asyncio.Task] = {}
 
         self.application.add_handler(
             CommandHandler(
@@ -151,10 +155,98 @@ class TelegramHandler(threading.Thread):
 
     async def _send(self, chat_id: int, text: str) -> None:
         for chunk in _chunks(text):
+            await self._telegram_call(
+                "send_message",
+                lambda chunk=chunk: self.bot.send_message(
+                    chat_id=chat_id, text=chunk
+                ),
+            )
+
+    async def _telegram_call(
+        self,
+        label: str,
+        operation: Callable[[], Awaitable[object]],
+        attempts: int = 4,
+        quiet: bool = False,
+    ) -> bool:
+        """Retry transient Telegram failures instead of silently losing output."""
+        last_error: Exception | None = None
+        for attempt in range(1, attempts + 1):
             try:
-                await self.bot.send_message(chat_id=chat_id, text=chunk)
-            except Exception as exc:
-                log.error("send_message failed: %s", exc)
+                await operation()
+                return True
+            except RetryAfter as exc:
+                last_error = exc
+                retry_after = exc.retry_after
+                delay = (
+                    retry_after.total_seconds()
+                    if hasattr(retry_after, "total_seconds")
+                    else float(retry_after)
+                )
+            except NetworkError as exc:
+                last_error = exc
+                delay = min(0.5 * (2 ** (attempt - 1)), 4.0)
+            except TelegramError as exc:
+                log.error("%s failed permanently: %s", label, exc)
+                return False
+            except Exception as exc:  # noqa: BLE001 - keep I/O thread alive
+                log.error("%s failed: %s", label, exc)
+                return False
+
+            if attempt == attempts:
+                if not quiet:
+                    log.error(
+                        "%s failed after %s attempts: %s",
+                        label,
+                        attempts,
+                        last_error,
+                    )
+                return False
+            if not quiet:
+                log.warning(
+                    "%s transient failure; retrying in %.1fs (%s/%s)",
+                    label,
+                    delay,
+                    attempt,
+                    attempts,
+                )
+            await asyncio.sleep(delay)
+        return False
+
+    def begin_typing(self, chat_id: int) -> None:
+        """Show Telegram's typing indicator until :meth:`end_typing`."""
+        if self.loop is not None:
+            asyncio.run_coroutine_threadsafe(self._begin_typing(chat_id), self.loop)
+
+    async def _begin_typing(self, chat_id: int) -> None:
+        old = self._typing_tasks.pop(chat_id, None)
+        if old is not None:
+            old.cancel()
+        self._typing_tasks[chat_id] = asyncio.create_task(self._typing_loop(chat_id))
+
+    async def _typing_loop(self, chat_id: int) -> None:
+        try:
+            while True:
+                await self._telegram_call(
+                    "typing indicator",
+                    lambda: self.bot.send_chat_action(
+                        chat_id=chat_id, action=ChatAction.TYPING
+                    ),
+                    attempts=1,
+                    quiet=True,
+                )
+                await asyncio.sleep(4)
+        except asyncio.CancelledError:
+            return
+
+    def end_typing(self, chat_id: int) -> None:
+        if self.loop is not None:
+            asyncio.run_coroutine_threadsafe(self._end_typing(chat_id), self.loop)
+
+    async def _end_typing(self, chat_id: int) -> None:
+        task = self._typing_tasks.pop(chat_id, None)
+        if task is not None:
+            task.cancel()
 
     def ask_permission(self, chat_id: int, prompt_text: str, request_id: str) -> None:
         """Send an Allow/Deny prompt; the answer arrives via on_permission_response."""
@@ -179,22 +271,54 @@ class TelegramHandler(threading.Thread):
                 ]
             ]
         )
-        try:
-            await self.bot.send_message(
+        delivered = await self._telegram_call(
+            "ask_permission",
+            lambda: self.bot.send_message(
                 chat_id=chat_id,
                 text=prompt_text[:MAX_MESSAGE_LEN],
                 reply_markup=keyboard,
-            )
-        except Exception as exc:
-            log.error("ask_permission send failed: %s", exc)
+            ),
+        )
+        if not delivered and self.on_permission_response is not None:
+            # Do not leave the brain blocked until the full permission timeout
+            # when the owner never had a prompt they could approve.
+            self.on_permission_response(request_id, False)
 
     # ------------------------------------------------------------------ lifecycle
+    async def _initialize_application(self) -> bool:
+        initialized = await self._telegram_call(
+            "Telegram initialization",
+            self.application.initialize,
+            attempts=6,
+        )
+        if not initialized:
+            log.error("Telegram initialization did not recover; handler stopped")
+            return False
+        await self.application.start()
+        await self.application.updater.start_polling(
+            bootstrap_retries=5,
+            error_callback=self._polling_error,
+        )
+        return True
+
+    @staticmethod
+    def _polling_error(error: TelegramError) -> None:
+        """Keep expected polling failures useful without multi-page tracebacks."""
+        if isinstance(error, Conflict):
+            log.error(
+                "Telegram polling conflict: another Overlord instance is using "
+                "this bot token"
+            )
+        elif isinstance(error, NetworkError):
+            log.warning("Telegram polling network error; retrying: %s", error)
+        else:
+            log.error("Telegram polling error: %s", error)
+
     def run(self) -> None:
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
-        self.loop.run_until_complete(self.application.initialize())
-        self.loop.run_until_complete(self.application.start())
-        self.loop.run_until_complete(self.application.updater.start_polling())
+        if not self.loop.run_until_complete(self._initialize_application()):
+            return
         self._ready.set()
         log.info("Telegram polling started")
         self.loop.run_forever()
@@ -209,6 +333,9 @@ class TelegramHandler(threading.Thread):
 
         async def _shutdown() -> None:
             try:
+                for task in self._typing_tasks.values():
+                    task.cancel()
+                self._typing_tasks.clear()
                 if self.application.updater and self.application.updater.running:
                     await self.application.updater.stop()
                 await self.application.stop()

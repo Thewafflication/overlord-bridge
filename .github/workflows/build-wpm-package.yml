@@ -1,0 +1,190 @@
+name: Build WPM package
+
+# Builds Overlord Bridge into a native WPM package (overlord-any-<version>.zip).
+#
+# - Every push/PR/dispatch builds an unsigned package and uploads it as a CI
+#   artifact.
+# - Pushing a v* tag signs the package with the WPM_RELEASE_PRIVATE_KEY secret,
+#   verifies it against release_keys/wpm-release.public, generates the WPM
+#   repository index.json, and publishes everything to the GitHub Release.
+#
+# The WPM CLI is Windows-only, so this runs on windows-latest. wpm.exe is
+# downloaded from the latest release of Thewafflication/wpm; it is statically
+# linked to WCRT and self-contained.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Check out overlord-bridge
+        uses: actions/checkout@v4
+
+      - name: Determine package version
+        id: version
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF -like 'refs/tags/v*') {
+            $version = $env:GITHUB_REF -replace '^refs/tags/v', ''
+            if ($version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$') {
+              throw "Release tag must be v<semver>, e.g. v1.0.0. Got: $version"
+            }
+          } else {
+            $version = "0.0.0-dev+$($env:GITHUB_SHA.Substring(0,7))"
+          }
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Package version: $version"
+
+      - name: Download WPM CLI from latest release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $dl = Join-Path $env:RUNNER_TEMP 'wpm-cli'
+          New-Item -ItemType Directory -Force -Path $dl | Out-Null
+          gh release download --repo Thewafflication/wpm --pattern 'wpm-x64-*.zip' --dir $dl
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to download the WPM release package.' }
+          $zip = Get-ChildItem -LiteralPath $dl -Filter 'wpm-x64-*.zip' | Select-Object -First 1
+          $extracted = Join-Path $dl 'extracted'
+          Expand-Archive -LiteralPath $zip.FullName -DestinationPath $extracted -Force
+          $exe = Get-ChildItem -LiteralPath $extracted -Recurse -Filter 'wpm.exe' | Select-Object -First 1
+          if (-not $exe) { throw 'wpm.exe was not found inside the downloaded WPM package.' }
+          "WPM_EXE=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          & $exe.FullName --version
+
+      - name: Stage package (payload + .wpm)
+        shell: pwsh
+        run: |
+          $staging = Join-Path $env:RUNNER_TEMP 'overlord-pkg'
+          $payload = Join-Path $staging 'payload'
+          New-Item -ItemType Directory -Force -Path $payload | Out-Null
+
+          # Copy the runtime tree into payload, excluding dev-only, runtime, and
+          # secret paths. .env is never present in a clean checkout; excluded
+          # defensively so a real secret can never enter a package.
+          robocopy . $payload /E `
+            /XD .git .github .venv packaging tests wsp .pytest_cache __pycache__ run dispatch worker_reports .staged-validation research .wpm .claude .agents dist *.egg-info release_keys `
+            /XF .env .session.* AGENTS.md COLLABORATION.md *.log *.pyc | Out-Null
+          if ($LASTEXITCODE -ge 8) { throw "robocopy failed with exit code $LASTEXITCODE" }
+
+          # The lifecycle script drives install/remove; ship it at the payload root
+          # so install.cmd/remove.cmd can find it and it is covered by the index.
+          Copy-Item packaging/wpm/Package-Lifecycle.ps1 (Join-Path $payload 'Package-Lifecycle.ps1') -Force
+
+          # Package metadata and lifecycle scripts.
+          Copy-Item .wpm (Join-Path $staging '.wpm') -Recurse -Force
+          $pkg = Join-Path $staging '.wpm/package.txt'
+          (Get-Content -LiteralPath $pkg) -replace '^version=.*', "version=${{ steps.version.outputs.version }}" |
+            Set-Content -LiteralPath $pkg -Encoding ascii
+
+          "STAGING=$staging" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Materialize signing key (tagged releases)
+        id: sign
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          WPM_RELEASE_PRIVATE_KEY: ${{ secrets.WPM_RELEASE_PRIVATE_KEY }}
+        run: |
+          if ($env:WPM_RELEASE_PRIVATE_KEY) {
+            $keyPath = Join-Path $env:RUNNER_TEMP 'wpm-release.private'
+            [IO.File]::WriteAllText($keyPath, $env:WPM_RELEASE_PRIVATE_KEY, [Text.UTF8Encoding]::new($false))
+            "key_path=$keyPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            "signed=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          } else {
+            Write-Warning 'WPM_RELEASE_PRIVATE_KEY is not configured; building an UNSIGNED release package.'
+            "signed=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          }
+
+      - name: Build WPM package
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'dist'
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          if ('${{ steps.sign.outputs.signed }}' -eq 'true') {
+            & $env:WPM_EXE build $env:STAGING $out --sign '${{ steps.sign.outputs.key_path }}'
+          } else {
+            & $env:WPM_EXE build $env:STAGING $out
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'wpm build failed.' }
+          Get-ChildItem -LiteralPath $out | Format-Table Name, Length
+          "DIST=$out" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Verify signed package
+        if: steps.sign.outputs.signed == 'true'
+        shell: pwsh
+        run: |
+          if (-not (Test-Path -LiteralPath 'release_keys/wpm-release.public')) {
+            throw 'Signing is enabled but release_keys/wpm-release.public is missing.'
+          }
+          $env:WPM_DATA_DIR = Join-Path $env:RUNNER_TEMP 'wpm-verify'
+          & $env:WPM_EXE trust add release_keys/wpm-release.public
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to trust the WPM release public key.' }
+          foreach ($p in Get-ChildItem -LiteralPath $env:DIST -Filter '*.zip') {
+            & $env:WPM_EXE verify $p.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Package verification failed: $($p.Name)" }
+          }
+
+      - name: Remove signing key
+        if: always() && steps.sign.outputs.key_path != ''
+        shell: pwsh
+        run: Remove-Item -LiteralPath '${{ steps.sign.outputs.key_path }}' -Force -ErrorAction SilentlyContinue
+
+      - name: Create WPM repository index (tagged releases)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $tag = '${{ github.ref_name }}'
+          $assets = $env:DIST
+          # Publish the public key so installers can `wpm trust add` it.
+          Copy-Item release_keys/wpm-release.public (Join-Path $assets 'wpm-release.public') -Force
+          $packages = foreach ($file in Get-ChildItem -LiteralPath $assets -Filter 'overlord-*.zip' -File) {
+            if ($file.Name -notmatch '^overlord-any-(.+)\.zip$') { throw "Unexpected package filename: $($file.Name)" }
+            [ordered]@{
+              name    = 'overlord'
+              version = $Matches[1]
+              arch    = 'any'
+              url     = "https://github.com/${{ github.repository }}/releases/download/$tag/$($file.Name)"
+            }
+          }
+          if (@($packages).Count -ne 1) { throw 'Expected exactly one overlord package.' }
+          [ordered]@{ version = 1; packages = @($packages) } |
+            ConvertTo-Json -Depth 4 |
+            Set-Content -LiteralPath (Join-Path $assets 'index.json') -Encoding utf8NoBOM
+          # SHA-256 checksums for all published assets.
+          Get-ChildItem -LiteralPath $assets -File |
+            ForEach-Object { "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name } |
+            Set-Content -LiteralPath (Join-Path $assets 'SHA256SUMS') -Encoding ascii
+          Get-Content -LiteralPath (Join-Path $assets 'index.json')
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: overlord-wpm-package
+          path: ${{ env.DIST }}/*
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = '${{ github.ref_name }}'
+          gh release view $tag --repo '${{ github.repository }}' *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --repo '${{ github.repository }}' --target '${{ github.sha }}' --generate-notes --title $tag
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          $files = @(Get-ChildItem -LiteralPath $env:DIST -File | Select-Object -ExpandProperty FullName)
+          gh release upload $tag --repo '${{ github.repository }}' --clobber $files
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

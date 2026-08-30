@@ -89,8 +89,9 @@ class PermissionGate:
         for s in candidates:
             if not isinstance(s, str):
                 continue
+            normalized = s.replace("\\", "/").lower()
             for frag in OFFLIMITS_FRAGMENTS:
-                if frag in s:
+                if frag.lower() in normalized:
                     return frag
         return None
 

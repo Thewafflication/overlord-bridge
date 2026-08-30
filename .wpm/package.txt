@@ -1,0 +1,9 @@
+name=overlord
+version=0.0.0
+arch=any
+debug=false
+description=Overlord Bridge - drive a home-rooted Overlord agent from Telegram
+maintainer=Jordan Waughtal
+homepage=https://github.com/Thewafflication/overlord-bridge
+repository=https://github.com/Thewafflication/overlord-bridge
+license=Proprietary

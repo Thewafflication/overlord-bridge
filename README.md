@@ -128,6 +128,34 @@ For a writable project workspace, set
 `OVERLORD_CODEX_SANDBOX=workspace-write` in `.env`. Use `-Help` or `/?` for the
 launcher options.
 
+While running on Windows, Overlord places an icon in the notification area.
+Right-click it and choose **Show Console** to open/focus a dedicated Tk rich-text
+console, **Hide Console** to tuck it away again, or **Stop Overlord** for a
+graceful shutdown. The console has colored log levels, live updates, Copy All,
+Clear, and Autoscroll controls over a rotating 2 MB log. During AI
+turns, Telegram continuously shows the typing indicator; transient Telegram
+send failures are retried automatically so replies and permission prompts are
+not dropped after a single network hiccup.
+
+Overlord also holds an operating-system singleton lock. Starting a second copy
+on the same machine user session exits immediately with a clear error instead
+of creating competing Telegram pollers. The OS releases the lock automatically
+if Overlord crashes or is forcibly terminated.
+
+To install a general per-user Start Menu launcher, run:
+
+```powershell
+.\Install-WindowsLauncher.ps1
+```
+
+By default it launches Overlord at the parent folder containing this repository
+(for example `C:\Users\you\source\repos`), installs the Overlord icon, creates a
+canonical `AGENTS.md` there when one does not already exist, and configures both
+brains to receive it explicitly. It also enables automatic approval for Claude
+Edit/Write tools only when every target remains inside that projects root and
+outside the hard off-limits list. Use `-ProjectsRoot PATH` to choose a different
+root or `-Uninstall` to remove only the Start Menu shortcut.
+
 Install and authenticate Codex first if `codex --version` or `codex login` has
 not already been run. Keep the PowerShell window open while testing. For an
 always-on native Windows install, run this same script through Task Scheduler;
