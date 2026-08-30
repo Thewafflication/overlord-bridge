@@ -156,6 +156,13 @@ Edit/Write tools only when every target remains inside that projects root and
 outside the hard off-limits list. Use `-ProjectsRoot PATH` to choose a different
 root or `-Uninstall` to remove only the Start Menu shortcut.
 
+The installer also adds the Claude Agent SDK's bundled `claude.exe` directory
+to the current user's `PATH` (without duplicating an existing entry). Open a new
+PowerShell window afterward to run periodic authentication commands such as
+`claude auth login`. To configure only this PATH entry, without requiring a
+configured bridge `.env`, run
+`./Install-WindowsLauncher.ps1 -ClaudePathOnly`.
+
 Install and authenticate Codex first if `codex --version` or `codex login` has
 not already been run. Keep the PowerShell window open while testing. For an
 always-on native Windows install, run this same script through Task Scheduler;
