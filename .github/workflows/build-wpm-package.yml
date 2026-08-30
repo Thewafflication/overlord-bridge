@@ -64,6 +64,7 @@ jobs:
       - name: Stage package (payload + .wpm)
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           $staging = Join-Path $env:RUNNER_TEMP 'overlord-pkg'
           $payload = Join-Path $staging 'payload'
           New-Item -ItemType Directory -Force -Path $payload | Out-Null
@@ -74,7 +75,11 @@ jobs:
           robocopy . $payload /E `
             /XD .git .github .venv packaging tests wsp .pytest_cache __pycache__ run dispatch worker_reports .staged-validation research .wpm .claude .agents dist *.egg-info release_keys `
             /XF .env .session.* AGENTS.md COLLABORATION.md *.log *.pyc | Out-Null
-          if ($LASTEXITCODE -ge 8) { throw "robocopy failed with exit code $LASTEXITCODE" }
+          # robocopy uses exit codes 0-7 for success (1 = files copied). Only >= 8
+          # is a real failure. Capture it, then clear $LASTEXITCODE so the non-zero
+          # success code does not fail the step.
+          $robocopy = $LASTEXITCODE
+          if ($robocopy -ge 8) { throw "robocopy failed with exit code $robocopy" }
 
           # The lifecycle script drives install/remove; ship it at the payload root
           # so install.cmd/remove.cmd can find it and it is covered by the index.
@@ -87,6 +92,7 @@ jobs:
             Set-Content -LiteralPath $pkg -Encoding ascii
 
           "STAGING=$staging" | Out-File -FilePath $env:GITHUB_ENV -Append
+          exit 0
 
       - name: Materialize signing key (tagged releases)
         id: sign
