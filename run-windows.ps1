@@ -86,47 +86,42 @@ if (-not (Test-Path -LiteralPath $WorkingDirectory -PathType Container)) {
 }
 $env:OVERLORD_CWD = $WorkingDirectory
 
-$BrainSetting = if ($Configured["OVERLORD_BRAIN"]) {
-    $Configured["OVERLORD_BRAIN"]
-} else {
-    "claude"
-}
-if ($BrainSetting -eq "codex") {
-    $CodexSetting = $env:OVERLORD_CODEX_BIN
-    if (-not $CodexSetting) {
-        $CodexSetting = if ($Configured["OVERLORD_CODEX_BIN"]) {
-            $Configured["OVERLORD_CODEX_BIN"]
-        } else {
-            "codex"
-        }
-    }
-
-    $CodexPath = $null
-    if ([IO.Path]::IsPathRooted($CodexSetting) -and
-        (Test-Path -LiteralPath $CodexSetting -PathType Leaf)) {
-        $CodexPath = [IO.Path]::GetFullPath($CodexSetting)
+$BrainSetting = if ($Configured["OVERLORD_BRAIN"]) { $Configured["OVERLORD_BRAIN"] } else { "claude" }
+$CodexSetting = $env:OVERLORD_CODEX_BIN
+if (-not $CodexSetting) {
+    $CodexSetting = if ($Configured["OVERLORD_CODEX_BIN"]) {
+        $Configured["OVERLORD_CODEX_BIN"]
     } else {
-        $CodexCommand = Get-Command $CodexSetting -CommandType Application -ErrorAction SilentlyContinue |
-            Select-Object -First 1
-        if ($CodexCommand) {
-            $CodexPath = $CodexCommand.Path
-        }
+        "codex"
     }
+}
 
-    # Codex Desktop ships a native executable in a versioned directory which
-    # may be added only to the app's PATH, not to ordinary PowerShell sessions.
-    if (-not $CodexPath -and $env:LOCALAPPDATA) {
-        $BundledCodexRoot = Join-Path $env:LOCALAPPDATA "OpenAI\Codex\bin"
-        $BundledCodex = @(Get-ChildItem -LiteralPath $BundledCodexRoot -Filter codex.exe -File -Recurse -ErrorAction SilentlyContinue |
-                Sort-Object LastWriteTime -Descending)[0]
-        if ($BundledCodex) {
-            $CodexPath = $BundledCodex.FullName
-        }
+$CodexPath = $null
+if ([IO.Path]::IsPathRooted($CodexSetting) -and
+    (Test-Path -LiteralPath $CodexSetting -PathType Leaf)) {
+    $CodexPath = [IO.Path]::GetFullPath($CodexSetting)
+} else {
+    $CodexCommand = Get-Command $CodexSetting -CommandType Application,ExternalScript -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if ($CodexCommand) {
+        $CodexPath = $CodexCommand.Path
     }
-    if (-not $CodexPath) {
-        throw "Codex CLI not found. Install Codex Desktop/CLI or set OVERLORD_CODEX_BIN in $EnvFile."
+}
+
+# Codex Desktop ships a native executable in a versioned directory which may
+# be added only to the app's PATH, not to ordinary PowerShell sessions.
+if (-not $CodexPath -and $env:LOCALAPPDATA) {
+    $BundledCodexRoot = Join-Path $env:LOCALAPPDATA "OpenAI\Codex\bin"
+    $BundledCodex = @(Get-ChildItem -LiteralPath $BundledCodexRoot -Filter codex.exe -File -Recurse -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending)[0]
+    if ($BundledCodex) {
+        $CodexPath = $BundledCodex.FullName
     }
+}
+if ($CodexPath) {
     $env:OVERLORD_CODEX_BIN = $CodexPath
+} elseif ($BrainSetting -eq "codex") {
+    throw "Codex CLI not found. Install Codex Desktop/CLI or set OVERLORD_CODEX_BIN in $EnvFile."
 }
 
 $Sandbox = if ($env:OVERLORD_CODEX_SANDBOX) {

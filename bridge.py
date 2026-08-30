@@ -41,6 +41,7 @@ from typing import Any
 
 from modules import cli_notify
 from modules.brain import Brain, PermissionGate
+from modules.codex_discovery import resolve_codex_binary
 from modules.commands import HELP_TEXT, VALID_BRAINS, format_status, set_env_value
 from modules.conversation_history import (
     Handoff,
@@ -175,7 +176,8 @@ AUTO_APPROVE = os.environ.get("OVERLORD_AUTO_APPROVE", "0").strip().lower() in (
 BRAIN = os.environ.get("OVERLORD_BRAIN", "claude").strip().lower()
 
 # Codex-specific (only consulted when BRAIN == "codex").
-CODEX_BIN = os.environ.get("OVERLORD_CODEX_BIN", "codex")
+CODEX_BIN = resolve_codex_binary(os.environ.get("OVERLORD_CODEX_BIN", "codex"))
+os.environ["OVERLORD_CODEX_BIN"] = CODEX_BIN
 CODEX_MODEL = os.environ.get("OVERLORD_CODEX_MODEL", "")  # "" -> codex default
 CODEX_APPROVAL_POLICY = os.environ.get("OVERLORD_CODEX_APPROVAL_POLICY", "on-request")
 CODEX_SANDBOX = os.environ.get("OVERLORD_CODEX_SANDBOX", "read-only")

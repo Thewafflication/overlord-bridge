@@ -126,7 +126,9 @@ OVERLORD_CODEX_APP_SERVER_PROXY=false
 The launcher uses the directory from which you invoke it as the Codex workspace
 unless `OVERLORD_CWD` or `-WorkingDirectory` specifies another directory. It
 also discovers the native `codex.exe` bundled with Codex Desktop when ordinary
-PowerShell does not have `codex` on `PATH`. To validate without starting:
+PowerShell does not have `codex` on `PATH`. The resolved absolute path is shared
+with runtime brain switching and Codex workers even when Claude starts first.
+To validate without starting:
 
 ```powershell
 ..\overlord-bridge\run-windows.ps1 -Check
