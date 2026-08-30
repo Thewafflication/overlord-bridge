@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import sys
 import tkinter as tk
 from pathlib import Path
 from tkinter import ttk
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from modules.commands import format_status  # noqa: E402
 
 POLL_MS = 300
 INITIAL_TAIL_BYTES = 160_000
@@ -21,13 +26,30 @@ def level_for_line(line: str) -> str:
     return "plain"
 
 
+def format_brain_summary(name: str, status: dict, active_brain: str) -> str:
+    """Format one compact status card without requiring a Tk instance."""
+    heading = f"{name.upper()}  •  {'ACTIVE' if name == active_brain else 'STANDBY'}"
+    complete = {"brain": name, **status}
+    details = format_status(complete).splitlines()
+    return "\n".join([heading, *details[2:]])
+
+
 class OverlordConsole:
-    def __init__(self, log_path: Path, signal_path: Path) -> None:
+    def __init__(
+        self,
+        log_path: Path,
+        signal_path: Path,
+        state_path: Path,
+        status_path: Path | None = None,
+    ) -> None:
         self.log_path = log_path
         self.signal_path = signal_path
+        self.state_path = state_path
+        self.status_path = status_path
         self.offset = 0
         self.file_identity: tuple[int, int, int] | None = None
         self.signal_mtime = 0
+        self.status_mtime = 0
 
         self.root = tk.Tk()
         self.root.title("Overlord Console")
@@ -41,6 +63,7 @@ class OverlordConsole:
         self._build_ui()
         self._configure_tags()
         self._seek_initial_tail()
+        self._write_visibility("visible")
         self.root.after(POLL_MS, self.poll)
 
     def _build_ui(self) -> None:
@@ -78,6 +101,26 @@ class OverlordConsole:
             variable=self.autoscroll,
             style="Console.TCheckbutton",
         ).pack(side="right", padx=10)
+
+        status_frame = ttk.Frame(outer, style="Console.TFrame")
+        status_frame.pack(fill="x", pady=(0, 8))
+        self.brain_status = {}
+        for name in ("claude", "codex"):
+            value = tk.StringVar(value=format_brain_summary(name, {}, ""))
+            self.brain_status[name] = value
+            card = tk.Label(
+                status_frame,
+                textvariable=value,
+                bg="#172033",
+                fg="#dbeafe",
+                justify="left",
+                anchor="nw",
+                padx=12,
+                pady=8,
+                font=("Segoe UI", 9),
+            )
+            padding = (0, 4) if name == "claude" else (4, 0)
+            card.pack(side="left", fill="x", expand=True, padx=padding)
 
         text_frame = ttk.Frame(outer, style="Console.TFrame")
         text_frame.pack(fill="both", expand=True)
@@ -170,13 +213,42 @@ class OverlordConsole:
         elif action == "show":
             self.show()
 
+    def _read_brain_status(self) -> None:
+        if self.status_path is None:
+            return
+        try:
+            mtime = self.status_path.stat().st_mtime_ns
+            if mtime == self.status_mtime:
+                return
+            payload = json.loads(self.status_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            return
+        self.status_mtime = mtime
+        active = str(payload.get("active_brain") or "")
+        statuses = payload.get("brains")
+        if not isinstance(statuses, dict):
+            return
+        for name, variable in self.brain_status.items():
+            status = statuses.get(name)
+            current = status if isinstance(status, dict) else {}
+            variable.set(format_brain_summary(name, current, active))
+
     def poll(self) -> None:
         self._read_new_log()
         self._check_signal()
+        self._read_brain_status()
         self.root.after(POLL_MS, self.poll)
+
+    def _write_visibility(self, state: str) -> None:
+        try:
+            self.state_path.parent.mkdir(parents=True, exist_ok=True)
+            self.state_path.write_text(state, encoding="utf-8")
+        except OSError:
+            pass
 
     def show(self) -> None:
         self.root.deiconify()
+        self._write_visibility("visible")
         self.root.lift()
         self.root.attributes("-topmost", True)
         self.root.after(200, lambda: self.root.attributes("-topmost", False))
@@ -184,6 +256,7 @@ class OverlordConsole:
 
     def hide(self) -> None:
         self.root.withdraw()
+        self._write_visibility("hidden")
 
     def clear(self) -> None:
         self.text.configure(state="normal")
@@ -203,8 +276,10 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--log", type=Path, required=True)
     parser.add_argument("--signal", type=Path, required=True)
+    parser.add_argument("--state", type=Path, required=True)
+    parser.add_argument("--status", type=Path)
     args = parser.parse_args()
-    OverlordConsole(args.log, args.signal).run()
+    OverlordConsole(args.log, args.signal, args.state, args.status).run()
 
 
 if __name__ == "__main__":

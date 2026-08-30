@@ -17,16 +17,23 @@ class WindowsTray:
     """Run a small pystray icon with a right-click Stop action."""
 
     def __init__(
-        self, on_stop: Callable[[], None], log_path: Path | None = None
+        self,
+        on_stop: Callable[[], None],
+        log_path: Path | None = None,
+        status_path: Path | None = None,
     ) -> None:
         self.on_stop = on_stop
         self.log_path = log_path
+        self.status_path = status_path
         self._brain_name = "starting"
         self._icon = None
         self._thread: threading.Thread | None = None
         self._console_process: subprocess.Popen | None = None
         self._console_signal = (
             log_path.parent / "console-window.signal" if log_path is not None else None
+        )
+        self._console_state = (
+            log_path.parent / "console-window.state" if log_path is not None else None
         )
 
     def start(self, brain_name: str) -> bool:
@@ -55,8 +62,7 @@ class WindowsTray:
                 enabled=False,
             ),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Show Console", self._show_console_clicked),
-            pystray.MenuItem("Hide Console", self._hide_console_clicked),
+            pystray.MenuItem(self._console_menu_label, self._toggle_console_clicked),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Stop Overlord", self._stop_clicked),
         )
@@ -84,14 +90,25 @@ class WindowsTray:
         self.on_stop()
         icon.stop()
 
-    def _show_console_clicked(self, icon, item) -> None:
-        if self._launch_console_viewer():
-            self._signal_console("show")
+    def _console_is_visible(self) -> bool:
+        if self._console_process is None or self._console_process.poll() is not None:
+            return False
+        if self._console_state is None:
+            return True
+        try:
+            return self._console_state.read_text(encoding="utf-8").strip() == "visible"
+        except OSError:
+            return True
 
-    def _hide_console_clicked(self, icon, item) -> None:
-        if self._console_process is not None and self._console_process.poll() is None:
+    def _console_menu_label(self, item=None) -> str:
+        return "Hide Console" if self._console_is_visible() else "Show Console"
+
+    def _toggle_console_clicked(self, icon, item) -> None:
+        if self._console_is_visible():
             self._signal_console("hide")
             log.info("Hid Overlord console")
+        elif self._launch_console_viewer():
+            self._signal_console("show")
 
     def _signal_console(self, action: str) -> None:
         if self._console_signal is None:
@@ -99,6 +116,9 @@ class WindowsTray:
         try:
             self._console_signal.parent.mkdir(parents=True, exist_ok=True)
             self._console_signal.write_text(action, encoding="utf-8")
+            if self._console_state is not None:
+                state = "visible" if action == "show" else "hidden"
+                self._console_state.write_text(state, encoding="utf-8")
         except OSError as exc:
             log.warning("Could not signal Overlord console window: %s", exc)
 
@@ -109,20 +129,27 @@ class WindowsTray:
             return False
         if self._console_process is not None and self._console_process.poll() is None:
             return True
+        if self._console_state is not None:
+            self._console_state.unlink(missing_ok=True)
         pythonw = Path(sys.executable).with_name("pythonw.exe")
         if not pythonw.exists():
             pythonw = Path(sys.executable)
         viewer = Path(__file__).resolve().parent.parent / "tools" / "overlord_console.py"
+        arguments = [
+            str(pythonw),
+            str(viewer),
+            "--log",
+            str(self.log_path),
+            "--signal",
+            str(self._console_signal),
+            "--state",
+            str(self._console_state),
+        ]
+        if self.status_path is not None:
+            arguments.extend(("--status", str(self.status_path)))
         try:
             self._console_process = subprocess.Popen(
-                [
-                    str(pythonw),
-                    str(viewer),
-                    "--log",
-                    str(self.log_path),
-                    "--signal",
-                    str(self._console_signal),
-                ],
+                arguments,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
         except OSError as exc:

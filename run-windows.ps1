@@ -11,6 +11,9 @@ param(
 $ErrorActionPreference = "Stop"
 $LaunchDirectory = (Get-Location).Path
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+# A dev checkout has a .git directory; a deployed/managed install is a plain copy.
+$IsManagedInstall = -not (Test-Path -LiteralPath (Join-Path $ProjectRoot ".git"))
+$InstallMode = if ($IsManagedInstall) { "managed (deployed copy)" } else { "dev (source checkout)" }
 $Python = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
 $Requirements = Join-Path $ProjectRoot "requirements.txt"
 $EnvFile = Join-Path $ProjectRoot ".env"
@@ -133,6 +136,7 @@ $Sandbox = if ($env:OVERLORD_CODEX_SANDBOX) {
 } else {
     "read-only"
 }
+Write-Host "Install:   $InstallMode"
 Write-Host "Workspace: $WorkingDirectory"
 Write-Host "Sandbox:   $Sandbox"
 if ($env:OVERLORD_CODEX_BIN) {

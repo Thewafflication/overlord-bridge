@@ -38,15 +38,47 @@ def set_env_value(path: Any, key: str, value: str) -> None:
     path.write_text(rendered, encoding="utf-8")
 
 
+def _friendly_local_time(
+    value: datetime.datetime,
+    *,
+    now: datetime.datetime | None = None,
+) -> str:
+    """Render an aware timestamp in the machine's local timezone."""
+    local = value.astimezone()
+    local_now = (now or datetime.datetime.now().astimezone()).astimezone()
+    day_delta = (local.date() - local_now.date()).days
+    if day_delta == 0:
+        day = "Today"
+    elif day_delta == 1:
+        day = "Tomorrow"
+    elif day_delta == -1:
+        day = "Yesterday"
+    else:
+        day = local.strftime("%a, %b %d").replace(" 0", " ")
+    clock = local.strftime("%I:%M %p").lstrip("0")
+    zone = local.tzname() or local.strftime("%z")
+    return f"{day} at {clock} {zone}".rstrip()
+
+
 def _format_reset(value: Any) -> str | None:
+    reset: datetime.datetime
     if isinstance(value, (int, float)):
         try:
-            reset = datetime.datetime.fromtimestamp(value).astimezone()
+            reset = datetime.datetime.fromtimestamp(
+                value, tz=datetime.timezone.utc
+            ).astimezone()
         except (OSError, OverflowError, ValueError):
             return None
-        return reset.strftime("%b %d, %I:%M %p").replace(" 0", " ")
+        return _friendly_local_time(reset)
     if isinstance(value, str) and value.strip():
-        return value.strip()
+        text = value.strip()
+        try:
+            reset = datetime.datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            return text
+        if reset.tzinfo is None:
+            reset = reset.astimezone()
+        return _friendly_local_time(reset)
     return None
 
 

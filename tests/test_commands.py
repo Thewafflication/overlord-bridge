@@ -1,10 +1,16 @@
 import sys
+import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from modules.commands import HELP_TEXT, format_status, set_env_value  # noqa: E402
+from modules.commands import (  # noqa: E402
+    HELP_TEXT,
+    _format_reset,
+    format_status,
+    set_env_value,
+)
 
 
 def test_help_lists_all_commands():
@@ -62,3 +68,19 @@ def test_format_status_handles_unavailable_usage():
     )
     assert "Session: not started" in text
     assert "Usage: unavailable from this brain" in text
+
+
+def test_format_reset_converts_epoch_and_iso_to_local_friendly_time():
+    epoch = 1_800_000_000
+    iso = datetime.datetime.fromtimestamp(
+        epoch, tz=datetime.timezone.utc
+    ).isoformat()
+
+    epoch_text = _format_reset(epoch)
+    iso_text = _format_reset(iso)
+
+    assert epoch_text == iso_text
+    assert " at " in epoch_text
+    assert epoch_text.endswith(
+        datetime.datetime.fromtimestamp(epoch).astimezone().tzname()
+    )

@@ -29,6 +29,7 @@ Security:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import signal
@@ -64,6 +65,7 @@ log = logging.getLogger("overlord.bridge")
 
 BASE_DIR = Path(__file__).resolve().parent
 CONSOLE_LOG_FILE = BASE_DIR / "run" / "overlord.log"
+CONSOLE_STATUS_FILE = BASE_DIR / "run" / "brain-status.json"
 
 
 def configure_file_logging() -> None:
@@ -351,10 +353,20 @@ class Bridge:
         self._brain_lock = asyncio.Lock()
         self._active_turn_task: asyncio.Task[None] | None = None
         self._status_cache: dict[str, Any] = self._basic_status()
+        self._status_by_brain = {
+            name: self._basic_status_for(name) for name in VALID_BRAINS
+        }
+        self._status_by_brain[self.brain.name] = dict(self._status_cache)
+        self._console_status_file = CONSOLE_STATUS_FILE
         self._conversation_history = SharedConversationHistory(HANDOFF_CONTEXT_CHARS)
         self._conversation_history.mark_seen(self.brain_name)
         self._pending_handoff: Handoff | None = None
-        self.tray = WindowsTray(self.request_shutdown, log_path=CONSOLE_LOG_FILE)
+        self.tray = WindowsTray(
+            self.request_shutdown,
+            log_path=CONSOLE_LOG_FILE,
+            status_path=CONSOLE_STATUS_FILE,
+        )
+        self._write_console_status()
         self._thread_report_unsupported_logged = False
         self._visible_report_unsupported_logged = False
         # Brain-agnostic worker dispatch: watches dispatch/ and pushes worker
@@ -763,16 +775,93 @@ class Bridge:
         status["model"] = getattr(self.brain, "model", None) or status.get("model")
         status["session_id"] = getattr(self.brain, "session_id", None)
         status["turn_state"] = "active" if self._turn_is_active() else "idle"
+        if hasattr(self, "_status_by_brain"):
+            self._status_by_brain[self.brain.name] = dict(status)
+        self._write_console_status()
         self.telegram.send(chat_id, format_status(status))
         asyncio.create_task(self._refresh_status(self.brain))
 
     def _basic_status(self) -> dict[str, Any]:
+        return self._basic_status_for(self.brain.name)
+
+    def _basic_status_for(self, brain_name: str) -> dict[str, Any]:
+        if brain_name == getattr(self.brain, "name", None):
+            model = getattr(self.brain, "model", None) or "default"
+            session_id = getattr(self.brain, "session_id", None)
+        else:
+            model = MODEL if brain_name == "claude" else (CODEX_MODEL or "default")
+            session_id = "saved" if session_file_for(brain_name).exists() else None
         return {
-            "brain": self.brain.name,
-            "model": getattr(self.brain, "model", None) or "default",
-            "session_id": getattr(self.brain, "session_id", None),
-            "usage": None,
+            "brain": brain_name,
+            "model": model,
+            "session_id": session_id,
+            "usage": self._read_cached_usage(brain_name),
         }
+
+    @staticmethod
+    def _read_cached_usage(brain_name: str) -> dict[str, Any] | None:
+        if brain_name not in VALID_BRAINS:
+            return None
+        if brain_name == "codex":
+            path = Path.home() / ".cache" / "overlord" / "codex_usage.json"
+            try:
+                value = json.loads(path.read_text(encoding="utf-8"))
+                return value if isinstance(value, dict) else None
+            except (OSError, ValueError, TypeError):
+                return None
+
+        path = Path.home() / ".cache" / "near-limit-handoff" / "usage.json"
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            return None
+        if not isinstance(value, dict):
+            return None
+
+        def window(key: str) -> dict[str, Any] | None:
+            source = value.get(key)
+            if not isinstance(source, dict):
+                return None
+            try:
+                used = round(float(source["utilization"]), 1)
+            except (KeyError, TypeError, ValueError):
+                return None
+            return {
+                "used": used,
+                "gas": max(0, round(100 - used, 1)),
+                "resets_at": source.get("resets_at"),
+            }
+
+        session = window("five_hour")
+        weekly = window("seven_day")
+        if session is None and weekly is None:
+            return None
+        return {"session": session, "weekly": weekly, "source": "cache"}
+
+    def _write_console_status(self) -> None:
+        path = getattr(self, "_console_status_file", None)
+        if path is None:
+            return
+        statuses = {
+            name: dict(status)
+            for name, status in getattr(self, "_status_by_brain", {}).items()
+        }
+        active_status = statuses.get(self.brain.name)
+        if active_status is not None:
+            active_status["turn_state"] = (
+                "active" if self._turn_is_active() else "idle"
+            )
+        payload = {
+            "active_brain": self.brain.name,
+            "brains": statuses,
+        }
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = path.with_suffix(".tmp")
+            temporary.write_text(json.dumps(payload), encoding="utf-8")
+            temporary.replace(path)
+        except OSError as exc:
+            log.debug("Could not update tray brain status: %s", exc)
 
     async def _refresh_status(self, brain: Brain) -> None:
         try:
@@ -783,6 +872,9 @@ class Bridge:
 
         if brain is self.brain:
             self._status_cache = status
+            if hasattr(self, "_status_by_brain"):
+                self._status_by_brain[brain.name] = dict(status)
+            self._write_console_status()
 
     def _turn_is_active(self) -> bool:
         return self._active_turn_task is not None and not self._active_turn_task.done()
@@ -796,6 +888,10 @@ class Bridge:
             )
             return False
         self._active_turn_task = asyncio.create_task(self._handle_turn(chat_id, text))
+        self._write_console_status()
+        self._active_turn_task.add_done_callback(
+            lambda _task: self._write_console_status()
+        )
         return True
 
     async def _stop_active_turn(self) -> bool:
@@ -876,6 +972,10 @@ class Bridge:
             previous = self.brain
             self.brain = candidate
             self.brain_name = target
+            if hasattr(self, "_status_by_brain"):
+                self._status_cache = self._basic_status()
+                self._status_by_brain[target] = dict(self._status_cache)
+                self._write_console_status()
             self.tray.set_brain(target)
             self._pending_handoff = self._conversation_history.handoff_for(target)
             os.environ["OVERLORD_BRAIN"] = target
@@ -903,6 +1003,7 @@ class Bridge:
             f"🔄 Switched to {target} — {resume_text}.{handoff_text}"
             f"{persistence_text}",
         )
+        asyncio.create_task(self._refresh_status(self.brain))
         log.info("Runtime brain switch complete: %s -> %s", previous.name, target)
 
     async def _handle_turn(self, chat_id: int, text: str) -> None:
