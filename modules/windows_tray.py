@@ -9,6 +9,8 @@ import threading
 from pathlib import Path
 from typing import Callable
 
+from modules.version import display_version
+
 log = logging.getLogger("overlord.tray")
 ICON_PATH = Path(__file__).resolve().parent.parent / "assets" / "overlord.png"
 
@@ -21,10 +23,13 @@ class WindowsTray:
         on_stop: Callable[[], None],
         log_path: Path | None = None,
         status_path: Path | None = None,
+        command_path: Path | None = None,
     ) -> None:
         self.on_stop = on_stop
         self.log_path = log_path
         self.status_path = status_path
+        self.command_path = command_path
+        self.version = display_version()
         self._brain_name = "starting"
         self._icon = None
         self._thread: threading.Thread | None = None
@@ -57,7 +62,7 @@ class WindowsTray:
 
         menu = pystray.Menu(
             pystray.MenuItem(
-                lambda item: f"Overlord ({self._brain_name})",
+                lambda item: f"Overlord {self.version} ({self._brain_name})",
                 lambda icon, item: None,
                 enabled=False,
             ),
@@ -77,7 +82,7 @@ class WindowsTray:
         return True
 
     def _title(self) -> str:
-        return f"Overlord — {self._brain_name} — running"
+        return f"Overlord {self.version} — {self._brain_name} — running"
 
     def set_brain(self, brain_name: str) -> None:
         self._brain_name = brain_name
@@ -147,6 +152,8 @@ class WindowsTray:
         ]
         if self.status_path is not None:
             arguments.extend(("--status", str(self.status_path)))
+        if self.command_path is not None:
+            arguments.extend(("--command", str(self.command_path)))
         try:
             self._console_process = subprocess.Popen(
                 arguments,

@@ -212,6 +212,10 @@ class Brain(abc.ABC):
     # for paths that hand the turn to another process (Claude's shared job).
     last_turn_usage: dict[str, Any] | None = None
     last_turn_cost_usd: float | None = None
+    # "ok" | "error" — how the ENGINE ended the turn. Interruption is the
+    # bridge's own knowledge (it did the interrupting), so "stopped" is applied
+    # there rather than here.
+    last_turn_outcome: str = "ok"
 
     # Whether ``set_effort`` does anything for this brain.
     supports_effort: bool = False

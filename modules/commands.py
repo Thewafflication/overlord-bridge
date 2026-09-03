@@ -6,12 +6,14 @@ import datetime
 from typing import Any
 
 from modules.token_meter import TokenLedger, format_status_block, human
+from modules.version import display_version
 
 
 HELP_TEXT = """Overlord commands
 
 /help — list available commands
 /status — show the active brain, model, effort, usage and tokens
+/status all — show every brain side by side
 /tokens [n] — per-prompt token history (default 10)
 /quote <text> — estimate the input tokens a prompt would cost
 /model [name] — show or switch the active brain's model
@@ -126,7 +128,11 @@ def format_status(status: dict[str, Any]) -> str:
     """Render a compact, Telegram-friendly brain status message."""
     brain = str(status.get("brain") or "unknown")
     model = str(status.get("model") or "default")
-    lines = ["🤖 Overlord status", f"Brain: {brain}", f"Model: {model}"]
+    lines = [
+        f"🤖 Overlord status · {display_version()}",
+        f"Brain: {brain}",
+        f"Model: {model}",
+    ]
 
     turn_state = status.get("turn_state")
     if turn_state:
@@ -138,7 +144,12 @@ def format_status(status: dict[str, Any]) -> str:
     provider = status.get("model_provider")
     if provider:
         lines.append(f"Provider: {provider}")
-    lines.append(f"Session: {'active' if status.get('session_id') else 'not started'}")
+    session_id = status.get("session_id")
+    if session_id == "saved":
+        # A standby brain: the pin exists on disk but nothing is holding it.
+        lines.append("Session: saved, not loaded")
+    else:
+        lines.append(f"Session: {'active' if session_id else 'not started'}")
 
     ledger = status.get("ledger")
     if isinstance(ledger, TokenLedger):
@@ -187,6 +198,39 @@ def _age(timestamp: float, *, now: float | None = None) -> str:
     if minutes < 90:
         return f"{minutes}m ago"
     return f"{minutes // 60}h ago"
+
+
+def format_brain_card(name: str, status: dict[str, Any], active_brain: str) -> str:
+    """One brain's status as a labelled card, header line replaced.
+
+    Shared by the Tk console's side-by-side cards and by ``/status all`` so the
+    two never drift: there is exactly one place that decides what a brain's
+    status looks like, and it is :func:`format_status`.
+    """
+    role = "ACTIVE" if name == active_brain else "STANDBY"
+    complete = {"brain": name, **status}
+    # Drop format_status's own header and its "Brain:" line; the card heading
+    # already says which brain this is and whether it is the live one.
+    details = format_status(complete).splitlines()[2:]
+    return "\n".join([f"{name.upper()}  •  {role}", *details])
+
+
+def format_status_all(statuses: dict[str, dict[str, Any]], active_brain: str) -> str:
+    """``/status all``: every configured brain, active one first.
+
+    Only the active brain can be read live — asking a standby Codex for its rate
+    limits would mean spawning its app-server — so the others are rendered from
+    their last cached usage and their configured settings, and labelled as such.
+    """
+    ordered = sorted(statuses, key=lambda name: (name != active_brain, name))
+    blocks = [f"🤖 Overlord status · {display_version()}"]
+    for name in ordered:
+        blocks.append(format_brain_card(name, statuses.get(name) or {}, active_brain))
+    blocks.append(
+        "Standby brains are shown from their last cached reading; switch with "
+        "/brain <name> for live numbers."
+    )
+    return "\n\n".join(blocks)
 
 
 def format_quote(

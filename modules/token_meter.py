@@ -94,6 +94,11 @@ class TurnUsage:
     model: str = ""
     at: float = 0.0
     prompt_preview: str = ""
+    # How the turn ended: "ok", "stopped" (interrupted by /stop or /steer), or
+    # "error" (including hitting a usage cap). A stopped turn still spent real
+    # tokens, so it is booked — labelled, because the counters are whatever the
+    # engine had reported by the time it was cut off.
+    outcome: str = "ok"
 
     @property
     def billed_input(self) -> int:
@@ -117,6 +122,7 @@ def normalize_usage(
     cost_usd: float | None = None,
     at: float | None = None,
     prompt: str = "",
+    outcome: str = "ok",
 ) -> TurnUsage | None:
     """Flatten a brain's usage payload into a :class:`TurnUsage`, or None.
 
@@ -137,6 +143,7 @@ def normalize_usage(
         model=model,
         at=at if at is not None else datetime.datetime.now().timestamp(),
         prompt_preview=_preview(prompt),
+        outcome=outcome or "ok",
     )
     if usage.total_tokens <= 0:
         # Codex reports a total; Anthropic does not. Derive one, counting cache
@@ -209,6 +216,13 @@ def human(count: int | float | None) -> str:
     return f"{number / 1_000_000:.2f}M"
 
 
+OUTCOME_LABELS = {
+    "stopped": "stopped mid-turn — partial count",
+    "error": "turn failed — partial count",
+}
+OUTCOME_TAGS = {"stopped": "stopped", "error": "failed"}
+
+
 def _cost(value: float | None) -> str | None:
     if value is None:
         return None
@@ -228,6 +242,9 @@ def format_footer(usage: TurnUsage, totals: "LedgerTotals | None" = None) -> str
     if cost:
         bits.append(cost)
     line = "🧮 " + " · ".join(bits)
+    label = OUTCOME_LABELS.get(usage.outcome)
+    if label:
+        line += f"\n⚠️ {label}"
     if totals is not None and totals.prompts > 0:
         line += (
             f"\nSession: {human(totals.total_tokens)} over "
@@ -254,6 +271,9 @@ def format_status_block(ledger: "TokenLedger") -> str | None:
         ]
         if last.cache_read_tokens:
             parts.append(f"cached {human(last.cache_read_tokens)}")
+        tag = OUTCOME_TAGS.get(last.outcome)
+        if tag:
+            parts.append(tag)
         lines.append("Last prompt: " + " · ".join(parts))
     session = (
         f"Session tokens: {human(totals.total_tokens)} over {totals.prompts} "
@@ -286,6 +306,9 @@ def format_history(ledger: "TokenLedger", limit: int = 10) -> str:
         cost = _cost(usage.cost_usd)
         if cost:
             head += f" · {cost}"
+        tag = OUTCOME_TAGS.get(usage.outcome)
+        if tag:
+            head += f" · {tag}"
         lines.append(head)
         if usage.prompt_preview:
             lines.append(f"   “{usage.prompt_preview}”")
@@ -299,8 +322,14 @@ def format_history(ledger: "TokenLedger", limit: int = 10) -> str:
     session_cost = _cost(totals.cost_usd)
     if session_cost:
         footer += f" · {session_cost}"
+    partial = sum(1 for usage in ledger.entries if usage.outcome != "ok")
     lines.append("")
     lines.append(footer)
+    if partial:
+        lines.append(
+            f"({partial} of the recorded prompts were cut short; their counts "
+            "are whatever the engine had reported by then.)"
+        )
     return "\n".join(lines)
 
 

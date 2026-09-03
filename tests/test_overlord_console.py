@@ -1,5 +1,12 @@
 import importlib.util
+import json
+import sys
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+from modules.version import display_version  # noqa: E402
 
 
 MODULE_PATH = Path(__file__).resolve().parent.parent / "tools" / "overlord_console.py"
@@ -39,3 +46,57 @@ def test_brain_status_card_marks_inactive_brain_standby():
     text = MODULE.format_brain_summary("codex", {}, "claude")
     assert "CODEX  •  STANDBY" in text
     assert "Usage: unavailable" in text
+
+
+def test_status_cards_show_effort_and_token_totals():
+    text = MODULE.format_brain_summary(
+        "claude", {"model": "opus", "effort": "high", "session_id": "s"}, "claude"
+    )
+    assert "Effort: high" in text
+    # The card is the same renderer Telegram uses, minus its header lines.
+    assert not text.startswith("🤖")
+    assert "Brain: claude" not in text
+
+
+def test_a_standby_brain_says_its_session_is_saved_not_running():
+    text = MODULE.format_brain_summary("codex", {"session_id": "saved"}, "claude")
+    assert "Session: saved, not loaded" in text
+
+
+def _console(tmp_path, command_path):
+    """A console instance without a Tk mainloop, for the file-writing path."""
+    console = MODULE.OverlordConsole.__new__(MODULE.OverlordConsole)
+    console.command_path = command_path
+    console.action_status = MODULE.tk.StringVar(value="")
+    console.root = type("Root", (), {"after": lambda self, *a: None})()
+    return console
+
+
+def test_a_status_button_writes_a_command_the_bridge_can_read(tmp_path):
+    target = tmp_path / "console-command.json"
+    console = _console(tmp_path, target)
+    console.send_command("refresh_all")
+    payload = json.loads(target.read_text(encoding="utf-8"))
+    assert payload["action"] == "refresh_all"
+    assert isinstance(payload["at"], int)
+    assert "refresh all" in console.action_status.get()
+
+
+def test_pressing_the_same_button_twice_is_two_distinct_requests(tmp_path):
+    target = tmp_path / "console-command.json"
+    console = _console(tmp_path, target)
+    console.send_command("refresh_status")
+    first = json.loads(target.read_text(encoding="utf-8"))["at"]
+    console.send_command("refresh_status")
+    second = json.loads(target.read_text(encoding="utf-8"))["at"]
+    assert second > first
+
+
+def test_without_a_bridge_the_buttons_say_so_instead_of_failing(tmp_path):
+    console = _console(tmp_path, None)
+    console.send_command("refresh_status")
+    assert console.action_status.get() == "No bridge connected"
+
+
+def test_the_console_knows_its_own_version():
+    assert display_version().startswith("v")

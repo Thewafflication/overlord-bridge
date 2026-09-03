@@ -35,6 +35,7 @@ class FakeBrain:
         self.effort = None
         self.last_turn_usage = usage
         self.last_turn_cost_usd = cost
+        self.last_turn_outcome = "ok"
         self._count = count
         self.set_model_calls = []
         self.set_effort_calls = []
@@ -56,6 +57,9 @@ class FakeBrain:
             return self.set_model_error
         self.model = model
         return None
+
+    async def interrupt_active_turn(self):
+        return False
 
     async def set_effort(self, effort):
         self.set_effort_calls.append(effort)
@@ -282,5 +286,273 @@ def test_accounting_failures_never_break_a_delivered_reply():
         await instance._handle_turn(42, "still works")
         # The answer itself was delivered; only the footer is missing.
         assert ("answered" in text for _, text in instance.telegram.messages)
+
+    asyncio.run(scenario())
+
+
+# ------------------------------------------------- interrupted / failed turns
+class SlowBrain(FakeBrain):
+    """A brain whose turn hangs until it is cancelled, having spent tokens."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.started = asyncio.Event()
+
+    async def query(self, text):
+        self.started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            # Mirrors the real brains: the generator's own finally books
+            # whatever the engine had reported before the interruption.
+            self.last_turn_usage = {"input_tokens": 900, "output_tokens": 120}
+            raise
+        yield "never"
+
+
+def test_a_stopped_turn_still_books_the_tokens_it_spent():
+    async def scenario():
+        brain = SlowBrain()
+        instance = make_bridge(brain)
+        instance._start_turn(42, "long job")
+        await brain.started.wait()
+        await instance._handle_stop(42)
+        assert instance.tokens.totals.prompts == 1
+        booked = instance.tokens.last
+        assert booked.outcome == "stopped"
+        assert booked.input_tokens == 900
+        assert "stopped mid-turn" in instance.telegram.messages[-1][1]
+
+    asyncio.run(scenario())
+
+
+def test_a_steered_turn_books_the_abandoned_work_before_the_replacement():
+    async def scenario():
+        brain = SlowBrain()
+        instance = make_bridge(brain)
+        instance._start_turn(42, "first plan")
+        await brain.started.wait()
+        await instance._handle_steer(42, "/steer second plan")
+        # The interrupted turn was booked, and labelled as cut short, before the
+        # replacement turn had a chance to finish.
+        assert instance.tokens.entries[0].outcome == "stopped"
+        assert instance.tokens.entries[0].prompt_preview == "first plan"
+        await instance._stop_active_turn()
+
+    asyncio.run(scenario())
+
+
+def test_a_failed_turn_is_booked_and_labelled():
+    async def scenario():
+        brain = FakeBrain(usage={"input_tokens": 300, "output_tokens": 10})
+
+        async def exploding(text):
+            brain.last_turn_usage = {"input_tokens": 300, "output_tokens": 10}
+            raise RuntimeError("upstream said no")
+            yield ""
+
+        brain.query = exploding
+        instance = make_bridge(brain)
+        await instance._handle_turn(42, "doomed ask")
+        assert instance.tokens.last.outcome == "error"
+        assert instance.tokens.last.input_tokens == 300
+
+    asyncio.run(scenario())
+
+
+def test_an_engine_reported_failure_such_as_a_usage_cap_keeps_its_label():
+    async def scenario():
+        brain = FakeBrain(usage={"input_tokens": 50, "output_tokens": 5})
+        brain.last_turn_outcome = "error"
+        instance = make_bridge(brain)
+        await instance._handle_turn(42, "one ask too many")
+        # The bridge saw a clean turn; the engine's own verdict wins.
+        assert instance.tokens.last.outcome == "error"
+
+    asyncio.run(scenario())
+
+
+def test_a_normal_turn_is_not_labelled():
+    async def scenario():
+        instance = make_bridge(
+            FakeBrain(usage={"input_tokens": 10, "output_tokens": 5})
+        )
+        await instance._handle_turn(42, "fine")
+        assert instance.tokens.last.outcome == "ok"
+        assert "stopped" not in instance.telegram.messages[-1][1]
+
+    asyncio.run(scenario())
+
+
+# ---------------------------------------------------------------- /status all
+def test_status_all_reports_every_brain_with_the_active_one_first():
+    async def scenario():
+        instance = make_bridge(FakeBrain())
+        instance._status_by_brain = {
+            "claude": instance._basic_status(),
+            "codex": {"brain": "codex", "model": "gpt-5-codex", "effort": "medium"},
+        }
+        await instance._handle_status(42, "/status all")
+        reply = instance.telegram.messages[-1][1]
+        assert reply.index("CLAUDE") < reply.index("CODEX")
+        assert "CLAUDE  •  ACTIVE" in reply
+        assert "CODEX  •  STANDBY" in reply
+        assert "gpt-5-codex" in reply
+        assert "Standby brains are shown from their last cached reading" in reply
+
+    asyncio.run(scenario())
+
+
+def test_plain_status_still_reports_only_the_active_brain():
+    async def scenario():
+        instance = make_bridge(FakeBrain())
+        await instance._handle_status(42, "/status")
+        reply = instance.telegram.messages[-1][1]
+        assert "CODEX" not in reply
+        assert "Brain: claude" in reply
+
+    asyncio.run(scenario())
+
+
+def test_every_status_reply_carries_the_running_version():
+    async def scenario():
+        instance = make_bridge(FakeBrain())
+        await instance._handle_status(42, "/status")
+        assert bridge.display_version() in instance.telegram.messages[-1][1]
+        await instance._handle_status(42, "/status all")
+        assert bridge.display_version() in instance.telegram.messages[-1][1]
+
+    asyncio.run(scenario())
+
+
+# ------------------------------------------------------- console command file
+def make_console_bridge(tmp_path, brain=None):
+    instance = make_bridge(brain or FakeBrain())
+    instance._console_status_file = tmp_path / "brain-status.json"
+    instance._console_command_file = tmp_path / "console-command.json"
+    instance._console_command_mtime = 0
+    instance._status_by_brain = {
+        name: instance._basic_status_for(name) for name in bridge.VALID_BRAINS
+    }
+    return instance
+
+
+def test_the_console_refresh_button_takes_a_live_reading(tmp_path):
+    async def scenario():
+        brain = FakeBrain()
+        calls = []
+        original = brain.status
+
+        async def counted(*, force_refresh=False):
+            calls.append(force_refresh)
+            return await original(force_refresh=force_refresh)
+
+        brain.status = counted
+        instance = make_console_bridge(tmp_path, brain)
+        await instance._run_console_action("refresh_status")
+        assert calls == [True]
+
+    asyncio.run(scenario())
+
+
+def test_the_console_send_button_pushes_status_to_the_owner(tmp_path):
+    async def scenario():
+        instance = make_console_bridge(tmp_path)
+        await instance._run_console_action("send_status_all")
+        assert "CODEX  •  STANDBY" in instance.telegram.messages[-1][1]
+
+    asyncio.run(scenario())
+
+
+def test_an_unknown_console_action_is_ignored_quietly(tmp_path):
+    async def scenario():
+        instance = make_console_bridge(tmp_path)
+        await instance._run_console_action("rm -rf /")
+        assert instance.telegram.messages == []
+
+    asyncio.run(scenario())
+
+
+def test_the_console_status_payload_carries_the_version(tmp_path):
+    instance = make_console_bridge(tmp_path)
+    instance._write_console_status()
+    import json as _json
+
+    payload = _json.loads(
+        instance._console_status_file.read_text(encoding="utf-8")
+    )
+    assert payload["version"] == bridge.display_version()
+    assert payload["active_brain"] == "claude"
+    assert set(payload["brains"]) == set(bridge.VALID_BRAINS)
+
+
+def test_the_command_loop_ignores_a_file_left_over_from_a_previous_run(tmp_path):
+    async def scenario():
+        instance = make_console_bridge(tmp_path)
+        instance._console_command_file.write_text(
+            '{"action": "send_status", "at": 1}', encoding="utf-8"
+        )
+        ran = []
+        instance._run_console_action = lambda action: ran.append(action) or _noop()
+
+        async def _noop():
+            return None
+
+        instance._shutdown_event = asyncio.Event()
+        task = asyncio.ensure_future(instance._console_command_loop())
+        await asyncio.sleep(0.6)
+        instance._shutdown_event.set()
+        await asyncio.sleep(0.5)
+        task.cancel()
+        # The stale file was adopted as the baseline, not replayed on startup.
+        assert ran == []
+
+    asyncio.run(scenario())
+
+
+def test_the_command_loop_picks_up_a_new_button_press(tmp_path):
+    async def scenario():
+        instance = make_console_bridge(tmp_path)
+        ran = []
+
+        async def record(action):
+            ran.append(action)
+
+        instance._run_console_action = record
+        instance._shutdown_event = asyncio.Event()
+        task = asyncio.ensure_future(instance._console_command_loop())
+        await asyncio.sleep(0.1)
+        instance._console_command_file.write_text(
+            '{"action": "refresh_all", "at": 2}', encoding="utf-8"
+        )
+        await asyncio.sleep(0.7)
+        instance._shutdown_event.set()
+        task.cancel()
+        assert ran == ["refresh_all"]
+
+    asyncio.run(scenario())
+
+
+def test_a_corrupt_command_file_does_not_stop_the_loop(tmp_path):
+    async def scenario():
+        instance = make_console_bridge(tmp_path)
+        ran = []
+
+        async def record(action):
+            ran.append(action)
+
+        instance._run_console_action = record
+        instance._shutdown_event = asyncio.Event()
+        task = asyncio.ensure_future(instance._console_command_loop())
+        await asyncio.sleep(0.1)
+        instance._console_command_file.write_text("{not json", encoding="utf-8")
+        await asyncio.sleep(0.6)
+        instance._console_command_file.write_text(
+            '{"action": "refresh_status", "at": 3}', encoding="utf-8"
+        )
+        await asyncio.sleep(0.7)
+        instance._shutdown_event.set()
+        task.cancel()
+        assert ran == ["refresh_status"]
 
     asyncio.run(scenario())

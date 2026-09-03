@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "overlord-bridge"
-version = "0.1.0"
+version = "1.0.5"
 description = "Drive a home-rooted Overlord agent from Telegram (Claude/Codex control bridge)."
 readme = "README.md"
 requires-python = ">=3.12"

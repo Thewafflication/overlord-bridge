@@ -349,6 +349,7 @@ class CodexBrain(Brain):
         self._last_turn_token_usage: dict[str, Any] | None = None
         self.last_turn_usage: dict[str, Any] | None = None
         self.last_turn_cost_usd: float | None = None
+        self.last_turn_outcome: str = "ok"
         # Set once a thread/start rejects the effort parameter, so we stop
         # sending it instead of retrying on every reconnect.
         self._effort_unsupported = False
@@ -1075,6 +1076,7 @@ class CodexBrain(Brain):
         # be recorded twice off the previous turn's numbers.
         self.last_turn_usage = None
         self.last_turn_cost_usd = None
+        self.last_turn_outcome = "ok"
         self._last_turn_token_usage = None
         self._prev_token_usage_total = (
             dict(self._token_usage_total)
@@ -1105,11 +1107,16 @@ class CodexBrain(Brain):
                     yield chunk
         finally:
             self._turn_queue = None
+            # Book the usage here, not after the loop: /stop and /steer cancel
+            # this generator mid-await, so anything below the try would never
+            # run and an interrupted turn's tokens would go unreported.
+            self.last_turn_usage = self._resolve_turn_usage()
+            if self._turn_error:
+                self.last_turn_outcome = "error"
 
         # Our own turn just bumped the rollout mtime; record it so the next
         # refresh only fires on genuinely external (terminal) changes.
         self._record_mtime()
-        self.last_turn_usage = self._resolve_turn_usage()
 
         if self._turn_error:
             yield f"⚠️ {self._turn_error}"

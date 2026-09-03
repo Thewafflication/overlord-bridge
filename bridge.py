@@ -48,8 +48,10 @@ from modules.commands import (
     VALID_BRAINS,
     format_quote,
     format_status,
+    format_status_all,
     set_env_value,
 )
+from modules.version import display_version
 from modules.token_meter import (
     TokenLedger,
     estimate_tokens,
@@ -81,6 +83,10 @@ log = logging.getLogger("overlord.bridge")
 BASE_DIR = Path(__file__).resolve().parent
 CONSOLE_LOG_FILE = BASE_DIR / "run" / "overlord.log"
 CONSOLE_STATUS_FILE = BASE_DIR / "run" / "brain-status.json"
+# The console is a separate read-only process, so its buttons reach the bridge
+# by writing this file; the bridge watches its mtime. One-way and file-based on
+# purpose: no socket to secure, and a stale file is simply ignored.
+CONSOLE_COMMAND_FILE = BASE_DIR / "run" / "console-command.json"
 TELEGRAM_CHOICE_INSTRUCTIONS = (
     "When you need the user to choose among discrete options or answer a short "
     "clarifying question, use your native interactive user-input tool instead "
@@ -403,6 +409,8 @@ class Bridge:
         }
         self._status_by_brain[self.brain.name] = dict(self._status_cache)
         self._console_status_file = CONSOLE_STATUS_FILE
+        self._console_command_file = CONSOLE_COMMAND_FILE
+        self._console_command_mtime = 0
         self.tokens = TokenLedger(
             path=TOKEN_LEDGER_FILE, max_entries=TOKEN_LEDGER_MAX
         )
@@ -415,6 +423,7 @@ class Bridge:
             self.request_shutdown,
             log_path=CONSOLE_LOG_FILE,
             status_path=CONSOLE_STATUS_FILE,
+            command_path=CONSOLE_COMMAND_FILE,
         )
         self._write_console_status()
         self._thread_report_unsupported_logged = False
@@ -602,7 +611,8 @@ class Bridge:
         asyncio.create_task(self._refresh_status(self.brain))
 
         log.info(
-            "Overlord online (brain=%s, cwd=%s, resumed=%s, auto_approve=%s)",
+            "Overlord %s online (brain=%s, cwd=%s, resumed=%s, auto_approve=%s)",
+            display_version(),
             self.brain.name,
             CWD,
             resumed,
@@ -614,14 +624,15 @@ class Bridge:
             if AUTO_APPROVE
             else ""
         )
+        version = display_version()
         self.telegram.send(
             OWNER,
             (
-                f"🟢 Overlord online [{self.brain.name}] — picked up where we left off. "
-                "(/new for a clean slate.)"
+                f"🟢 Overlord {version} online [{self.brain.name}] — picked up "
+                "where we left off. (/new for a clean slate.)"
                 if resumed
-                else f"🟢 Overlord online [{self.brain.name}]. Send me a task. "
-                "(/new starts a clean session.)"
+                else f"🟢 Overlord {version} online [{self.brain.name}]. Send me a "
+                "task. (/new starts a clean session.)"
             )
             + approve_note,
         )
@@ -629,6 +640,7 @@ class Bridge:
         asyncio.create_task(self.workers.watch())
         if STATUS_REFRESH_SECS:
             asyncio.create_task(self._status_refresh_loop())
+        asyncio.create_task(self._console_command_loop())
         try:
             while not self._shutdown_event.is_set():
                 chat_id, text = await asyncio.get_running_loop().run_in_executor(
@@ -642,8 +654,8 @@ class Bridge:
                 if text.strip() == "/help":
                     self.telegram.send(chat_id, HELP_TEXT)
                     continue
-                if text.strip() == "/status":
-                    await self._handle_status(chat_id)
+                if text.strip().lower().split(maxsplit=1)[0] == "/status":
+                    await self._handle_status(chat_id, text)
                     continue
                 if text.strip() == "/stop":
                     await self._handle_stop(chat_id)
@@ -832,7 +844,7 @@ class Bridge:
         )
         log.info("Session reset via /new")
 
-    async def _handle_status(self, chat_id: int) -> None:
+    async def _handle_status(self, chat_id: int, text: str = "/status") -> None:
         """Answer /status with a reading taken NOW, not the previous one.
 
         This used to send ``self._status_cache`` and only afterwards kick off a
@@ -866,7 +878,78 @@ class Bridge:
         # Attached after the per-brain snapshot above: the ledger is a live
         # object, not serialisable state for the tray's status file.
         status["ledger"] = getattr(self, "tokens", None)
+
+        argument = (text or "").strip().split(maxsplit=1)
+        if len(argument) > 1 and argument[1].strip().lower() in ("all", "*", "brains"):
+            statuses = {
+                name: dict(getattr(self, "_status_by_brain", {}).get(name) or {})
+                or self._basic_status_for(name)
+                for name in VALID_BRAINS
+            }
+            statuses[self.brain.name] = status
+            self.telegram.send(
+                chat_id, format_status_all(statuses, self.brain.name)
+            )
+            return
         self.telegram.send(chat_id, format_status(status))
+
+    async def _console_command_loop(self) -> None:
+        """Act on button presses from the Tk console.
+
+        The console runs as its own process and cannot call into the bridge, so
+        it drops a small JSON file and this loop picks it up. Every action is
+        read-only with respect to the conversation — refreshing status or
+        re-sending it to Telegram — so an unexpected or stale file can never do
+        anything destructive.
+        """
+        # Ignore whatever is already on disk from a previous run.
+        try:
+            self._console_command_mtime = self._console_command_file.stat().st_mtime_ns
+        except OSError:
+            self._console_command_mtime = 0
+        while not self._shutdown_event.is_set():
+            await asyncio.sleep(0.4)
+            try:
+                mtime = self._console_command_file.stat().st_mtime_ns
+                if mtime == self._console_command_mtime:
+                    continue
+                self._console_command_mtime = mtime
+                payload = json.loads(
+                    self._console_command_file.read_text(encoding="utf-8")
+                )
+            except (OSError, ValueError, TypeError):
+                continue
+            action = str((payload or {}).get("action") or "").strip().lower()
+            try:
+                await self._run_console_action(action)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 - a button must not kill the loop
+                log.warning("Console action %r failed: %s", action, exc)
+
+    async def _run_console_action(self, action: str) -> None:
+        if action == "refresh_status":
+            await self._refresh_status(self.brain, force=True)
+            self._write_console_status()
+            log.info("Refreshed %s status from the console", self.brain.name)
+        elif action == "refresh_all":
+            # Only the active brain can be read live; the others are re-read
+            # from their on-disk usage caches, which is what /status all shows.
+            await self._refresh_status(self.brain, force=True)
+            for name in VALID_BRAINS:
+                if name == self.brain.name:
+                    continue
+                self._status_by_brain[name] = self._basic_status_for(name)
+            self._write_console_status()
+            log.info("Refreshed all brain status cards from the console")
+        elif action == "send_status":
+            await self._handle_status(OWNER, "/status")
+            log.info("Sent /status to Telegram from the console")
+        elif action == "send_status_all":
+            await self._handle_status(OWNER, "/status all")
+            log.info("Sent /status all to Telegram from the console")
+        else:
+            log.debug("Ignoring unknown console action %r", action)
 
     async def _status_refresh_loop(self) -> None:
         """Keep the cached reading warm so the tray and console stay current."""
@@ -958,6 +1041,7 @@ class Bridge:
                 "active" if self._turn_is_active() else "idle"
             )
         payload = {
+            "version": display_version(),
             "active_brain": self.brain.name,
             "brains": statuses,
         }
@@ -1262,7 +1346,9 @@ class Bridge:
         asyncio.create_task(self._refresh_status(self.brain))
         log.info("Runtime brain switch complete: %s -> %s", previous.name, target)
 
-    def _record_turn_tokens(self, chat_id: int, prompt: str) -> None:
+    def _record_turn_tokens(
+        self, chat_id: int, prompt: str, *, outcome: str = "ok"
+    ) -> None:
         """Book the just-finished turn and, optionally, report it inline.
 
         Runs outside the brain lock and never raises: a bad counter must not
@@ -1270,6 +1356,10 @@ class Bridge:
         usage at all — Claude's shared-job path hands the turn to the terminal
         process, which does its own accounting — is silently skipped rather
         than booked as a zero.
+
+        *outcome* is the bridge's own view ("stopped" when it interrupted the
+        turn itself); anything else defers to what the engine reported, so a
+        usage-cap failure is booked and labelled rather than lost.
         """
         try:
             usage = normalize_usage(
@@ -1278,6 +1368,11 @@ class Bridge:
                 model=getattr(self.brain, "model", None) or "default",
                 cost_usd=getattr(self.brain, "last_turn_cost_usd", None),
                 prompt=prompt,
+                outcome=(
+                    outcome
+                    if outcome != "ok"
+                    else getattr(self.brain, "last_turn_outcome", "ok")
+                ),
             )
             if usage is None:
                 return
@@ -1293,6 +1388,7 @@ class Bridge:
     async def _handle_turn(self, chat_id: int, text: str) -> None:
         log.info("Dispatching turn: %s", text)
         chunks: list[str] = []
+        outcome = "ok"
         self.telegram.begin_typing(chat_id)
         try:
             async with self._brain_lock:
@@ -1308,14 +1404,20 @@ class Bridge:
                 self._conversation_history.append_exchange(text, "\n\n".join(chunks))
                 self._conversation_history.mark_seen(self.brain.name)
                 self._pending_handoff = None
-            self._record_turn_tokens(chat_id, text)
         except asyncio.CancelledError:
             log.info("Active turn cancelled")
+            # /stop and /steer land here. The turn still spent tokens, so mark
+            # it and let the finally below book what the engine had reported.
+            outcome = "stopped"
             raise
         except Exception as exc:  # noqa: BLE001 - report any turn failure to phone
             log.exception("Turn failed")
+            outcome = "error"
             self.telegram.send(chat_id, f"⚠️ Error: {exc}")
         finally:
+            # In the finally so every ending is accounted for: a clean answer,
+            # a failure, a usage cap, and an interruption alike.
+            self._record_turn_tokens(chat_id, text, outcome=outcome)
             self.telegram.end_typing(chat_id)
 
 

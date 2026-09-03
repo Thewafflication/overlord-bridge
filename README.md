@@ -22,6 +22,7 @@ common interface and a remote permission gate added.
 | `modules/brain.py` | `Brain` ABC + shared `PermissionGate` (off-limits backstop + Telegram approval choices + timeout) |
 | `modules/claude_brain.py` | `ClaudeBrain`: the Claude Agent SDK behind the interface |
 | `modules/codex_brain.py` | `CodexBrain`: the Codex App Server (JSON-RPC over stdio or WebSocket) behind the interface |
+| `modules/version.py` | Single version source: package metadata → `pyproject.toml` → fallback, plus the short git revision read straight out of `.git` (no subprocess) |
 | `modules/token_meter.py` | Per-prompt token ledger: normalizes both brains' usage shapes, persists a bounded history, renders the footer / `/tokens` / `/status` blocks, and estimates tokens locally for `/quote` |
 | `modules/telegram_handler.py` | Threaded Telegram I/O (owner-gated, chunked, three-choice permission buttons) |
 | `modules/workers.py` | Dispatch-folder worker runner for Claude, Codex, and local-agent workers; Telegram completion push; worker report audit store |
@@ -68,7 +69,17 @@ Foreground (for a first test):
 ```bash
 .venv/bin/python bridge.py
 ```
-You should get a `🟢 Overlord online` message in Telegram. Send it a task.
+You should get a `🟢 Overlord v0.1.0+2576523 online` message in Telegram. Send it
+a task.
+
+The version comes from `modules/version.py`, which resolves it once from
+`pyproject.toml`, then installed package metadata, then a hardcoded fallback, and
+appends the short git revision when running from a checkout. Bump
+`pyproject.toml` and nothing else — pyproject deliberately outranks the installed
+metadata, because an editable install's `overlord_bridge.egg-info` is only as
+fresh as the last `pip install -e .`. It appears in the
+startup message, every `/status` reply, the tray tooltip and menu, and the
+console title bar — so a screenshot of any of them identifies the build.
 
 Telegram commands:
 
@@ -80,6 +91,10 @@ Telegram commands:
   `OVERLORD_STATUS_REFRESH_TIMEOUT` (8s), and the reply always prints how old
   the reading is. A background loop keeps the tray and console current every
   `OVERLORD_STATUS_REFRESH_SECS` (60s).
+- `/status all` shows every brain side by side, active one first. Only the
+  active brain can be read live — asking a standby Codex for its rate limits
+  would mean spawning its app-server — so the others are rendered from their
+  last cached usage and configured settings, and labelled `STANDBY`.
 - `/tokens [n]` lists the last *n* prompts (default 10) with input, output and
   total tokens each, plus the session totals. The ledger is kept in
   `run/token_ledger.json`, so it survives a restart; `/new` clears it.
@@ -110,6 +125,14 @@ reported separately from fresh input, so a long resumed session does not look
 like it re-sends its whole history at full price every turn. A turn Claude hands
 to a live terminal session reports no usage of its own and is skipped rather than
 booked as a zero.
+
+Turns that end badly are still accounted for. `/stop` and `/steer` cancel the
+turn mid-flight, so the footer reports whatever the engine had streamed by then
+and marks it `stopped mid-turn — partial count`; a failed turn, including
+hitting a usage cap, is marked `turn failed`. Both count toward the session
+total, and `/tokens` says how many of the listed prompts were cut short. For
+Claude the partial figure is a running sum of the turn's assistant messages,
+replaced by the authoritative total whenever the turn reaches its end.
 
 When Claude or Codex needs a short clarification or offers several discrete
 paths, Overlord asks it to use its native interactive-input tool. Telegram then
@@ -168,7 +191,15 @@ launcher options.
 While running on Windows, Overlord places an icon in the notification area.
 Right-click it and choose the dynamic **Show Console** / **Hide Console** entry
 to toggle a dedicated Tk rich-text console, or **Stop Overlord** for a graceful
-shutdown. The console has Claude and Codex status cards, colored log levels,
+shutdown. The console has a Status button row — **Refresh**, **Refresh All**,
+**Send to Telegram**, **Send All to Telegram** — that reaches the running bridge
+by writing `run/console-command.json`, which the bridge watches. It is one-way
+and file-based on purpose: no socket to secure, and every action is read-only
+with respect to the conversation, so a stale or unexpected file can never do
+anything destructive. Launched without a bridge, the buttons are disabled rather
+than silently doing nothing.
+
+The console has Claude and Codex status cards, colored log levels,
 live updates, Copy All, Clear, and Autoscroll controls over a rotating 2 MB log.
 During AI turns, Telegram continuously shows the typing indicator; transient
 Telegram send failures are retried automatically so replies, model questions,

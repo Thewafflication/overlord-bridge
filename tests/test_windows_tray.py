@@ -7,7 +7,10 @@ def test_tray_title_tracks_active_brain():
 
     tray.set_brain("codex")
 
-    assert tray._title() == "Overlord — codex — running"
+    # The version rides along in the tooltip so a running tray identifies the
+    # build it came from without opening the console.
+    assert tray._title() == f"Overlord {tray.version} — codex — running"
+    assert tray.version.startswith("v")
 
 
 def test_tray_stop_action_requests_graceful_shutdown():

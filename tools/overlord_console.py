@@ -6,12 +6,14 @@ import argparse
 import json
 import os
 import sys
+import time
 import tkinter as tk
 from pathlib import Path
 from tkinter import ttk
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from modules.commands import format_status  # noqa: E402
+from modules.commands import format_brain_card  # noqa: E402
+from modules.version import display_version  # noqa: E402
 
 POLL_MS = 300
 INITIAL_TAIL_BYTES = 160_000
@@ -27,11 +29,12 @@ def level_for_line(line: str) -> str:
 
 
 def format_brain_summary(name: str, status: dict, active_brain: str) -> str:
-    """Format one compact status card without requiring a Tk instance."""
-    heading = f"{name.upper()}  •  {'ACTIVE' if name == active_brain else 'STANDBY'}"
-    complete = {"brain": name, **status}
-    details = format_status(complete).splitlines()
-    return "\n".join([heading, *details[2:]])
+    """One compact status card, rendered without needing a Tk instance.
+
+    Delegates to the bridge's own renderer so the console and Telegram can never
+    disagree about what a brain's status says.
+    """
+    return format_brain_card(name, status, active_brain)
 
 
 class OverlordConsole:
@@ -41,18 +44,21 @@ class OverlordConsole:
         signal_path: Path,
         state_path: Path,
         status_path: Path | None = None,
+        command_path: Path | None = None,
     ) -> None:
         self.log_path = log_path
         self.signal_path = signal_path
         self.state_path = state_path
         self.status_path = status_path
+        self.command_path = command_path
+        self.version = display_version()
         self.offset = 0
         self.file_identity: tuple[int, int, int] | None = None
         self.signal_mtime = 0
         self.status_mtime = 0
 
         self.root = tk.Tk()
-        self.root.title("Overlord Console")
+        self.root.title(f"Overlord Console — {self.version}")
         self.root.geometry("1000x620")
         self.root.minsize(640, 360)
         self.root.configure(bg="#111827")
@@ -60,6 +66,10 @@ class OverlordConsole:
 
         self.autoscroll = tk.BooleanVar(value=True)
         self.status = tk.StringVar(value=f"Live log: {self.log_path}")
+        # Replaced by the running bridge's version as soon as it publishes one:
+        # the console can be launched from a different checkout than the bridge
+        # it is watching, and the bridge's number is the truthful one.
+        self.version_label = tk.StringVar(value=self.version)
         self._build_ui()
         self._configure_tags()
         self._seek_initial_tail()
@@ -90,6 +100,12 @@ class OverlordConsole:
             style="Console.TLabel",
             font=("Segoe UI Semibold", 12),
         ).pack(side="left")
+        ttk.Label(
+            toolbar,
+            textvariable=self.version_label,
+            style="Console.TLabel",
+            font=("Segoe UI", 9),
+        ).pack(side="left", padx=(8, 0))
         ttk.Button(toolbar, text="Clear", command=self.clear).pack(side="right")
         ttk.Button(toolbar, text="Copy All", command=self.copy_all).pack(
             side="right", padx=6
@@ -101,6 +117,36 @@ class OverlordConsole:
             variable=self.autoscroll,
             style="Console.TCheckbutton",
         ).pack(side="right", padx=10)
+
+        actions = ttk.Frame(outer, style="Console.TFrame")
+        actions.pack(fill="x", pady=(0, 6))
+        ttk.Label(
+            actions, text="Status", style="Console.TLabel", font=("Segoe UI", 9)
+        ).pack(side="left", padx=(2, 8))
+        # These reach the bridge through the command file; without one (the
+        # console can be opened standalone against a log) they are disabled
+        # rather than silently doing nothing.
+        for label, action in (
+            ("Refresh", "refresh_status"),
+            ("Refresh All", "refresh_all"),
+            ("Send to Telegram", "send_status"),
+            ("Send All to Telegram", "send_status_all"),
+        ):
+            button = ttk.Button(
+                actions,
+                text=label,
+                command=lambda name=action: self.send_command(name),
+            )
+            button.pack(side="left", padx=3)
+            if self.command_path is None:
+                button.state(["disabled"])
+        self.action_status = tk.StringVar(value="")
+        ttk.Label(
+            actions,
+            textvariable=self.action_status,
+            style="Console.TLabel",
+            font=("Segoe UI", 9),
+        ).pack(side="left", padx=8)
 
         status_frame = ttk.Frame(outer, style="Console.TFrame")
         status_frame.pack(fill="x", pady=(0, 8))
@@ -213,6 +259,28 @@ class OverlordConsole:
         elif action == "show":
             self.show()
 
+    def send_command(self, action: str) -> None:
+        """Ask the bridge to do one read-only status action.
+
+        Writes the request atomically (temp file + replace) so the bridge never
+        reads a half-written file, and stamps it so two presses of the same
+        button are two distinct requests rather than one unchanged file.
+        """
+        if self.command_path is None:
+            self.action_status.set("No bridge connected")
+            return
+        payload = {"action": action, "at": time.time_ns()}
+        try:
+            self.command_path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = self.command_path.with_suffix(".tmp")
+            temporary.write_text(json.dumps(payload), encoding="utf-8")
+            temporary.replace(self.command_path)
+        except OSError as exc:
+            self.action_status.set(f"Could not send: {exc}")
+            return
+        self.action_status.set(f"Sent: {action.replace('_', ' ')}")
+        self.root.after(4000, lambda: self.action_status.set(""))
+
     def _read_brain_status(self) -> None:
         if self.status_path is None:
             return
@@ -224,6 +292,9 @@ class OverlordConsole:
         except (OSError, ValueError, TypeError):
             return
         self.status_mtime = mtime
+        reported = str(payload.get("version") or "").strip()
+        if reported and reported != self.version_label.get():
+            self.version_label.set(reported)
         active = str(payload.get("active_brain") or "")
         statuses = payload.get("brains")
         if not isinstance(statuses, dict):
@@ -278,8 +349,11 @@ def main() -> None:
     parser.add_argument("--signal", type=Path, required=True)
     parser.add_argument("--state", type=Path, required=True)
     parser.add_argument("--status", type=Path)
+    parser.add_argument("--command", type=Path)
     args = parser.parse_args()
-    OverlordConsole(args.log, args.signal, args.state, args.status).run()
+    OverlordConsole(
+        args.log, args.signal, args.state, args.status, args.command
+    ).run()
 
 
 if __name__ == "__main__":

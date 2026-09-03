@@ -96,6 +96,13 @@ def _countable_model(*candidates: str) -> str:
     return COUNT_TOKENS_ALIASES["sonnet"]
 
 
+def _accumulate(running: dict[str, int], usage: dict[str, Any]) -> None:
+    """Add one API call's counters into a running per-turn tally."""
+    for key, value in usage.items():
+        if isinstance(value, int) and value >= 0:
+            running[key] = running.get(key, 0) + value
+
+
 async def _claude_access_token() -> str | None:
     """Read the Claude Code OAuth access token, if the CLI has one on disk."""
     try:
@@ -216,6 +223,7 @@ class ClaudeBrain(Brain):
         self._session_id: str | None = None
         self.last_turn_usage: dict[str, Any] | None = None
         self.last_turn_cost_usd: float | None = None
+        self.last_turn_outcome: str = "ok"
 
     @property
     def session_id(self) -> str | None:
@@ -566,6 +574,7 @@ class ClaudeBrain(Brain):
         # sitting there for the bridge to re-record as if they were new.
         self.last_turn_usage = None
         self.last_turn_cost_usd = None
+        self.last_turn_outcome = "ok"
 
         reset_flag = self.session_file.parent / f".reset-requested{self.session_file.suffix}"
         reset_requested = reset_flag.exists()
@@ -646,6 +655,12 @@ class ClaudeBrain(Brain):
         sid = self._load_session()
         self._session_id = sid
         client = await self._open(sid)
+        # Running tally across this turn's API calls. A turn that is stopped or
+        # steered never reaches its ResultMessage, so without this the tokens it
+        # genuinely spent would vanish from the ledger. The ResultMessage, when
+        # it arrives, is authoritative and replaces the tally outright.
+        partial: dict[str, int] = {}
+        authoritative = False
         try:
             await client.query(text)
             sent_text = False
@@ -653,6 +668,8 @@ class ClaudeBrain(Brain):
                 if isinstance(msg, AssistantMessage):
                     if msg.model:
                         self._active_model = msg.model
+                    if isinstance(getattr(msg, "usage", None), dict):
+                        _accumulate(partial, msg.usage)
                     for block in msg.content:
                         if isinstance(block, TextBlock) and block.text.strip():
                             sent_text = True
@@ -663,11 +680,20 @@ class ClaudeBrain(Brain):
                     if isinstance(msg.usage, dict):
                         self.last_turn_usage = dict(msg.usage)
                         self.last_turn_cost_usd = msg.total_cost_usd
+                        authoritative = True
                     if msg.is_error:
+                        # A usage cap lands here, not as an exception: the turn
+                        # completed with an error result, and the tokens it did
+                        # spend are reported normally.
+                        self.last_turn_outcome = "error"
                         yield f"⚠️ {msg.result or 'The Overlord hit an error.'}"
                     elif not sent_text and msg.result:
                         yield msg.result
         finally:
+            # Runs on success, on failure, and on the CancelledError that /stop
+            # and /steer raise, so an interrupted turn is still accounted for.
+            if not authoritative and partial:
+                self.last_turn_usage = dict(partial)
             try:
                 await client.disconnect()
             except Exception as exc:

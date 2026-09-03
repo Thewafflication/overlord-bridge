@@ -77,6 +77,92 @@ def run_turn(brain, monkeypatch, client):
     return asyncio.run(drain())
 
 
+class InterruptedClient:
+    """A turn that streams one assistant message, then never finishes."""
+
+    def __init__(self):
+        self.disconnected = False
+
+    async def query(self, text):
+        return None
+
+    async def receive_response(self):
+        yield AssistantMessage(
+            content=[TextBlock(text="thinking out loud")],
+            model="claude-opus-4-1",
+            usage={"input_tokens": 900, "output_tokens": 120},
+        )
+        yield AssistantMessage(
+            content=[TextBlock(text="still going")],
+            model="claude-opus-4-1",
+            usage={"input_tokens": 40, "output_tokens": 80},
+        )
+        await asyncio.Event().wait()
+
+    async def disconnect(self):
+        self.disconnected = True
+
+
+def test_an_interrupted_claude_turn_still_reports_what_it_spent(tmp_path, monkeypatch):
+    """/stop and /steer cancel the turn before its ResultMessage arrives."""
+
+    async def scenario():
+        brain = make_brain(tmp_path)
+        client = InterruptedClient()
+        monkeypatch.setattr("modules.shared_job.live_job", lambda _pin: None)
+
+        async def fake_open(_resume):
+            return client
+
+        monkeypatch.setattr(brain, "_open", fake_open)
+
+        async def drain():
+            async for _chunk in brain.query("long job"):
+                pass
+
+        task = asyncio.ensure_future(drain())
+        await asyncio.sleep(0.05)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        # Both assistant messages' usage is summed into the partial tally.
+        assert brain.last_turn_usage == {"input_tokens": 940, "output_tokens": 200}
+        assert client.disconnected is True
+
+    asyncio.run(scenario())
+
+
+def test_the_result_message_overrides_the_running_partial_tally(tmp_path, monkeypatch):
+    brain = make_brain(tmp_path)
+    run_turn(brain, monkeypatch, ReportingClient())
+    # ReportingClient's AssistantMessage carries no usage, but even when one
+    # does, the authoritative ResultMessage total is what is kept.
+    assert brain.last_turn_usage == CLAUDE_TURN_USAGE
+
+
+def test_a_usage_cap_is_booked_as_a_failed_turn_not_lost(tmp_path, monkeypatch):
+    class CappedClient(ReportingClient):
+        async def receive_response(self):
+            yield ResultMessage(
+                subtype="error_max_turns",
+                duration_ms=1,
+                duration_api_ms=1,
+                is_error=True,
+                num_turns=1,
+                session_id="session-9",
+                result="Usage limit reached",
+                usage={"input_tokens": 120, "output_tokens": 0},
+            )
+
+    brain = make_brain(tmp_path)
+    chunks = run_turn(brain, monkeypatch, CappedClient())
+    assert any("Usage limit reached" in chunk for chunk in chunks)
+    assert brain.last_turn_outcome == "error"
+    assert brain.last_turn_usage == {"input_tokens": 120, "output_tokens": 0}
+
+
 def test_claude_records_the_turns_usage_and_cost(tmp_path, monkeypatch):
     brain = make_brain(tmp_path)
     assert run_turn(brain, monkeypatch, ReportingClient()) == ["hi"]

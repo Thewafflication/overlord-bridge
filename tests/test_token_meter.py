@@ -163,3 +163,51 @@ def test_human_switches_units_at_sensible_thresholds():
     assert human(940) == "940"
     assert human(41_900) == "41.9k"
     assert human(1_240_000) == "1.24M"
+
+
+def test_a_cut_short_turn_is_labelled_in_every_view():
+    stopped = normalize_usage(
+        {"input_tokens": 900, "output_tokens": 120},
+        brain="claude",
+        prompt="long job",
+        outcome="stopped",
+    )
+    ledger = TokenLedger()
+    ledger.record(stopped)
+    assert "stopped mid-turn" in format_footer(stopped, ledger.totals)
+    assert "stopped" in format_status_block(ledger)
+    history = format_history(ledger)
+    assert "stopped" in history
+    assert "1 of the recorded prompts were cut short" in history
+
+
+def test_a_failed_turn_is_labelled_separately_from_a_stopped_one():
+    failed = normalize_usage(
+        {"input_tokens": 120, "output_tokens": 0}, outcome="error"
+    )
+    assert "turn failed" in format_footer(failed)
+
+
+def test_cut_short_turns_still_count_toward_the_session_total():
+    ledger = TokenLedger()
+    ledger.record(normalize_usage({"input_tokens": 100, "output_tokens": 10}))
+    ledger.record(
+        normalize_usage({"input_tokens": 900, "output_tokens": 120}, outcome="stopped")
+    )
+    assert ledger.totals.prompts == 2
+    assert ledger.totals.input_tokens == 1000
+
+
+def test_outcome_survives_a_round_trip_through_disk(tmp_path):
+    path = tmp_path / "ledger.json"
+    TokenLedger(path=path).record(
+        normalize_usage({"input_tokens": 5, "output_tokens": 1}, outcome="stopped")
+    )
+    assert TokenLedger(path=path).last.outcome == "stopped"
+
+
+def test_a_normal_turn_carries_no_label():
+    ok = normalize_usage({"input_tokens": 10, "output_tokens": 5})
+    assert ok.outcome == "ok"
+    assert "stopped" not in format_footer(ok)
+    assert "failed" not in format_footer(ok)
