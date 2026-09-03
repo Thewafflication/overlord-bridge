@@ -29,9 +29,11 @@ a fresh process lands on the same id with no fork.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import datetime
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any, AsyncIterator
 
@@ -49,12 +51,59 @@ from claude_agent_sdk import (
 
 from modules import shared_job
 from modules.brain import Brain, PermissionGate, collect_candidates
+from modules.token_meter import estimate_tokens
 
 log = logging.getLogger("overlord.claude")
 
 CLAUDE_USAGE_CACHE = Path.home() / ".cache" / "near-limit-handoff" / "usage.json"
 CLAUDE_CREDENTIALS = Path.home() / ".claude" / ".credentials.json"
 CLAUDE_USAGE_API = "https://api.anthropic.com/api/oauth/usage"
+CLAUDE_COUNT_TOKENS_API = "https://api.anthropic.com/v1/messages/count_tokens"
+
+# Effort levels the Agent SDK accepts (``--effort`` on the CLI).
+EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
+
+# ``/quote`` needs a concrete model id; the bridge is normally configured with a
+# CLI alias ("opus", "sonnet"). Map the aliases we know to a countable id, and
+# let OVERLORD_COUNT_TOKENS_MODEL override when a newer id ships. A wrong guess
+# is not fatal: the count falls back to the local estimator.
+COUNT_TOKENS_ALIASES = {
+    "opus": "claude-opus-4-1-20250805",
+    "sonnet": "claude-sonnet-4-5-20250929",
+    "haiku": "claude-haiku-4-5-20251001",
+}
+
+
+def _countable_model(*candidates: str) -> str:
+    """Pick a concrete model id for ``count_tokens`` from what we know.
+
+    Preference order: an explicit override, then any candidate that is already
+    a full id (after one turn the SDK tells us exactly which model answered),
+    then a mapped alias. Guessing wrong is survivable — the caller falls back
+    to the local estimator — so this never raises.
+    """
+    override = os.environ.get("OVERLORD_COUNT_TOKENS_MODEL", "").strip()
+    if override:
+        return override
+    names = [str(name or "").strip() for name in candidates]
+    for name in names:
+        if name.startswith("claude-"):
+            return name
+    for name in names:
+        mapped = COUNT_TOKENS_ALIASES.get(name.lower())
+        if mapped:
+            return mapped
+    return COUNT_TOKENS_ALIASES["sonnet"]
+
+
+async def _claude_access_token() -> str | None:
+    """Read the Claude Code OAuth access token, if the CLI has one on disk."""
+    try:
+        credentials = json.loads(CLAUDE_CREDENTIALS.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return None
+    token = (credentials.get("claudeAiOauth") or {}).get("accessToken")
+    return token if isinstance(token, str) and token else None
 
 # Tool-input keys that carry a filesystem path.
 PATH_KEYS = ("file_path", "path", "notebook_path", "directory")
@@ -143,6 +192,7 @@ async def _claude_usage_payload(max_cache_age: int = 120) -> tuple[dict[str, Any
 
 class ClaudeBrain(Brain):
     name = "claude"
+    supports_effort = True
 
     def __init__(
         self,
@@ -153,6 +203,7 @@ class ClaudeBrain(Brain):
         session_file: Path,
         developer_instructions: str = "",
         auto_approve_edits: bool = False,
+        effort: str | None = None,
     ) -> None:
         self.gate = gate
         self.cwd = cwd
@@ -161,7 +212,10 @@ class ClaudeBrain(Brain):
         self.session_file = session_file
         self.developer_instructions = developer_instructions.strip()
         self.auto_approve_edits = auto_approve_edits
+        self.effort = (effort or "").strip().lower() or None
         self._session_id: str | None = None
+        self.last_turn_usage: dict[str, Any] | None = None
+        self.last_turn_cost_usd: float | None = None
 
     @property
     def session_id(self) -> str | None:
@@ -273,6 +327,28 @@ class ClaudeBrain(Brain):
             except OSError as exc:
                 log.error("Could not persist session id: %s", exc)
 
+    def _effort_option(self) -> dict[str, Any]:
+        """``{"effort": ...}`` when the installed SDK understands it, else ``{}``.
+
+        ``effort`` is a recent ClaudeAgentOptions field. Probing the dataclass
+        keeps an older SDK working (the setting is ignored, and /effort says so)
+        instead of failing every turn with a TypeError.
+        """
+        if not self.effort:
+            return {}
+        try:
+            supported = {f.name for f in dataclasses.fields(ClaudeAgentOptions)}
+        except TypeError:  # pragma: no cover - not a dataclass in some future SDK
+            return {"effort": self.effort}
+        if "effort" not in supported:
+            log.warning(
+                "The installed Claude Agent SDK has no 'effort' option; "
+                "ignoring effort=%s.",
+                self.effort,
+            )
+            return {}
+        return {"effort": self.effort}
+
     def _build_options(self, resume: str | None) -> ClaudeAgentOptions:
         return ClaudeAgentOptions(
             cwd=self.cwd,
@@ -286,6 +362,7 @@ class ClaudeBrain(Brain):
             permission_mode="default",
             can_use_tool=self.can_use_tool,
             resume=resume,
+            **self._effort_option(),
         )
 
     async def _open(self, resume: str | None) -> ClaudeSDKClient:
@@ -329,17 +406,98 @@ class ClaudeBrain(Brain):
         # Nothing to tear down: no client is held outside an active turn.
         return
 
-    async def status(self) -> dict[str, Any]:
-        payload, stale = await _claude_usage_payload()
+    async def status(self, *, force_refresh: bool = False) -> dict[str, Any]:
+        payload, stale = await _claude_usage_payload(
+            max_cache_age=0 if force_refresh else 120
+        )
         usage = _normalize_claude_usage(payload)
         note = "Usage is from the last cached update." if stale else None
         return {
             "brain": self.name,
             "model": self._active_model or self.model,
+            "effort": self.effort,
             "session_id": self.session_id,
             "usage": usage,
             "usage_note": note,
         }
+
+    # ------------------------------------------------------------- runtime knobs
+    async def set_model(self, model: str) -> str | None:
+        """Point subsequent turns at *model*.
+
+        No client is held between turns (see the module docstring), so this only
+        has to update the field the next ``_build_options`` reads — the change
+        lands on the next message with no reconnect and no session churn.
+        """
+        name = (model or "").strip()
+        if not name:
+            return "Give a model name, e.g. /model sonnet"
+        self.model = name
+        self._active_model = name
+        return None
+
+    async def set_effort(self, effort: str) -> str | None:
+        level = (effort or "").strip().lower()
+        if level in ("", "default", "auto", "off", "none"):
+            self.effort = None
+            return None
+        if level not in EFFORT_LEVELS:
+            return f"Unknown effort {level!r}. Choose: {', '.join(EFFORT_LEVELS)}"
+        self.effort = level
+        if not self._effort_option():
+            self.effort = None
+            return (
+                "The installed Claude Agent SDK has no reasoning-effort option; "
+                "nothing was changed."
+            )
+        return None
+
+    async def count_input_tokens(self, text: str) -> tuple[int | None, str]:
+        """Ask Anthropic exactly what *text* costs as input; estimate if it can't.
+
+        ``count_tokens`` is free and does not touch the conversation, so a quote
+        never consumes a turn or perturbs the pinned session.
+        """
+        if not text.strip():
+            return 0, "exact"
+        token = await _claude_access_token()
+        if token:
+            try:
+                timeout = aiohttp.ClientTimeout(total=8)
+                headers = {
+                    "Authorization": f"Bearer {token}",
+                    "anthropic-version": "2023-06-01",
+                    "anthropic-beta": "oauth-2025-04-20",
+                    "content-type": "application/json",
+                }
+                body = {
+                    "model": _countable_model(self._active_model, self.model),
+                    "messages": [{"role": "user", "content": text}],
+                }
+                async with aiohttp.ClientSession(
+                    timeout=timeout, headers=headers
+                ) as session:
+                    async with session.post(
+                        CLAUDE_COUNT_TOKENS_API, json=body
+                    ) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            count = data.get("input_tokens")
+                            if isinstance(count, int):
+                                return count, "exact"
+                        else:
+                            log.debug(
+                                "count_tokens returned HTTP %s; estimating instead",
+                                response.status,
+                            )
+            except (
+                aiohttp.ClientError,
+                asyncio.TimeoutError,
+                ValueError,
+                TypeError,
+            ) as exc:
+                log.debug("count_tokens call failed (%s); estimating instead", exc)
+        return estimate_tokens(text), "estimate"
 
     async def _watch_and_push(
         self,
@@ -403,6 +561,12 @@ class ClaudeBrain(Brain):
         # the bridge honors it here, at the very start of the turn. Consumed
         # (unlinked) first and unconditionally, so a skip below can never leave it
         # around to retry forever.
+        # Per-turn accounting starts clean: a turn that reports nothing (the
+        # shared-job path below) must not leave the previous turn's numbers
+        # sitting there for the bridge to re-record as if they were new.
+        self.last_turn_usage = None
+        self.last_turn_cost_usd = None
+
         reset_flag = self.session_file.parent / f".reset-requested{self.session_file.suffix}"
         reset_requested = reset_flag.exists()
         if reset_requested:
@@ -496,6 +660,9 @@ class ClaudeBrain(Brain):
                 elif isinstance(msg, ResultMessage):
                     if msg.session_id:
                         self._save_session(msg.session_id)
+                    if isinstance(msg.usage, dict):
+                        self.last_turn_usage = dict(msg.usage)
+                        self.last_turn_cost_usd = msg.total_cost_usd
                     if msg.is_error:
                         yield f"⚠️ {msg.result or 'The Overlord hit an error.'}"
                     elif not sent_text and msg.result:

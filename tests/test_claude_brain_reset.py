@@ -61,8 +61,10 @@ def test_claude_status_reports_live_usage(tmp_path, monkeypatch):
     brain = make_brain(tmp_path)
     brain._session_id = "session-1"
     brain._active_model = "claude-resolved"
+    seen: list[int] = []
 
-    async def fake_usage():
+    async def fake_usage(max_cache_age: int = 120):
+        seen.append(max_cache_age)
         return (
             {
                 "five_hour": {"utilization": 14.0, "resets_at": "soon"},
@@ -77,6 +79,11 @@ def test_claude_status_reports_live_usage(tmp_path, monkeypatch):
     assert status["model"] == "claude-resolved"
     assert status["usage"]["session"]["gas"] == 86.0
     assert status["usage"]["weekly"]["gas"] == 69.0
+
+    # An operator-typed /status must bypass the cache rather than re-report the
+    # reading it took last time.
+    asyncio.run(brain.status(force_refresh=True))
+    assert seen == [120, 0]
 
 
 async def drain(brain: ClaudeBrain, text: str) -> list[str]:

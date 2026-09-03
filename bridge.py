@@ -34,6 +34,7 @@ import logging
 import os
 import signal
 import sys
+import time
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from queue import Queue
@@ -42,7 +43,20 @@ from typing import Any
 from modules import cli_notify
 from modules.brain import Brain, PermissionGate
 from modules.codex_discovery import resolve_codex_binary
-from modules.commands import HELP_TEXT, VALID_BRAINS, format_status, set_env_value
+from modules.commands import (
+    HELP_TEXT,
+    VALID_BRAINS,
+    format_quote,
+    format_status,
+    set_env_value,
+)
+from modules.token_meter import (
+    TokenLedger,
+    estimate_tokens,
+    format_footer,
+    format_history,
+    normalize_usage,
+)
 from modules.conversation_history import (
     Handoff,
     SharedConversationHistory,
@@ -160,6 +174,9 @@ TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 OWNER_RAW = os.environ.get("OWNER_CHAT_ID", "")
 CWD = os.environ.get("OVERLORD_CWD", str(Path.home()))
 MODEL = os.environ.get("OVERLORD_MODEL", "opus")
+# Reasoning effort. Empty means "whatever the engine defaults to" — the bridge
+# never invents a level, so an unset value behaves exactly as it did before.
+EFFORT = os.environ.get("OVERLORD_EFFORT", "").strip().lower()
 INSTRUCTIONS_FILE = os.environ.get("OVERLORD_INSTRUCTIONS_FILE", "").strip()
 CLAUDE_AUTO_APPROVE_EDITS = env_bool(
     "OVERLORD_CLAUDE_AUTO_APPROVE_EDITS", False
@@ -179,6 +196,7 @@ BRAIN = os.environ.get("OVERLORD_BRAIN", "claude").strip().lower()
 CODEX_BIN = resolve_codex_binary(os.environ.get("OVERLORD_CODEX_BIN", "codex"))
 os.environ["OVERLORD_CODEX_BIN"] = CODEX_BIN
 CODEX_MODEL = os.environ.get("OVERLORD_CODEX_MODEL", "")  # "" -> codex default
+CODEX_EFFORT = os.environ.get("OVERLORD_CODEX_EFFORT", "").strip().lower()
 CODEX_APPROVAL_POLICY = os.environ.get("OVERLORD_CODEX_APPROVAL_POLICY", "on-request")
 CODEX_SANDBOX = os.environ.get("OVERLORD_CODEX_SANDBOX", "read-only")
 CODEX_APP_SERVER_PROXY = env_bool("OVERLORD_CODEX_APP_SERVER_PROXY", False)
@@ -197,6 +215,18 @@ WORKER_REPORT_EVENTS_MAX_BYTES = max(
 HANDOFF_CONTEXT_CHARS = max(
     1_000, env_int("OVERLORD_HANDOFF_CONTEXT_CHARS", 12_000)
 )
+
+# Per-prompt token accounting. The footer is the only part that touches every
+# reply, so it is the only part with an off switch.
+TOKEN_FOOTER = env_bool("OVERLORD_TOKEN_FOOTER", True)
+TOKEN_LEDGER_FILE = env_path("OVERLORD_TOKEN_LEDGER_FILE", BASE_DIR / "run" / "token_ledger.json")
+TOKEN_LEDGER_MAX = max(10, env_int("OVERLORD_TOKEN_LEDGER_MAX", 200))
+
+# How often the background refresh re-reads provider usage, and how long an
+# operator-typed /status will wait for a live reading before falling back to
+# the cache. 0 disables the periodic refresh.
+STATUS_REFRESH_SECS = max(0, env_int("OVERLORD_STATUS_REFRESH_SECS", 60))
+STATUS_REFRESH_TIMEOUT = max(1, env_int("OVERLORD_STATUS_REFRESH_TIMEOUT", 8))
 
 # Live terminal delivery (dual delivery alongside Telegram, brain-neutral —
 # see modules/cli_notify.py). CLI_FEED is the durable, always-on, safe path:
@@ -326,6 +356,7 @@ def build_brain(gate: PermissionGate, brain_name: str | None = None) -> Brain:
             app_server_proxy=CODEX_APP_SERVER_PROXY,
             app_server_socket=CODEX_APP_SERVER_SOCKET or None,
             developer_instructions=developer_instructions or None,
+            effort=CODEX_EFFORT or None,
         )
 
     if selected not in ("claude", ""):
@@ -340,6 +371,7 @@ def build_brain(gate: PermissionGate, brain_name: str | None = None) -> Brain:
         session_file=session_file,
         developer_instructions=developer_instructions,
         auto_approve_edits=CLAUDE_AUTO_APPROVE_EDITS,
+        effort=EFFORT or None,
     )
 
 
@@ -371,6 +403,11 @@ class Bridge:
         }
         self._status_by_brain[self.brain.name] = dict(self._status_cache)
         self._console_status_file = CONSOLE_STATUS_FILE
+        self.tokens = TokenLedger(
+            path=TOKEN_LEDGER_FILE, max_entries=TOKEN_LEDGER_MAX
+        )
+        # Instance-level so a test (or a future /status --fast) can shorten it.
+        self._status_timeout: float = STATUS_REFRESH_TIMEOUT
         self._conversation_history = SharedConversationHistory(HANDOFF_CONTEXT_CHARS)
         self._conversation_history.mark_seen(self.brain_name)
         self._pending_handoff: Handoff | None = None
@@ -590,6 +627,8 @@ class Bridge:
         )
         # Start the brain-agnostic worker dispatch watcher (background).
         asyncio.create_task(self.workers.watch())
+        if STATUS_REFRESH_SECS:
+            asyncio.create_task(self._status_refresh_loop())
         try:
             while not self._shutdown_event.is_set():
                 chat_id, text = await asyncio.get_running_loop().run_in_executor(
@@ -614,6 +653,18 @@ class Bridge:
                     continue
                 if text.strip().lower().split(maxsplit=1)[0] == "/brain":
                     await self._handle_brain(chat_id, text)
+                    continue
+                if text.strip().lower().split(maxsplit=1)[0] == "/tokens":
+                    self._handle_tokens(chat_id, text)
+                    continue
+                if text.strip().lower().split(maxsplit=1)[0] == "/quote":
+                    await self._handle_quote(chat_id, text)
+                    continue
+                if text.strip().lower().split(maxsplit=1)[0] == "/model":
+                    await self._handle_model(chat_id, text)
+                    continue
+                if text.strip().lower().split(maxsplit=1)[0] == "/effort":
+                    await self._handle_effort(chat_id, text)
                     continue
                 self._start_turn(chat_id, text)
         finally:
@@ -769,6 +820,9 @@ class Bridge:
                 self._conversation_history.clear()
                 self._conversation_history.mark_seen(self.brain.name)
                 self._pending_handoff = None
+                # "Session tokens" in /status means this conversation, so a
+                # clean slate starts the tally over too.
+                self.tokens.clear()
         except Exception as exc:
             log.exception("Brain reset failed")
             self.telegram.send(chat_id, f"⚠️ Could not reset session: {exc}")
@@ -779,6 +833,23 @@ class Bridge:
         log.info("Session reset via /new")
 
     async def _handle_status(self, chat_id: int) -> None:
+        """Answer /status with a reading taken NOW, not the previous one.
+
+        This used to send ``self._status_cache`` and only afterwards kick off a
+        refresh, so every /status showed the state as of the *previous* /status
+        — permanently one command stale, and stale by however long ago that was.
+        Now the refresh is awaited first, bounded by STATUS_REFRESH_TIMEOUT so a
+        slow or offline provider degrades to the cached reading instead of
+        hanging the command, and the reading's age is printed either way.
+        """
+        timeout = getattr(self, "_status_timeout", STATUS_REFRESH_TIMEOUT)
+        try:
+            await asyncio.wait_for(
+                self._refresh_status(self.brain, force=True), timeout=timeout
+            )
+        except asyncio.TimeoutError:
+            log.info("/status refresh exceeded %ss; using the cached reading.", timeout)
+
         status = dict(
             self._status_cache
             if self._status_cache.get("brain") == self.brain.name
@@ -786,13 +857,32 @@ class Bridge:
         )
         status["brain"] = self.brain.name
         status["model"] = getattr(self.brain, "model", None) or status.get("model")
+        status["effort"] = getattr(self.brain, "effort", None) or status.get("effort")
         status["session_id"] = getattr(self.brain, "session_id", None)
         status["turn_state"] = "active" if self._turn_is_active() else "idle"
         if hasattr(self, "_status_by_brain"):
             self._status_by_brain[self.brain.name] = dict(status)
         self._write_console_status()
+        # Attached after the per-brain snapshot above: the ledger is a live
+        # object, not serialisable state for the tray's status file.
+        status["ledger"] = getattr(self, "tokens", None)
         self.telegram.send(chat_id, format_status(status))
-        asyncio.create_task(self._refresh_status(self.brain))
+
+    async def _status_refresh_loop(self) -> None:
+        """Keep the cached reading warm so the tray and console stay current."""
+        while not self._shutdown_event.is_set():
+            try:
+                await asyncio.sleep(STATUS_REFRESH_SECS)
+                if self._turn_is_active():
+                    # A turn holds the brain lock and, for Codex, the same
+                    # JSON-RPC channel a rate-limit read would use. Skip this
+                    # tick rather than queue behind a long answer.
+                    continue
+                await self._refresh_status(self.brain)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 - a refresh must never stop the bridge
+                log.debug("Periodic status refresh failed: %s", exc)
 
     def _basic_status(self) -> dict[str, Any]:
         return self._basic_status_for(self.brain.name)
@@ -800,13 +890,16 @@ class Bridge:
     def _basic_status_for(self, brain_name: str) -> dict[str, Any]:
         if brain_name == getattr(self.brain, "name", None):
             model = getattr(self.brain, "model", None) or "default"
+            effort = getattr(self.brain, "effort", None)
             session_id = getattr(self.brain, "session_id", None)
         else:
             model = MODEL if brain_name == "claude" else (CODEX_MODEL or "default")
+            effort = EFFORT if brain_name == "claude" else CODEX_EFFORT
             session_id = "saved" if session_file_for(brain_name).exists() else None
         return {
             "brain": brain_name,
             "model": model,
+            "effort": effort or None,
             "session_id": session_id,
             "usage": self._read_cached_usage(brain_name),
         }
@@ -876,13 +969,20 @@ class Bridge:
         except OSError as exc:
             log.debug("Could not update tray brain status: %s", exc)
 
-    async def _refresh_status(self, brain: Brain) -> None:
+    async def _refresh_status(self, brain: Brain, *, force: bool = False) -> None:
         try:
-            status = await brain.status()
+            try:
+                status = await brain.status(force_refresh=force)
+            except TypeError as exc:
+                # A brain (or a test double) that predates the keyword still works.
+                if "force_refresh" not in str(exc):
+                    raise
+                status = await brain.status()
         except Exception as exc:  # noqa: BLE001 - status must not stop the bridge
             log.warning("Background status refresh failed: %s", exc)
             return
 
+        status.setdefault("checked_at", time.time())
         if brain is self.brain:
             self._status_cache = status
             if hasattr(self, "_status_by_brain"):
@@ -942,6 +1042,149 @@ class Bridge:
             self.telegram.send(chat_id, "↪️ Steering the active turn…")
         await self._stop_active_turn()
         self._start_turn(chat_id, parts[1].strip())
+
+    def _handle_tokens(self, chat_id: int, text: str) -> None:
+        parts = text.strip().split(maxsplit=1)
+        limit = 10
+        if len(parts) > 1:
+            try:
+                limit = max(1, min(50, int(parts[1].strip())))
+            except ValueError:
+                self.telegram.send(chat_id, "Usage: /tokens [how many, 1-50]")
+                return
+        self.telegram.send(chat_id, format_history(self.tokens, limit))
+
+    async def _handle_quote(self, chat_id: int, text: str) -> None:
+        """Price a prompt before sending it — no turn, no context change."""
+        parts = text.strip().split(maxsplit=1)
+        if len(parts) == 1 or not parts[1].strip():
+            self.telegram.send(
+                chat_id,
+                "Usage: /quote <the prompt you're thinking of sending>\n"
+                "Counts its input tokens without sending it.",
+            )
+            return
+        prompt = parts[1].strip()
+        try:
+            count, source = await self.brain.count_input_tokens(prompt)
+        except Exception as exc:  # noqa: BLE001 - fall back rather than fail
+            log.warning("Token count failed (%s); using the local estimate.", exc)
+            count, source = estimate_tokens(prompt), "estimate"
+        if count is None:
+            count, source = estimate_tokens(prompt), "estimate"
+
+        # Anything queued for the next turn is charged with it, so quote the
+        # real bill: a pending brain-switch handoff is prepended to whatever
+        # the operator sends next.
+        context_tokens: int | None = None
+        if self._pending_handoff is not None:
+            context_tokens = estimate_tokens(self._pending_handoff.text)
+
+        self.telegram.send(
+            chat_id,
+            format_quote(
+                prompt_tokens=count,
+                source=source,
+                context_tokens=context_tokens,
+                model=getattr(self.brain, "model", None) or "default",
+                brain=self.brain.name,
+            ),
+        )
+
+    async def _handle_model(self, chat_id: int, text: str) -> None:
+        await self._handle_engine_setting(chat_id, text, kind="model")
+
+    async def _handle_effort(self, chat_id: int, text: str) -> None:
+        await self._handle_engine_setting(chat_id, text, kind="effort")
+
+    async def _handle_engine_setting(
+        self, chat_id: int, text: str, *, kind: str
+    ) -> None:
+        """Shared body for /model and /effort.
+
+        Both are the same operation on a different field: show the current
+        value with no argument, otherwise ask the brain to apply the new one
+        and persist it to .env under the key that belongs to THIS brain, so a
+        Claude model never overwrites the Codex one.
+        """
+        parts = text.strip().split(maxsplit=1)
+        current = getattr(self.brain, kind, None)
+        env_key = self._env_key_for(kind, self.brain.name)
+
+        if len(parts) == 1 or not parts[1].strip():
+            self.telegram.send(
+                chat_id,
+                f"{kind.capitalize()} [{self.brain.name}]: {current or 'default'}\n"
+                f"Change it with /{kind} <value>.",
+            )
+            return
+        if kind == "effort" and not getattr(self.brain, "supports_effort", False):
+            self.telegram.send(
+                chat_id, f"{self.brain.name} has no reasoning-effort setting."
+            )
+            return
+
+        value = parts[1].strip()
+        async with self._brain_lock:
+            setter = self.brain.set_model if kind == "model" else self.brain.set_effort
+            try:
+                error = await setter(value)
+            except Exception as exc:  # noqa: BLE001 - keep the brain alive
+                log.exception("Could not change %s to %r", kind, value)
+                error = str(exc)
+        if error:
+            self.telegram.send(chat_id, f"⚠️ {error}")
+            return
+
+        applied = getattr(self.brain, kind, None) or "default"
+        self._remember_engine_setting(kind, self.brain.name, applied)
+        persisted = True
+        try:
+            set_env_value(
+                BASE_DIR / ".env",
+                env_key,
+                "" if applied == "default" else str(applied),
+            )
+        except OSError as exc:
+            persisted = False
+            log.warning("%s changed but .env persistence failed: %s", kind, exc)
+
+        self._status_cache = self._basic_status()
+        if hasattr(self, "_status_by_brain"):
+            self._status_by_brain[self.brain.name] = dict(self._status_cache)
+        self._write_console_status()
+        asyncio.create_task(self._refresh_status(self.brain, force=True))
+
+        note = "" if persisted else "\n(Could not write .env — this lasts until restart.)"
+        self.telegram.send(
+            chat_id,
+            f"✅ {kind.capitalize()} [{self.brain.name}] → {applied}. "
+            f"Takes effect on your next message.{note}",
+        )
+
+    @staticmethod
+    def _env_key_for(kind: str, brain_name: str) -> str:
+        prefix = "OVERLORD_CODEX_" if brain_name == "codex" else "OVERLORD_"
+        return f"{prefix}{'MODEL' if kind == 'model' else 'EFFORT'}"
+
+    @staticmethod
+    def _remember_engine_setting(kind: str, brain_name: str, value: str) -> None:
+        """Mirror the change into this process's config so a brain rebuilt by
+        /brain (or an inactive brain's /status row) reflects it too."""
+        global MODEL, EFFORT, CODEX_MODEL, CODEX_EFFORT
+        stored = "" if value == "default" else value
+        key = Bridge._env_key_for(kind, brain_name)
+        os.environ[key] = stored
+        if brain_name == "codex":
+            if kind == "model":
+                CODEX_MODEL = stored
+            else:
+                CODEX_EFFORT = stored
+        else:
+            if kind == "model":
+                MODEL = stored or "opus"
+            else:
+                EFFORT = stored
 
     async def _handle_brain(self, chat_id: int, text: str) -> None:
         parts = text.strip().lower().split(maxsplit=1)
@@ -1019,6 +1262,34 @@ class Bridge:
         asyncio.create_task(self._refresh_status(self.brain))
         log.info("Runtime brain switch complete: %s -> %s", previous.name, target)
 
+    def _record_turn_tokens(self, chat_id: int, prompt: str) -> None:
+        """Book the just-finished turn and, optionally, report it inline.
+
+        Runs outside the brain lock and never raises: a bad counter must not
+        turn a delivered answer into an error message. A turn that reports no
+        usage at all — Claude's shared-job path hands the turn to the terminal
+        process, which does its own accounting — is silently skipped rather
+        than booked as a zero.
+        """
+        try:
+            usage = normalize_usage(
+                getattr(self.brain, "last_turn_usage", None),
+                brain=self.brain.name,
+                model=getattr(self.brain, "model", None) or "default",
+                cost_usd=getattr(self.brain, "last_turn_cost_usd", None),
+                prompt=prompt,
+            )
+            if usage is None:
+                return
+            ledger = getattr(self, "tokens", None)
+            if ledger is None:
+                return
+            ledger.record(usage)
+            if TOKEN_FOOTER:
+                self.telegram.send(chat_id, format_footer(usage, ledger.totals))
+        except Exception as exc:  # noqa: BLE001 - accounting is never load-bearing
+            log.warning("Could not record token usage for this turn: %s", exc)
+
     async def _handle_turn(self, chat_id: int, text: str) -> None:
         log.info("Dispatching turn: %s", text)
         chunks: list[str] = []
@@ -1037,6 +1308,7 @@ class Bridge:
                 self._conversation_history.append_exchange(text, "\n\n".join(chunks))
                 self._conversation_history.mark_seen(self.brain.name)
                 self._pending_handoff = None
+            self._record_turn_tokens(chat_id, text)
         except asyncio.CancelledError:
             log.info("Active turn cancelled")
             raise

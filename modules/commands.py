@@ -5,11 +5,17 @@ from __future__ import annotations
 import datetime
 from typing import Any
 
+from modules.token_meter import TokenLedger, format_status_block, human
+
 
 HELP_TEXT = """Overlord commands
 
 /help — list available commands
-/status — show the active brain, model, and usage
+/status — show the active brain, model, effort, usage and tokens
+/tokens [n] — per-prompt token history (default 10)
+/quote <text> — estimate the input tokens a prompt would cost
+/model [name] — show or switch the active brain's model
+/effort [level] — show or switch the reasoning effort level
 /stop — stop the active AI turn
 /steer <message> — stop the active turn and replace it with new guidance
 /brain — show or switch the active brain
@@ -126,10 +132,19 @@ def format_status(status: dict[str, Any]) -> str:
     if turn_state:
         lines.append(f"Turn: {turn_state}")
 
+    effort = status.get("effort")
+    lines.append(f"Effort: {effort or 'default'}")
+
     provider = status.get("model_provider")
     if provider:
         lines.append(f"Provider: {provider}")
     lines.append(f"Session: {'active' if status.get('session_id') else 'not started'}")
+
+    ledger = status.get("ledger")
+    if isinstance(ledger, TokenLedger):
+        block = format_status_block(ledger)
+        if block:
+            lines.append(block)
 
     token_line = _format_tokens(status.get("tokens"))
     if token_line:
@@ -148,4 +163,60 @@ def format_status(status: dict[str, Any]) -> str:
     note = status.get("usage_note")
     if note:
         lines.append(str(note))
+    checked = status.get("checked_at")
+    if isinstance(checked, (int, float)):
+        lines.append(f"Checked: {_age(checked)}")
+    return "\n".join(lines)
+
+
+def _age(timestamp: float, *, now: float | None = None) -> str:
+    """Render how long ago a status reading was taken.
+
+    Shown on every ``/status`` so a stale number is visibly stale rather than
+    quietly wrong — the old behaviour sent the cache and only *then* refreshed,
+    which made every reading exactly one command out of date with nothing on
+    screen to say so.
+    """
+    current = now if now is not None else datetime.datetime.now().timestamp()
+    seconds = max(0, int(current - timestamp))
+    if seconds < 5:
+        return "just now"
+    if seconds < 90:
+        return f"{seconds}s ago"
+    minutes = seconds // 60
+    if minutes < 90:
+        return f"{minutes}m ago"
+    return f"{minutes // 60}h ago"
+
+
+def format_quote(
+    *,
+    prompt_tokens: int,
+    source: str,
+    context_tokens: int | None = None,
+    context_source: str = "estimate",
+    model: str = "",
+    brain: str = "",
+) -> str:
+    """Render ``/quote``: what a proposed prompt would cost as input."""
+    label = "exact" if source == "exact" else "estimated"
+    lines = [
+        "📐 Prompt quote",
+        f"Prompt alone: {human(prompt_tokens)} input tokens ({label})",
+    ]
+    if context_tokens is not None:
+        total = prompt_tokens + context_tokens
+        lines.append(
+            f"With pending context: ~{human(total)} "
+            f"(+{human(context_tokens)} of carried-over conversation)"
+        )
+    else:
+        lines.append(
+            "No extra context is queued, so the turn sends roughly this plus the "
+            "session's own history, which stays on the provider's side."
+        )
+    footer = f"{brain or 'brain'} · {model or 'default'}"
+    if label == "estimated":
+        footer += " · local estimate, ±10% is normal"
+    lines.append(footer)
     return "\n".join(lines)

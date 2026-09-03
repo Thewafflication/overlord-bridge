@@ -22,6 +22,7 @@ common interface and a remote permission gate added.
 | `modules/brain.py` | `Brain` ABC + shared `PermissionGate` (off-limits backstop + Telegram approval choices + timeout) |
 | `modules/claude_brain.py` | `ClaudeBrain`: the Claude Agent SDK behind the interface |
 | `modules/codex_brain.py` | `CodexBrain`: the Codex App Server (JSON-RPC over stdio or WebSocket) behind the interface |
+| `modules/token_meter.py` | Per-prompt token ledger: normalizes both brains' usage shapes, persists a bounded history, renders the footer / `/tokens` / `/status` blocks, and estimates tokens locally for `/quote` |
 | `modules/telegram_handler.py` | Threaded Telegram I/O (owner-gated, chunked, three-choice permission buttons) |
 | `modules/workers.py` | Dispatch-folder worker runner for Claude, Codex, and local-agent workers; Telegram completion push; worker report audit store |
 | `modules/fetch_relay.py` | Localhost-only headless-Chromium fetch endpoint (`GET /fetch?url=`) for sites that domain-block WebFetch or bot-wall curl; standalone process, own service |
@@ -72,9 +73,27 @@ You should get a `🟢 Overlord online` message in Telegram. Send it a task.
 Telegram commands:
 
 - `/help` lists the available commands.
-- `/status` shows the active brain, resolved model, session state, token context,
-  and the latest cached usage-limit windows immediately, without consuming a
-  model turn. The cache refreshes in the background.
+- `/status` shows the active brain, resolved model, reasoning effort, session
+  state, this conversation's token tally, and the usage-limit windows — without
+  consuming a model turn. Each `/status` takes a **live** reading first and only
+  falls back to the last one if the provider does not answer within
+  `OVERLORD_STATUS_REFRESH_TIMEOUT` (8s), and the reply always prints how old
+  the reading is. A background loop keeps the tray and console current every
+  `OVERLORD_STATUS_REFRESH_SECS` (60s).
+- `/tokens [n]` lists the last *n* prompts (default 10) with input, output and
+  total tokens each, plus the session totals. The ledger is kept in
+  `run/token_ledger.json`, so it survives a restart; `/new` clears it.
+- `/quote <text>` prices a prompt *before* you send it. Claude counts it exactly
+  via Anthropic's `count_tokens` endpoint (free, and it never touches the pinned
+  session); if that is unavailable — offline, no credentials, Codex active — it
+  falls back to a local estimate and says so. Anything queued to ride along with
+  your next turn, such as a pending brain-switch handoff, is quoted too.
+- `/model [name]` shows or changes the active brain's model, and `/effort
+  [level]` does the same for reasoning effort (Claude: low/medium/high/xhigh/max;
+  Codex: minimal/low/medium/high). Both take effect on your next message and are
+  persisted to `.env` under that brain's own key, so changing Claude's model
+  never disturbs Codex's. Claude applies them without reconnecting; Codex
+  re-opens the *same* thread so the conversation survives the change.
 - `/stop` interrupts the active AI turn.
 - `/steer <message>` interrupts the active turn and starts the replacement
   guidance after the engine has cleaned up.
@@ -82,7 +101,15 @@ Telegram commands:
   immediately and persist the selection for the next restart. Recent Telegram
   conversation is handed to the newly selected brain with the next real user
   message, bounded by `OVERLORD_HANDOFF_CONTEXT_CHARS` (default 12,000).
-- `/new` starts a clean conversation.
+- `/new` starts a clean conversation and resets the token tally.
+
+Every reply is followed by a one-line token footer (`🧮 in … · out … · total …`)
+with the running session total. Set `OVERLORD_TOKEN_FOOTER=false` to suppress the
+line — `/status` and `/tokens` keep accounting either way. Cache *reads* are
+reported separately from fresh input, so a long resumed session does not look
+like it re-sends its whole history at full price every turn. A turn Claude hands
+to a live terminal session reports no usage of its own and is skipped rather than
+booked as a zero.
 
 When Claude or Codex needs a short clarification or offers several discrete
 paths, Overlord asks it to use its native interactive-input tool. Telegram then

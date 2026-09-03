@@ -204,6 +204,18 @@ class Brain(abc.ABC):
 
     name: str = "brain"
 
+    # Per-turn accounting, refreshed by ``query()`` as each turn closes and read
+    # by the bridge right after the stream ends. Kept as a plain attribute (not
+    # a yielded value) because ``query()`` yields *text to relay* — threading a
+    # usage dict through that stream would force every consumer to type-check
+    # each chunk. ``None`` means "this turn reported nothing", which is normal
+    # for paths that hand the turn to another process (Claude's shared job).
+    last_turn_usage: dict[str, Any] | None = None
+    last_turn_cost_usd: float | None = None
+
+    # Whether ``set_effort`` does anything for this brain.
+    supports_effort: bool = False
+
     @abc.abstractmethod
     async def connect(self, resume: str | None = None) -> None:
         """Start (or resume) the conversation. *resume* is a persisted session id."""
@@ -259,14 +271,42 @@ class Brain(abc.ABC):
         """Interrupt the currently active turn, if the brain supports it."""
         return False
 
-    async def status(self) -> dict[str, Any]:
-        """Return model/session metadata and usage exposed by this brain."""
+    async def status(self, *, force_refresh: bool = False) -> dict[str, Any]:
+        """Return model/session metadata and usage exposed by this brain.
+
+        *force_refresh* asks the brain to bypass any usage cache it keeps, at
+        the cost of a network round-trip. The bridge sets it for an operator's
+        explicit ``/status`` and leaves it off for background refreshes.
+        """
         return {
             "brain": self.name,
             "model": getattr(self, "model", None) or "default",
             "session_id": self.session_id,
             "usage": None,
         }
+
+    async def set_model(self, model: str) -> str | None:
+        """Switch the model used for subsequent turns.
+
+        Returns ``None`` on success, or a human-readable reason it could not be
+        applied. Brains apply the change to the *next* turn rather than the one
+        in flight, so a switch never truncates a running answer.
+        """
+        return f"{self.name} cannot change its model at runtime."
+
+    async def set_effort(self, effort: str) -> str | None:
+        """Switch the reasoning-effort level, same contract as :meth:`set_model`."""
+        return f"{self.name} does not expose a reasoning-effort setting."
+
+    async def count_input_tokens(self, text: str) -> tuple[int | None, str]:
+        """Count the input tokens *text* would cost, without spending a turn.
+
+        Returns ``(count, source)`` where *source* names how it was measured
+        (``"exact"`` from the provider, ``"estimate"`` from a local heuristic)
+        so callers can label the number honestly. ``(None, reason)`` means the
+        brain could not count it at all.
+        """
+        return None, "no token counter available for this brain"
 
 
 def collect_candidates(tool_input: dict[str, Any], path_keys: tuple[str, ...]) -> list[str]:

@@ -39,8 +39,12 @@ from pathlib import Path
 from typing import Any, AsyncIterator
 
 from modules.brain import Brain, PermissionGate
+from modules.token_meter import estimate_tokens, subtract_usage
 
 log = logging.getLogger("overlord.codex")
+
+# Reasoning-effort levels Codex accepts (``model_reasoning_effort``).
+EFFORT_LEVELS = ("minimal", "low", "medium", "high")
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_INSTRUCTIONS_FILE = PROJECT_ROOT / "AGENTS.md"
@@ -283,6 +287,7 @@ class UnixWebSocketTransport:
 
 class CodexBrain(Brain):
     name = "codex"
+    supports_effort = True
 
     def __init__(
         self,
@@ -292,6 +297,7 @@ class CodexBrain(Brain):
         model: str | None,
         session_file: Path,
         codex_bin: str = "codex",
+        effort: str | None = None,
         approval_policy: str = "on-request",
         sandbox: str = "read-only",
         developer_instructions: str | None = None,
@@ -301,6 +307,7 @@ class CodexBrain(Brain):
         self.gate = gate
         self.cwd = cwd
         self.model = model or None
+        self.effort = (effort or "").strip().lower() or None
         self.session_file = session_file
         self.codex_bin = codex_bin
         self.approval_policy = approval_policy
@@ -334,6 +341,17 @@ class CodexBrain(Brain):
         self._active_model: str | None = self.model
         self._model_provider: str | None = None
         self._thread_token_usage: dict[str, Any] | None = None
+        # Cumulative counters as of the end of the previous turn. Codex reports
+        # a per-turn ``last`` block, but older app-servers only publish running
+        # totals, so keep the previous snapshot and difference it as a fallback.
+        self._token_usage_total: dict[str, Any] | None = None
+        self._prev_token_usage_total: dict[str, Any] | None = None
+        self._last_turn_token_usage: dict[str, Any] | None = None
+        self.last_turn_usage: dict[str, Any] | None = None
+        self.last_turn_cost_usd: float | None = None
+        # Set once a thread/start rejects the effort parameter, so we stop
+        # sending it instead of retrying on every reconnect.
+        self._effort_unsupported = False
         # mtime of the thread's rollout file at our last load — used to detect
         # terminal `codex resume` turns on the SAME thread so Telegram picks
         # them up (parity with the Claude brain). See _maybe_refresh.
@@ -556,6 +574,12 @@ class CodexBrain(Brain):
                 total = token_usage.get("total")
                 if isinstance(total, dict):
                     last = token_usage.get("last")
+                    self._token_usage_total = dict(total)
+                    if isinstance(last, dict):
+                        # Codex already isolates the current turn for us; keep
+                        # the whole block so in/out/cached survive to the ledger
+                        # instead of being flattened to a single total.
+                        self._last_turn_token_usage = dict(last)
                     self._thread_token_usage = {
                         **total,
                         "lastTotalTokens": (
@@ -861,21 +885,43 @@ class CodexBrain(Brain):
             common["developerInstructions"] = self.developer_instructions
         if self.model:
             common["model"] = self.model
+        if self.effort and not self._effort_unsupported:
+            common["effort"] = self.effort
+
+        async def call(method: str, params: dict[str, Any]) -> dict[str, Any]:
+            """Issue a thread request, retrying once without ``effort``.
+
+            ``effort`` is a newer app-server parameter. Rather than pin a Codex
+            version, send it optimistically and drop it permanently the first
+            time a server rejects it — an old Codex keeps working, a new one
+            gets the setting.
+            """
+            try:
+                return await self._request(method, params)
+            except CodexError as exc:
+                if "effort" not in params:
+                    raise
+                log.warning(
+                    "Codex rejected the effort parameter (%s); "
+                    "continuing without it.",
+                    exc,
+                )
+                self._effort_unsupported = True
+                stripped = {k: v for k, v in params.items() if k != "effort"}
+                return await self._request(method, stripped)
 
         if resume:
             try:
-                result = await self._request(
-                    M_THREAD_RESUME, {**common, "threadId": resume}
-                )
+                result = await call(M_THREAD_RESUME, {**common, "threadId": resume})
             except CodexError as exc:
                 if not fallback_to_fresh:
                     raise
                 log.warning("Codex resume of %s failed (%s); starting fresh.", resume, exc)
                 self.session_file.unlink(missing_ok=True)
                 self._thread_id = None
-                result = await self._request(M_THREAD_START, common)
+                result = await call(M_THREAD_START, dict(common))
         else:
-            result = await self._request(M_THREAD_START, common)
+            result = await call(M_THREAD_START, dict(common))
 
         thread = result.get("thread") or {}
         thread_id = thread.get("id")
@@ -884,6 +930,9 @@ class CodexBrain(Brain):
         self._active_model = result.get("model") or self.model or "default"
         self._model_provider = result.get("modelProvider")
         self._thread_token_usage = None
+        self._token_usage_total = None
+        self._prev_token_usage_total = None
+        self._last_turn_token_usage = None
         self._save_thread_id(thread_id)
 
     async def connect(self, resume: str | None = None) -> None:
@@ -933,7 +982,7 @@ class CodexBrain(Brain):
         # In shared TUI mode the app-server owns the user's live terminal socket.
         # Leave it running across bridge restarts; the next bridge process will reconnect.
 
-    async def status(self) -> dict[str, Any]:
+    async def status(self, *, force_refresh: bool = False) -> dict[str, Any]:
         """Fetch current rate limits without consuming a model turn."""
         usage: dict[str, Any] | None = None
         usage_note: str | None = None
@@ -956,6 +1005,7 @@ class CodexBrain(Brain):
         return {
             "brain": self.name,
             "model": self._active_model or self.model or "default",
+            "effort": self.effort,
             "model_provider": self._model_provider,
             "session_id": self.session_id,
             "usage": usage,
@@ -963,9 +1013,74 @@ class CodexBrain(Brain):
             "tokens": self._thread_token_usage,
         }
 
+    # ------------------------------------------------------------- runtime knobs
+    async def _restart_thread_in_place(self, what: str) -> str | None:
+        """Re-open the CURRENT thread so a new model/effort takes effect.
+
+        Codex binds the model to the thread at start time, so unlike Claude this
+        cannot be a field change alone. Resuming the same thread id keeps the
+        conversation intact — the operator changes gears, not topics. On failure
+        the previous value is already gone from the object, so the caller
+        restores it.
+        """
+        if self._thread_id is None:
+            return None
+        try:
+            await self._start_thread(self._thread_id, fallback_to_fresh=False)
+        except Exception as exc:  # noqa: BLE001 - report, never kill the bridge
+            log.warning("Could not apply the new %s to the Codex thread: %s", what, exc)
+            return f"Codex refused the new {what}: {exc}"
+        return None
+
+    async def set_model(self, model: str) -> str | None:
+        name = (model or "").strip()
+        if not name:
+            return "Give a model name, e.g. /model gpt-5-codex"
+        previous = self.model
+        self.model = name
+        error = await self._restart_thread_in_place("model")
+        if error is not None:
+            self.model = previous
+            return error
+        self._active_model = name
+        return None
+
+    async def set_effort(self, effort: str) -> str | None:
+        level = (effort or "").strip().lower()
+        if level not in ("", "default", "auto", "off", "none") and level not in EFFORT_LEVELS:
+            return f"Unknown effort {level!r}. Choose: {', '.join(EFFORT_LEVELS)}"
+        previous = self.effort
+        self.effort = None if level in ("", "default", "auto", "off", "none") else level
+        error = await self._restart_thread_in_place("effort")
+        if error is not None:
+            self.effort = previous
+            return error
+        if self._effort_unsupported:
+            return (
+                "This Codex build does not accept a reasoning-effort setting; "
+                "nothing was changed."
+            )
+        return None
+
+    async def count_input_tokens(self, text: str) -> tuple[int | None, str]:
+        """Codex exposes no counting endpoint, so quote from the local model."""
+        if not text.strip():
+            return 0, "estimate"
+        return estimate_tokens(text), "estimate"
+
     async def query(self, text: str) -> AsyncIterator[str]:
         if self._thread_id is None:
             raise RuntimeError("CodexBrain.query called before connect()")
+        # Per-turn accounting starts clean so a turn that reports nothing can't
+        # be recorded twice off the previous turn's numbers.
+        self.last_turn_usage = None
+        self.last_turn_cost_usd = None
+        self._last_turn_token_usage = None
+        self._prev_token_usage_total = (
+            dict(self._token_usage_total)
+            if isinstance(self._token_usage_total, dict)
+            else None
+        )
         # Pull in any terminal `codex resume` turns on this thread first.
         await self._maybe_refresh()
         self._turn_queue = asyncio.Queue()
@@ -994,9 +1109,20 @@ class CodexBrain(Brain):
         # Our own turn just bumped the rollout mtime; record it so the next
         # refresh only fires on genuinely external (terminal) changes.
         self._record_mtime()
+        self.last_turn_usage = self._resolve_turn_usage()
 
         if self._turn_error:
             yield f"⚠️ {self._turn_error}"
+
+    def _resolve_turn_usage(self) -> dict[str, Any] | None:
+        """Per-turn counters: Codex's own ``last`` block, else a total delta."""
+        if isinstance(self._last_turn_token_usage, dict):
+            return dict(self._last_turn_token_usage)
+        if isinstance(self._token_usage_total, dict):
+            delta = subtract_usage(self._token_usage_total, self._prev_token_usage_total)
+            if any(value > 0 for value in delta.values()):
+                return delta
+        return None
 
     async def record_event(
         self, text: str, metadata: dict[str, Any] | None = None

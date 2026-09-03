@@ -31,6 +31,7 @@ class BlockingBrain:
         self.started = asyncio.Event()
         self.cancelled = asyncio.Event()
         self.status_release = asyncio.Event()
+        self.status_calls = []
 
     async def query(self, text):
         self.queries.append(text)
@@ -49,7 +50,8 @@ class BlockingBrain:
     async def interrupt_active_turn(self):
         return False
 
-    async def status(self):
+    async def status(self, *, force_refresh: bool = False):
+        self.status_calls.append(force_refresh)
         await self.status_release.wait()
         return {"brain": self.name, "model": self.model, "session_id": self.session_id}
 
@@ -62,15 +64,21 @@ def make_bridge(brain):
     instance._active_turn_task = None
     instance._status_cache = instance._basic_status()
     instance._pending_handoff = None
+    instance.tokens = bridge.TokenLedger()
+    instance._status_timeout = 0.05
     instance._conversation_history = bridge.SharedConversationHistory()
     instance._conversation_history.mark_seen(brain.name)
     return instance
 
 
-def test_status_replies_from_cache_while_refresh_is_still_blocked():
+def test_status_asks_for_a_fresh_reading_and_falls_back_to_cache_if_it_stalls():
     async def scenario():
-        instance = make_bridge(BlockingBrain())
+        brain = BlockingBrain()
+        instance = make_bridge(brain)
         await instance._handle_status(42)
+        # A live refresh was attempted, and explicitly asked to bypass caches...
+        assert brain.status_calls == [True]
+        # ...but a provider that never answers must not hang the command.
         assert "Turn: idle" in instance.telegram.messages[-1][1]
         assert "Model: test-model" in instance.telegram.messages[-1][1]
 
