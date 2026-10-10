@@ -175,8 +175,9 @@ Corrupt/incomplete checkpoints recover from the last valid record explicitly.
 Extract the NVIDIA/local tool loop into a reusable provider adapter without
 removing existing aliases. Support conversation use as well as worker execution,
 with durable neutral checkpoints where native sessions do not exist.
-First qualify Groq and Gemini free-tier adapters; add OpenRouter free-model
-support with an explicit free-only allowlist. Keep NVIDIA and local inference
+Start with the OpenRouter free-only adapter, which supports a provider-enforced
+zero-price ceiling. Qualify Groq and Gemini free-tier adapters with explicit
+account-tier and paid-fallback controls. Keep NVIDIA and local inference
 in the catalog. Model IDs and quotas must be discovered/refreshed, not frozen
 from today's catalog.
 
@@ -277,3 +278,5 @@ Control deadlines: native Codex interrupt RPCs and bridge stop/cleanup waits are
 Permission decision evidence: the bridge gate now writes bounded local JSONL decision metadata and action hashes, excluding raw arguments/transcripts. Successful approval requires a durable audit write; failures deny and remove newly created grants. Revocations remain effective even when audit storage fails. Offline tests cover privacy, exact-action correlation, fail-closed approval, rotation and workspace confinement. Shared-terminal/worker policy parity and project-level saved grants remain open.
 
 Codex request pump: server-initiated permission/question waits run in ordered tasks rather than blocking the reader. RPC replies and turn-completion notifications can proceed while the owner is answering. Turn completion, cancellation, reset and transport closure cancel pending requests, clean up their gate state, and send schema-appropriate unanswered/cancel responses where transport remains available. Requests for another thread are declined. Offline regressions cover replies during approval waits, ordered prompts, cancellation cleanup and foreign-thread input.
+
+Implementation checkpoint and remaining release gates: [OVL-M02 progress](ovl-m02-progress.md). Local classifier redirects are now rejected as well as non-loopback initial endpoints; a real loopback HTTP redirect regression proves no redirected provider request is sent.

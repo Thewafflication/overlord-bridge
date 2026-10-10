@@ -450,6 +450,7 @@ async def _http_post_json(
     *,
     timeout: float,
     api_key: str,
+    follow_redirects: bool = True,
 ) -> dict[str, Any]:
     def post() -> dict[str, Any]:
         data = json.dumps(payload).encode("utf-8")
@@ -463,7 +464,14 @@ async def _http_post_json(
                 "Connection": "close",
             },
         )
-        with urllib.request.urlopen(req, timeout=timeout) as response:  # noqa: S310 - local API
+        class NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, req, fp, code, msg, headers, newurl):
+                return None
+        open_request = (
+            urllib.request.urlopen if follow_redirects
+            else urllib.request.build_opener(NoRedirect()).open
+        )
+        with open_request(req, timeout=timeout) as response:
             raw = response.read().decode("utf-8", errors="replace")
         return json.loads(raw)
 

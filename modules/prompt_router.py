@@ -74,7 +74,7 @@ class PromptRouter:
             }
             async with asyncio.timeout(12):
                 response = await _http_post_json(self.api_base + "/chat/completions",
-                    request, timeout=10, api_key="")
+                    request, timeout=10, api_key="", follow_redirects=False)
             message = response["choices"][0]["message"]
             if message.get("tool_calls"):
                 raise ValueError("Classifier attempted tools")

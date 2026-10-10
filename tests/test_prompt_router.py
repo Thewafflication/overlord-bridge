@@ -19,10 +19,39 @@ def test_classifier_receives_context_and_only_qualified_candidates(monkeypatch):
         assert data["context"] == "User: fix the previous issue"
         assert [p["model"] for p in data["models"]] == ["small", "large"]
         assert "tools" not in payload
+        assert kwargs["follow_redirects"] is False
         return {"choices": [{"message": {"content": '{"model":"large","reason":"Requires judgment"}'}}]}
     monkeypatch.setattr(prompt_router, "_http_post_json", post)
     router = PromptRouter(enabled=True, profiles=PROFILES, model="local-classifier")
     assert asyncio.run(router.select("codex", "continue", "User: fix the previous issue"))["model"] == "large"
+
+
+def test_local_classifier_redirect_is_not_followed(monkeypatch):
+    import threading
+    import urllib.error
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    from modules.workers import _http_post_json
+    monkeypatch.setenv("NO_PROXY", "127.0.0.1,localhost,::1")
+    class Redirect(BaseHTTPRequestHandler):
+        def do_POST(self):
+            self.send_response(302)
+            self.send_header("Location", "http://192.0.2.1/classify")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+        def log_message(self, *args):
+            pass
+    server = HTTPServer(("127.0.0.1", 0), Redirect)
+    thread = threading.Thread(target=lambda: server.serve_forever(poll_interval=0.01), daemon=True)
+    thread.start()
+    try:
+        with pytest.raises(urllib.error.HTTPError) as error:
+            asyncio.run(_http_post_json(f"http://127.0.0.1:{server.server_port}/classify",
+                {"prompt": "test"}, timeout=2, api_key="", follow_redirects=False))
+        assert error.value.code == 302
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=1)
 
 
 @pytest.mark.parametrize("content", ['{"model":"unqualified","reason":"Pilot"}',
