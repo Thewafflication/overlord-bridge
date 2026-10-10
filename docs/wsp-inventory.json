@@ -1,0 +1,2587 @@
+{
+  "schema": 1,
+  "release": "1.4.0",
+  "pinned_commit": "f009399dd1406219571ac978bfee85e85bbdfeac",
+  "requirements": [
+    {
+      "id": "WSP-CHECK-0001",
+      "title": "Controlled Commit Configuration",
+      "source": "wsp/processes/commit-checks.md",
+      "source_sha256": "33f00b8124cca1a294e9554e9e6042206069df3f1f3929eb148728ead1056922",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-CHECK-0001 (Controlled Commit Configuration), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-CHECK-0002",
+      "title": "Canonical Commands",
+      "source": "wsp/processes/commit-checks.md",
+      "source_sha256": "33f00b8124cca1a294e9554e9e6042206069df3f1f3929eb148728ead1056922",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-CHECK-0002 (Canonical Commands), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-CHECK-0003",
+      "title": "Complete Local Scope",
+      "source": "wsp/processes/commit-checks.md",
+      "source_sha256": "33f00b8124cca1a294e9554e9e6042206069df3f1f3929eb148728ead1056922",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-CHECK-0003 (Complete Local Scope), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-CHECK-0004",
+      "title": "Failure Propagation",
+      "source": "wsp/processes/commit-checks.md",
+      "source_sha256": "33f00b8124cca1a294e9554e9e6042206069df3f1f3929eb148728ead1056922",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-CHECK-0004 (Failure Propagation), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-CHECK-0005",
+      "title": "Expected Failure Control",
+      "source": "wsp/processes/commit-checks.md",
+      "source_sha256": "33f00b8124cca1a294e9554e9e6042206069df3f1f3929eb148728ead1056922",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-CHECK-0005 (Expected Failure Control), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-CHECK-0006",
+      "title": "Profile Rule Coverage",
+      "source": "wsp/processes/commit-checks.md",
+      "source_sha256": "33f00b8124cca1a294e9554e9e6042206069df3f1f3929eb148728ead1056922",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-CHECK-0006 (Profile Rule Coverage), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-CHECK-0007",
+      "title": "Reproducible Setup",
+      "source": "wsp/processes/commit-checks.md",
+      "source_sha256": "33f00b8124cca1a294e9554e9e6042206069df3f1f3929eb148728ead1056922",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-CHECK-0007 (Reproducible Setup), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-CHECK-0008",
+      "title": "Independent CI Backstop",
+      "source": "wsp/processes/commit-checks.md",
+      "source_sha256": "33f00b8124cca1a294e9554e9e6042206069df3f1f3929eb148728ead1056922",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-CHECK-0008 (Independent CI Backstop), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-CSTYLE-0001",
+      "title": "File Documentation",
+      "source": "wsp/style/c-style.md",
+      "source_sha256": "17d53f2a7c756d8f18e499c649e8b4ad3115f5796c5d7ec4afbbd8bf87b02c6e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-CSTYLE-0001 (File Documentation), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-CSTYLE-0002",
+      "title": "Function Documentation",
+      "source": "wsp/style/c-style.md",
+      "source_sha256": "17d53f2a7c756d8f18e499c649e8b4ad3115f5796c5d7ec4afbbd8bf87b02c6e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-CSTYLE-0002 (Function Documentation), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-CSTYLE-0003",
+      "title": "Entity Documentation",
+      "source": "wsp/style/c-style.md",
+      "source_sha256": "17d53f2a7c756d8f18e499c649e8b4ad3115f5796c5d7ec4afbbd8bf87b02c6e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-CSTYLE-0003 (Entity Documentation), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-CSTYLE-0004",
+      "title": "Physical Line Length",
+      "source": "wsp/style/c-style.md",
+      "source_sha256": "17d53f2a7c756d8f18e499c649e8b4ad3115f5796c5d7ec4afbbd8bf87b02c6e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-CSTYLE-0004 (Physical Line Length), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-CSTYLE-0005",
+      "title": "Automated Enforcement",
+      "source": "wsp/style/c-style.md",
+      "source_sha256": "17d53f2a7c756d8f18e499c649e8b4ad3115f5796c5d7ec4afbbd8bf87b02c6e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-CSTYLE-0005 (Automated Enforcement), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-DOC-0001",
+      "title": "Single Release PDF",
+      "source": "wsp/documentation/requirements.md",
+      "source_sha256": "db8447de03e78b0ecfceb872b46c21020a7bbfb2dafdf2862a22a5ab2f15ee42",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-DOC-0001 (Single Release PDF), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-DOC-0002",
+      "title": "Controlled Document Order",
+      "source": "wsp/documentation/requirements.md",
+      "source_sha256": "db8447de03e78b0ecfceb872b46c21020a7bbfb2dafdf2862a22a5ab2f15ee42",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-DOC-0002 (Controlled Document Order), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-DOC-0003",
+      "title": "Reproducible Identity",
+      "source": "wsp/documentation/requirements.md",
+      "source_sha256": "db8447de03e78b0ecfceb872b46c21020a7bbfb2dafdf2862a22a5ab2f15ee42",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-DOC-0003 (Reproducible Identity), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-DOC-0004",
+      "title": "Navigation",
+      "source": "wsp/documentation/requirements.md",
+      "source_sha256": "db8447de03e78b0ecfceb872b46c21020a7bbfb2dafdf2862a22a5ab2f15ee42",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-DOC-0004 (Navigation), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-DOC-0005",
+      "title": "Consistent Presentation",
+      "source": "wsp/documentation/requirements.md",
+      "source_sha256": "db8447de03e78b0ecfceb872b46c21020a7bbfb2dafdf2862a22a5ab2f15ee42",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-DOC-0005 (Consistent Presentation), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-DOC-0006",
+      "title": "Source Authority",
+      "source": "wsp/documentation/requirements.md",
+      "source_sha256": "db8447de03e78b0ecfceb872b46c21020a7bbfb2dafdf2862a22a5ab2f15ee42",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-DOC-0006 (Source Authority), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-DOC-0007",
+      "title": "Build Isolation",
+      "source": "wsp/documentation/requirements.md",
+      "source_sha256": "db8447de03e78b0ecfceb872b46c21020a7bbfb2dafdf2862a22a5ab2f15ee42",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-DOC-0007 (Build Isolation), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-DOC-0008",
+      "title": "Build Failure",
+      "source": "wsp/documentation/requirements.md",
+      "source_sha256": "db8447de03e78b0ecfceb872b46c21020a7bbfb2dafdf2862a22a5ab2f15ee42",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-DOC-0008 (Build Failure), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-DOC-0009",
+      "title": "Release Verification",
+      "source": "wsp/documentation/requirements.md",
+      "source_sha256": "db8447de03e78b0ecfceb872b46c21020a7bbfb2dafdf2862a22a5ab2f15ee42",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-DOC-0009 (Release Verification), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-DOC-0010",
+      "title": "Descriptive Metadata",
+      "source": "wsp/documentation/requirements.md",
+      "source_sha256": "db8447de03e78b0ecfceb872b46c21020a7bbfb2dafdf2862a22a5ab2f15ee42",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-DOC-0010 (Descriptive Metadata), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-DOC-0011",
+      "title": "Release Digest",
+      "source": "wsp/documentation/requirements.md",
+      "source_sha256": "db8447de03e78b0ecfceb872b46c21020a7bbfb2dafdf2862a22a5ab2f15ee42",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-DOC-0011 (Release Digest), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-DOC-0012",
+      "title": "Build Provenance Attestation",
+      "source": "wsp/documentation/requirements.md",
+      "source_sha256": "db8447de03e78b0ecfceb872b46c21020a7bbfb2dafdf2862a22a5ab2f15ee42",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-DOC-0012 (Build Provenance Attestation), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-DOC-0013",
+      "title": "Selectable PAdES Signature",
+      "source": "wsp/documentation/requirements.md",
+      "source_sha256": "db8447de03e78b0ecfceb872b46c21020a7bbfb2dafdf2862a22a5ab2f15ee42",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-DOC-0013 (Selectable PAdES Signature), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0001",
+      "title": "Information scope and baseline",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0001 (Information scope and baseline), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0002",
+      "title": "Information-development plan",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0002 (Information-development plan), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0003",
+      "title": "Assigned responsibilities",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0003 (Assigned responsibilities), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0004",
+      "title": "Audience analysis",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0004 (Audience analysis), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0005",
+      "title": "Task analysis",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0005 (Task analysis), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0006",
+      "title": "Information needs and requirements",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0006 (Information needs and requirements), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0007",
+      "title": "Information traceability",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0007 (Information traceability), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0008",
+      "title": "Product-lifecycle integration",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0008 (Product-lifecycle integration), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0009",
+      "title": "Controlled information architecture",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0009 (Controlled information architecture), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0010",
+      "title": "Topic purpose and content type",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0010 (Topic purpose and content type), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0011",
+      "title": "Information identity and applicability",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0011 (Information identity and applicability), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0012",
+      "title": "Navigation and findability",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0012 (Navigation and findability), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0013",
+      "title": "Embedded and context-sensitive help",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0013 (Embedded and context-sensitive help), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0014",
+      "title": "Product purpose, scope, and limitations",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0014 (Product purpose, scope, and limitations), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0015",
+      "title": "Prerequisites and system requirements",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0015 (Prerequisites and system requirements), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0016",
+      "title": "Product lifecycle procedures",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0016 (Product lifecycle procedures), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0017",
+      "title": "Procedure structure",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0017 (Procedure structure), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0018",
+      "title": "User-interface reference",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0018 (User-interface reference), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0019",
+      "title": "Command-line reference",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0019 (Command-line reference), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0020",
+      "title": "Outputs, status, and error information",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0020 (Outputs, status, and error information), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0021",
+      "title": "Troubleshooting and recovery",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0021 (Troubleshooting and recovery), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0022",
+      "title": "Safety, security, privacy, and data effects",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0022 (Safety, security, privacy, and data effects), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0023",
+      "title": "Validated examples",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0023 (Validated examples), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0024",
+      "title": "Support and service-life information",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0024 (Support and service-life information), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0025",
+      "title": "Accessibility-use information",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0025 (Accessibility-use information), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0026",
+      "title": "API and integration information",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0026 (API and integration information), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0027",
+      "title": "Technical correctness",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0027 (Technical correctness), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0028",
+      "title": "Coverage completeness",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0028 (Coverage completeness), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0029",
+      "title": "Terminology and product consistency",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0029 (Terminology and product consistency), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0030",
+      "title": "Necessary and non-duplicative content",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0030 (Necessary and non-duplicative content), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0031",
+      "title": "Comprehension and task success",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0031 (Comprehension and task success), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0032",
+      "title": "Accessible information products",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0032 (Accessible information products), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0033",
+      "title": "Translation and localization controls",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0033 (Translation and localization controls), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0034",
+      "title": "Drafts and prototypes",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0034 (Drafts and prototypes), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0035",
+      "title": "Technical and editorial review",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0035 (Technical and editorial review), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0036",
+      "title": "Content validation",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0036 (Content validation), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0037",
+      "title": "Final assembly and packaging",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0037 (Final assembly and packaging), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0038",
+      "title": "Availability at point of need",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0038 (Availability at point of need), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0039",
+      "title": "Product and information release synchronization",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0039 (Product and information release synchronization), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0040",
+      "title": "Content and configuration management",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0040 (Content and configuration management), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0041",
+      "title": "Change impact and update",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0041 (Change impact and update), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0042",
+      "title": "Feedback and information defects",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0042 (Feedback and information defects), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0043",
+      "title": "Supported and superseded information",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0043 (Supported and superseded information), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-INFO-0044",
+      "title": "Information acceptance record",
+      "source": "wsp/user-information/requirements.md",
+      "source_sha256": "237b5e2bde2b01c1e610310698adcefed73e208f599f712a3376be0902421e5e",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-INFO-0044 (Information acceptance record), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-LANG-0001",
+      "title": "C Profile",
+      "source": "wsp/style/language-style.md",
+      "source_sha256": "3662a3de1c8944055aad91270da6544721f0d9b4667488facada4a5e266b440c",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-LANG-0001 (C Profile), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-LANG-0002",
+      "title": "C++ Profile",
+      "source": "wsp/style/language-style.md",
+      "source_sha256": "3662a3de1c8944055aad91270da6544721f0d9b4667488facada4a5e266b440c",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-LANG-0002 (C++ Profile), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-LANG-0003",
+      "title": "Python Profile",
+      "source": "wsp/style/language-style.md",
+      "source_sha256": "3662a3de1c8944055aad91270da6544721f0d9b4667488facada4a5e266b440c",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-LANG-0003 (Python Profile), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-LANG-0004",
+      "title": "YAML Profile",
+      "source": "wsp/style/language-style.md",
+      "source_sha256": "3662a3de1c8944055aad91270da6544721f0d9b4667488facada4a5e266b440c",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-LANG-0004 (YAML Profile), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-LANG-0005",
+      "title": "JSON Profile",
+      "source": "wsp/style/language-style.md",
+      "source_sha256": "3662a3de1c8944055aad91270da6544721f0d9b4667488facada4a5e266b440c",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-LANG-0005 (JSON Profile), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-LANG-0006",
+      "title": "Make Profile",
+      "source": "wsp/style/language-style.md",
+      "source_sha256": "3662a3de1c8944055aad91270da6544721f0d9b4667488facada4a5e266b440c",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-LANG-0006 (Make Profile), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-LANG-0007",
+      "title": "PowerShell Profile",
+      "source": "wsp/style/language-style.md",
+      "source_sha256": "3662a3de1c8944055aad91270da6544721f0d9b4667488facada4a5e266b440c",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-LANG-0007 (PowerShell Profile), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-LANG-0008",
+      "title": "C# Profile",
+      "source": "wsp/style/language-style.md",
+      "source_sha256": "3662a3de1c8944055aad91270da6544721f0d9b4667488facada4a5e266b440c",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-LANG-0008 (C# Profile), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-LANG-0009",
+      "title": "Visual Basic Profile",
+      "source": "wsp/style/language-style.md",
+      "source_sha256": "3662a3de1c8944055aad91270da6544721f0d9b4667488facada4a5e266b440c",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-LANG-0009 (Visual Basic Profile), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-LANG-0010",
+      "title": "CMake Profile",
+      "source": "wsp/style/language-style.md",
+      "source_sha256": "3662a3de1c8944055aad91270da6544721f0d9b4667488facada4a5e266b440c",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-LANG-0010 (CMake Profile), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-LANG-0011",
+      "title": "Additional Language Profiles",
+      "source": "wsp/style/language-style.md",
+      "source_sha256": "3662a3de1c8944055aad91270da6544721f0d9b4667488facada4a5e266b440c",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-LANG-0011 (Additional Language Profiles), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-PROC-0001",
+      "title": "Defined Project Process",
+      "source": "wsp/processes/project-process.md",
+      "source_sha256": "2fe0c94899289d584209aefc167696d2a5ba5df2e1ab5c6f5481eb9b48225dc1",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-PROC-0001 (Defined Project Process), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-PROC-0002",
+      "title": "Roles and Responsibilities",
+      "source": "wsp/processes/project-process.md",
+      "source_sha256": "2fe0c94899289d584209aefc167696d2a5ba5df2e1ab5c6f5481eb9b48225dc1",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-PROC-0002 (Roles and Responsibilities), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-PROC-0003",
+      "title": "Proportional Planning",
+      "source": "wsp/processes/project-process.md",
+      "source_sha256": "2fe0c94899289d584209aefc167696d2a5ba5df2e1ab5c6f5481eb9b48225dc1",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-PROC-0003 (Proportional Planning), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-PROC-0004",
+      "title": "Controlled Change",
+      "source": "wsp/processes/project-process.md",
+      "source_sha256": "2fe0c94899289d584209aefc167696d2a5ba5df2e1ab5c6f5481eb9b48225dc1",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-PROC-0004 (Controlled Change), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-PROC-0005",
+      "title": "Review",
+      "source": "wsp/processes/project-process.md",
+      "source_sha256": "2fe0c94899289d584209aefc167696d2a5ba5df2e1ab5c6f5481eb9b48225dc1",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-PROC-0005 (Review), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-PROC-0006",
+      "title": "Issue and Defect Control",
+      "source": "wsp/processes/project-process.md",
+      "source_sha256": "2fe0c94899289d584209aefc167696d2a5ba5df2e1ab5c6f5481eb9b48225dc1",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-PROC-0006 (Issue and Defect Control), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-PROC-0007",
+      "title": "Release Readiness",
+      "source": "wsp/processes/project-process.md",
+      "source_sha256": "2fe0c94899289d584209aefc167696d2a5ba5df2e1ab5c6f5481eb9b48225dc1",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-PROC-0007 (Release Readiness), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-PROC-0008",
+      "title": "Release Approval and Baseline",
+      "source": "wsp/processes/project-process.md",
+      "source_sha256": "2fe0c94899289d584209aefc167696d2a5ba5df2e1ab5c6f5481eb9b48225dc1",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-PROC-0008 (Release Approval and Baseline), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-PROC-0009",
+      "title": "Support and Response",
+      "source": "wsp/processes/project-process.md",
+      "source_sha256": "2fe0c94899289d584209aefc167696d2a5ba5df2e1ab5c6f5481eb9b48225dc1",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-PROC-0009 (Support and Response), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-PROC-0010",
+      "title": "Retrospective and Improvement",
+      "source": "wsp/processes/project-process.md",
+      "source_sha256": "2fe0c94899289d584209aefc167696d2a5ba5df2e1ab5c6f5481eb9b48225dc1",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-PROC-0010 (Retrospective and Improvement), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-PROC-0011",
+      "title": "Upstream Dependency Workarounds",
+      "source": "wsp/processes/project-process.md",
+      "source_sha256": "2fe0c94899289d584209aefc167696d2a5ba5df2e1ab5c6f5481eb9b48225dc1",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-PROC-0011 (Upstream Dependency Workarounds), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-PSP-0001",
+      "title": "Defined Personal Process",
+      "source": "wsp/processes/personal-process.md",
+      "source_sha256": "8866b1e662c9103e5618cf44fcda390085330148813027fbd0cfdf6938e94551",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-PSP-0001 (Defined Personal Process), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-PSP-0002",
+      "title": "Work Estimate",
+      "source": "wsp/processes/personal-process.md",
+      "source_sha256": "8866b1e662c9103e5618cf44fcda390085330148813027fbd0cfdf6938e94551",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-PSP-0002 (Work Estimate), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-PSP-0003",
+      "title": "Time Recording",
+      "source": "wsp/processes/personal-process.md",
+      "source_sha256": "8866b1e662c9103e5618cf44fcda390085330148813027fbd0cfdf6938e94551",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-PSP-0003 (Time Recording), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-PSP-0004",
+      "title": "Defect Recording",
+      "source": "wsp/processes/personal-process.md",
+      "source_sha256": "8866b1e662c9103e5618cf44fcda390085330148813027fbd0cfdf6938e94551",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-PSP-0004 (Defect Recording), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-PSP-0005",
+      "title": "Personal Reviews",
+      "source": "wsp/processes/personal-process.md",
+      "source_sha256": "8866b1e662c9103e5618cf44fcda390085330148813027fbd0cfdf6938e94551",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-PSP-0005 (Personal Reviews), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-PSP-0006",
+      "title": "Quality Plan",
+      "source": "wsp/processes/personal-process.md",
+      "source_sha256": "8866b1e662c9103e5618cf44fcda390085330148813027fbd0cfdf6938e94551",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-PSP-0006 (Quality Plan), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-PSP-0007",
+      "title": "Postmortem",
+      "source": "wsp/processes/personal-process.md",
+      "source_sha256": "8866b1e662c9103e5618cf44fcda390085330148813027fbd0cfdf6938e94551",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-PSP-0007 (Postmortem), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-PSP-0008",
+      "title": "Personal Process Improvement",
+      "source": "wsp/processes/personal-process.md",
+      "source_sha256": "8866b1e662c9103e5618cf44fcda390085330148813027fbd0cfdf6938e94551",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-PSP-0008 (Personal Process Improvement), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-PSP-0009",
+      "title": "Personal Data Protection",
+      "source": "wsp/processes/personal-process.md",
+      "source_sha256": "8866b1e662c9103e5618cf44fcda390085330148813027fbd0cfdf6938e94551",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-PSP-0009 (Personal Data Protection), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-REQM-0001",
+      "title": "Identified Requirements",
+      "source": "wsp/requirements/requirements-management.md",
+      "source_sha256": "8b9915ca0a301f4b554f402f1800bf104ebe3c8ab079c3a8b0e945d32b745416",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-REQM-0001 (Identified Requirements), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-REQM-0002",
+      "title": "Requirement Quality",
+      "source": "wsp/requirements/requirements-management.md",
+      "source_sha256": "8b9915ca0a301f4b554f402f1800bf104ebe3c8ab079c3a8b0e945d32b745416",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-REQM-0002 (Requirement Quality), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-REQM-0003",
+      "title": "Requirement Context",
+      "source": "wsp/requirements/requirements-management.md",
+      "source_sha256": "8b9915ca0a301f4b554f402f1800bf104ebe3c8ab079c3a8b0e945d32b745416",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-REQM-0003 (Requirement Context), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-REQM-0004",
+      "title": "Planned Verification",
+      "source": "wsp/requirements/requirements-management.md",
+      "source_sha256": "8b9915ca0a301f4b554f402f1800bf104ebe3c8ab079c3a8b0e945d32b745416",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-REQM-0004 (Planned Verification), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-REQM-0005",
+      "title": "Bidirectional Traceability",
+      "source": "wsp/requirements/requirements-management.md",
+      "source_sha256": "8b9915ca0a301f4b554f402f1800bf104ebe3c8ab079c3a8b0e945d32b745416",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-REQM-0005 (Bidirectional Traceability), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-REQM-0006",
+      "title": "WSP Adoption Record",
+      "source": "wsp/requirements/requirements-management.md",
+      "source_sha256": "8b9915ca0a301f4b554f402f1800bf104ebe3c8ab079c3a8b0e945d32b745416",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-REQM-0006 (WSP Adoption Record), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-REQM-0007",
+      "title": "Tailoring Control",
+      "source": "wsp/requirements/requirements-management.md",
+      "source_sha256": "8b9915ca0a301f4b554f402f1800bf104ebe3c8ab079c3a8b0e945d32b745416",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-REQM-0007 (Tailoring Control), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-REQM-0008",
+      "title": "Change Impact Analysis",
+      "source": "wsp/requirements/requirements-management.md",
+      "source_sha256": "8b9915ca0a301f4b554f402f1800bf104ebe3c8ab079c3a8b0e945d32b745416",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-REQM-0008 (Change Impact Analysis), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-REQM-0009",
+      "title": "Requirement History",
+      "source": "wsp/requirements/requirements-management.md",
+      "source_sha256": "8b9915ca0a301f4b554f402f1800bf104ebe3c8ab079c3a8b0e945d32b745416",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-REQM-0009 (Requirement History), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-REQM-0010",
+      "title": "Release Baseline",
+      "source": "wsp/requirements/requirements-management.md",
+      "source_sha256": "8b9915ca0a301f4b554f402f1800bf104ebe3c8ab079c3a8b0e945d32b745416",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-REQM-0010 (Release Baseline), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SAST-0001",
+      "title": "Standard Analyzer",
+      "source": "wsp/style/static-analysis.md",
+      "source_sha256": "043cc24f2061281e93e6ccb23b45bc60337024d9812bcf658fc17286901314b8",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SAST-0001 (Standard Analyzer), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SAST-0002",
+      "title": "Controlled Analysis Configuration",
+      "source": "wsp/style/static-analysis.md",
+      "source_sha256": "043cc24f2061281e93e6ccb23b45bc60337024d9812bcf658fc17286901314b8",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SAST-0002 (Controlled Analysis Configuration), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SAST-0003",
+      "title": "Analysis Scope",
+      "source": "wsp/style/static-analysis.md",
+      "source_sha256": "043cc24f2061281e93e6ccb23b45bc60337024d9812bcf658fc17286901314b8",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SAST-0003 (Analysis Scope), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SAST-0004",
+      "title": "Fail-Closed Execution",
+      "source": "wsp/style/static-analysis.md",
+      "source_sha256": "043cc24f2061281e93e6ccb23b45bc60337024d9812bcf658fc17286901314b8",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SAST-0004 (Fail-Closed Execution), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SAST-0005",
+      "title": "Finding and Suppression Control",
+      "source": "wsp/style/static-analysis.md",
+      "source_sha256": "043cc24f2061281e93e6ccb23b45bc60337024d9812bcf658fc17286901314b8",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SAST-0005 (Finding and Suppression Control), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SAST-0006",
+      "title": "Analysis Evidence",
+      "source": "wsp/style/static-analysis.md",
+      "source_sha256": "043cc24f2061281e93e6ccb23b45bc60337024d9812bcf658fc17286901314b8",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SAST-0006 (Analysis Evidence), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SEC-0001",
+      "title": "Security Scope",
+      "source": "wsp/security/security-requirements.md",
+      "source_sha256": "f2f50c8ff7309b711543a5c3ceff707ad701288f8cd018af36719880164caa54",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SEC-0001 (Security Scope), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SEC-0002",
+      "title": "Controlled DFS",
+      "source": "wsp/security/security-requirements.md",
+      "source_sha256": "f2f50c8ff7309b711543a5c3ceff707ad701288f8cd018af36719880164caa54",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SEC-0002 (Controlled DFS), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SEC-0003",
+      "title": "Trust Model",
+      "source": "wsp/security/security-requirements.md",
+      "source_sha256": "f2f50c8ff7309b711543a5c3ceff707ad701288f8cd018af36719880164caa54",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SEC-0003 (Trust Model), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SEC-0004",
+      "title": "Threat Analysis",
+      "source": "wsp/security/security-requirements.md",
+      "source_sha256": "f2f50c8ff7309b711543a5c3ceff707ad701288f8cd018af36719880164caa54",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SEC-0004 (Threat Analysis), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SEC-0005",
+      "title": "Derived Security Requirements",
+      "source": "wsp/security/security-requirements.md",
+      "source_sha256": "f2f50c8ff7309b711543a5c3ceff707ad701288f8cd018af36719880164caa54",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SEC-0005 (Derived Security Requirements), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SEC-0006",
+      "title": "Untrusted Input and Resource Control",
+      "source": "wsp/security/security-requirements.md",
+      "source_sha256": "f2f50c8ff7309b711543a5c3ceff707ad701288f8cd018af36719880164caa54",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SEC-0006 (Untrusted Input and Resource Control), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SEC-0007",
+      "title": "Least Privilege and Authorization",
+      "source": "wsp/security/security-requirements.md",
+      "source_sha256": "f2f50c8ff7309b711543a5c3ceff707ad701288f8cd018af36719880164caa54",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SEC-0007 (Least Privilege and Authorization), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SEC-0008",
+      "title": "Cryptography and Secrets",
+      "source": "wsp/security/security-requirements.md",
+      "source_sha256": "f2f50c8ff7309b711543a5c3ceff707ad701288f8cd018af36719880164caa54",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SEC-0008 (Cryptography and Secrets), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SEC-0009",
+      "title": "Dependency and Build Integrity",
+      "source": "wsp/security/security-requirements.md",
+      "source_sha256": "f2f50c8ff7309b711543a5c3ceff707ad701288f8cd018af36719880164caa54",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SEC-0009 (Dependency and Build Integrity), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SEC-0010",
+      "title": "Security Logging and Data Protection",
+      "source": "wsp/security/security-requirements.md",
+      "source_sha256": "f2f50c8ff7309b711543a5c3ceff707ad701288f8cd018af36719880164caa54",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SEC-0010 (Security Logging and Data Protection), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SEC-0011",
+      "title": "Secure Failure and Recovery",
+      "source": "wsp/security/security-requirements.md",
+      "source_sha256": "f2f50c8ff7309b711543a5c3ceff707ad701288f8cd018af36719880164caa54",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SEC-0011 (Secure Failure and Recovery), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SEC-0012",
+      "title": "Security Verification",
+      "source": "wsp/security/security-requirements.md",
+      "source_sha256": "f2f50c8ff7309b711543a5c3ceff707ad701288f8cd018af36719880164caa54",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SEC-0012 (Security Verification), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SEC-0013",
+      "title": "Security Review and Defect Handling",
+      "source": "wsp/security/security-requirements.md",
+      "source_sha256": "f2f50c8ff7309b711543a5c3ceff707ad701288f8cd018af36719880164caa54",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SEC-0013 (Security Review and Defect Handling), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SEC-0014",
+      "title": "Vulnerability Response",
+      "source": "wsp/security/security-requirements.md",
+      "source_sha256": "f2f50c8ff7309b711543a5c3ceff707ad701288f8cd018af36719880164caa54",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SEC-0014 (Vulnerability Response), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SEC-0015",
+      "title": "Native Build Hardening",
+      "source": "wsp/security/security-requirements.md",
+      "source_sha256": "f2f50c8ff7309b711543a5c3ceff707ad701288f8cd018af36719880164caa54",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SEC-0015 (Native Build Hardening), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SEC-0016",
+      "title": "Build-Hardening Verification",
+      "source": "wsp/security/security-requirements.md",
+      "source_sha256": "f2f50c8ff7309b711543a5c3ceff707ad701288f8cd018af36719880164caa54",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SEC-0016 (Build-Hardening Verification), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SIGN-0001",
+      "title": "Release signing plan",
+      "source": "wsp/security/windows-code-signing-and-defender.md",
+      "source_sha256": "c0962e78e22699370c1debe1a2a250370a001da224e11f7c1543b13eb0be54b7",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SIGN-0001 (Release signing plan), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SIGN-0002",
+      "title": "Trust-layer separation",
+      "source": "wsp/security/windows-code-signing-and-defender.md",
+      "source_sha256": "c0962e78e22699370c1debe1a2a250370a001da224e11f7c1543b13eb0be54b7",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SIGN-0002 (Trust-layer separation), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SIGN-0003",
+      "title": "Protected signing identity",
+      "source": "wsp/security/windows-code-signing-and-defender.md",
+      "source_sha256": "c0962e78e22699370c1debe1a2a250370a001da224e11f7c1543b13eb0be54b7",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SIGN-0003 (Protected signing identity), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SIGN-0004",
+      "title": "SHA-256 Authenticode signature",
+      "source": "wsp/security/windows-code-signing-and-defender.md",
+      "source_sha256": "c0962e78e22699370c1debe1a2a250370a001da224e11f7c1543b13eb0be54b7",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SIGN-0004 (SHA-256 Authenticode signature), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SIGN-0005",
+      "title": "Trusted timestamp",
+      "source": "wsp/security/windows-code-signing-and-defender.md",
+      "source_sha256": "c0962e78e22699370c1debe1a2a250370a001da224e11f7c1543b13eb0be54b7",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SIGN-0005 (Trusted timestamp), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SIGN-0006",
+      "title": "Legacy signing exception",
+      "source": "wsp/security/windows-code-signing-and-defender.md",
+      "source_sha256": "c0962e78e22699370c1debe1a2a250370a001da224e11f7c1543b13eb0be54b7",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SIGN-0006 (Legacy signing exception), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SIGN-0007",
+      "title": "Signing order and artifact immutability",
+      "source": "wsp/security/windows-code-signing-and-defender.md",
+      "source_sha256": "c0962e78e22699370c1debe1a2a250370a001da224e11f7c1543b13eb0be54b7",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SIGN-0007 (Signing order and artifact immutability), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SIGN-0008",
+      "title": "Signature verification gate",
+      "source": "wsp/security/windows-code-signing-and-defender.md",
+      "source_sha256": "c0962e78e22699370c1debe1a2a250370a001da224e11f7c1543b13eb0be54b7",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SIGN-0008 (Signature verification gate), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SIGN-0009",
+      "title": "Exact artifact identity",
+      "source": "wsp/security/windows-code-signing-and-defender.md",
+      "source_sha256": "c0962e78e22699370c1debe1a2a250370a001da224e11f7c1543b13eb0be54b7",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SIGN-0009 (Exact artifact identity), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SIGN-0010",
+      "title": "Defender release scan",
+      "source": "wsp/security/windows-code-signing-and-defender.md",
+      "source_sha256": "c0962e78e22699370c1debe1a2a250370a001da224e11f7c1543b13eb0be54b7",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SIGN-0010 (Defender release scan), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SIGN-0011",
+      "title": "Detection release gate",
+      "source": "wsp/security/windows-code-signing-and-defender.md",
+      "source_sha256": "c0962e78e22699370c1debe1a2a250370a001da224e11f7c1543b13eb0be54b7",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SIGN-0011 (Detection release gate), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SIGN-0012",
+      "title": "Detection classification",
+      "source": "wsp/security/windows-code-signing-and-defender.md",
+      "source_sha256": "c0962e78e22699370c1debe1a2a250370a001da224e11f7c1543b13eb0be54b7",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SIGN-0012 (Detection classification), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SIGN-0013",
+      "title": "False-positive investigation",
+      "source": "wsp/security/windows-code-signing-and-defender.md",
+      "source_sha256": "c0962e78e22699370c1debe1a2a250370a001da224e11f7c1543b13eb0be54b7",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SIGN-0013 (False-positive investigation), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SIGN-0014",
+      "title": "Microsoft submission and tracking",
+      "source": "wsp/security/windows-code-signing-and-defender.md",
+      "source_sha256": "c0962e78e22699370c1debe1a2a250370a001da224e11f7c1543b13eb0be54b7",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SIGN-0014 (Microsoft submission and tracking), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SIGN-0015",
+      "title": "No evasion or routine exclusions",
+      "source": "wsp/security/windows-code-signing-and-defender.md",
+      "source_sha256": "c0962e78e22699370c1debe1a2a250370a001da224e11f7c1543b13eb0be54b7",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SIGN-0015 (No evasion or routine exclusions), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SIGN-0016",
+      "title": "Publisher and user guidance",
+      "source": "wsp/security/windows-code-signing-and-defender.md",
+      "source_sha256": "c0962e78e22699370c1debe1a2a250370a001da224e11f7c1543b13eb0be54b7",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SIGN-0016 (Publisher and user guidance), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SIGN-0017",
+      "title": "Certificate lifecycle and compromise",
+      "source": "wsp/security/windows-code-signing-and-defender.md",
+      "source_sha256": "c0962e78e22699370c1debe1a2a250370a001da224e11f7c1543b13eb0be54b7",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SIGN-0017 (Certificate lifecycle and compromise), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-SIGN-0018",
+      "title": "Release trust evidence",
+      "source": "wsp/security/windows-code-signing-and-defender.md",
+      "source_sha256": "c0962e78e22699370c1debe1a2a250370a001da224e11f7c1543b13eb0be54b7",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-SIGN-0018 (Release trust evidence), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-STYLE-0001",
+      "title": "Physical Line Length",
+      "source": "wsp/style/source-style.md",
+      "source_sha256": "431eede406508714bbe0920d825f40cca1e0cf9f5ea77d99791f8f8ed93a8997",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-STYLE-0001 (Physical Line Length), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-STYLE-0002",
+      "title": "Text Encoding",
+      "source": "wsp/style/source-style.md",
+      "source_sha256": "431eede406508714bbe0920d825f40cca1e0cf9f5ea77d99791f8f8ed93a8997",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-STYLE-0002 (Text Encoding), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-STYLE-0003",
+      "title": "Whitespace",
+      "source": "wsp/style/source-style.md",
+      "source_sha256": "431eede406508714bbe0920d825f40cca1e0cf9f5ea77d99791f8f8ed93a8997",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-STYLE-0003 (Whitespace), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-STYLE-0004",
+      "title": "Language-Safe Formatting",
+      "source": "wsp/style/source-style.md",
+      "source_sha256": "431eede406508714bbe0920d825f40cca1e0cf9f5ea77d99791f8f8ed93a8997",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-STYLE-0004 (Language-Safe Formatting), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-STYLE-0005",
+      "title": "Controlled Language Checks",
+      "source": "wsp/style/source-style.md",
+      "source_sha256": "431eede406508714bbe0920d825f40cca1e0cf9f5ea77d99791f8f8ed93a8997",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-STYLE-0005 (Controlled Language Checks), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-STYLE-0006",
+      "title": "Documentation Contracts",
+      "source": "wsp/style/source-style.md",
+      "source_sha256": "431eede406508714bbe0920d825f40cca1e0cf9f5ea77d99791f8f8ed93a8997",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-STYLE-0006 (Documentation Contracts), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-STYLE-0007",
+      "title": "Complete Enforcement Scope",
+      "source": "wsp/style/source-style.md",
+      "source_sha256": "431eede406508714bbe0920d825f40cca1e0cf9f5ea77d99791f8f8ed93a8997",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-STYLE-0007 (Complete Enforcement Scope), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-TEST-0001",
+      "title": "Verification Coverage",
+      "source": "wsp/testing/test-strategy.md",
+      "source_sha256": "386827091623651ed40d7888cd5a5cd7f67f624c14b52f0de033fdd31a74cbae",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-TEST-0001 (Verification Coverage), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-TEST-0002",
+      "title": "Controlled Test Specification",
+      "source": "wsp/testing/test-strategy.md",
+      "source_sha256": "386827091623651ed40d7888cd5a5cd7f67f624c14b52f0de033fdd31a74cbae",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-TEST-0002 (Controlled Test Specification), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-TEST-0003",
+      "title": "Test-Case Content",
+      "source": "wsp/testing/test-strategy.md",
+      "source_sha256": "386827091623651ed40d7888cd5a5cd7f67f624c14b52f0de033fdd31a74cbae",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-TEST-0003 (Test-Case Content), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-TEST-0004",
+      "title": "Specification as Source of Truth",
+      "source": "wsp/testing/test-strategy.md",
+      "source_sha256": "386827091623651ed40d7888cd5a5cd7f67f624c14b52f0de033fdd31a74cbae",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-TEST-0004 (Specification as Source of Truth), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-TEST-0005",
+      "title": "Repeatable Execution",
+      "source": "wsp/testing/test-strategy.md",
+      "source_sha256": "386827091623651ed40d7888cd5a5cd7f67f624c14b52f0de033fdd31a74cbae",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-TEST-0005 (Repeatable Execution), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-TEST-0006",
+      "title": "Automated Execution",
+      "source": "wsp/testing/test-strategy.md",
+      "source_sha256": "386827091623651ed40d7888cd5a5cd7f67f624c14b52f0de033fdd31a74cbae",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-TEST-0006 (Automated Execution), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-TEST-0007",
+      "title": "Execution Metadata",
+      "source": "wsp/testing/test-strategy.md",
+      "source_sha256": "386827091623651ed40d7888cd5a5cd7f67f624c14b52f0de033fdd31a74cbae",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-TEST-0007 (Execution Metadata), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-TEST-0008",
+      "title": "Test Status",
+      "source": "wsp/testing/test-strategy.md",
+      "source_sha256": "386827091623651ed40d7888cd5a5cd7f67f624c14b52f0de033fdd31a74cbae",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-TEST-0008 (Test Status), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-TEST-0009",
+      "title": "Failure Preservation",
+      "source": "wsp/testing/test-strategy.md",
+      "source_sha256": "386827091623651ed40d7888cd5a5cd7f67f624c14b52f0de033fdd31a74cbae",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-TEST-0009 (Failure Preservation), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-TEST-0010",
+      "title": "Generated Test Reports",
+      "source": "wsp/testing/test-strategy.md",
+      "source_sha256": "386827091623651ed40d7888cd5a5cd7f67f624c14b52f0de033fdd31a74cbae",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-TEST-0010 (Generated Test Reports), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-TEST-0011",
+      "title": "Automated Traceability Validation",
+      "source": "wsp/testing/test-strategy.md",
+      "source_sha256": "386827091623651ed40d7888cd5a5cd7f67f624c14b52f0de033fdd31a74cbae",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-TEST-0011 (Automated Traceability Validation), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-TEST-0012",
+      "title": "Continuous Integration",
+      "source": "wsp/testing/test-strategy.md",
+      "source_sha256": "386827091623651ed40d7888cd5a5cd7f67f624c14b52f0de033fdd31a74cbae",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-TEST-0012 (Continuous Integration), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-TEST-0013",
+      "title": "Release Verification Matrix",
+      "source": "wsp/testing/test-strategy.md",
+      "source_sha256": "386827091623651ed40d7888cd5a5cd7f67f624c14b52f0de033fdd31a74cbae",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-TEST-0013 (Release Verification Matrix), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-TEST-0014",
+      "title": "Evidence Retention",
+      "source": "wsp/testing/test-strategy.md",
+      "source_sha256": "386827091623651ed40d7888cd5a5cd7f67f624c14b52f0de033fdd31a74cbae",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-TEST-0014 (Evidence Retention), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-TEST-0015",
+      "title": "Test-Technique Selection",
+      "source": "wsp/testing/test-strategy.md",
+      "source_sha256": "386827091623651ed40d7888cd5a5cd7f67f624c14b52f0de033fdd31a74cbae",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-TEST-0015 (Test-Technique Selection), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-TEST-0016",
+      "title": "Debug Build Evidence",
+      "source": "wsp/testing/test-strategy.md",
+      "source_sha256": "386827091623651ed40d7888cd5a5cd7f67f624c14b52f0de033fdd31a74cbae",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-TEST-0016 (Debug Build Evidence), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-TEST-0017",
+      "title": "Native ARM64 CI Execution",
+      "source": "wsp/testing/test-strategy.md",
+      "source_sha256": "386827091623651ed40d7888cd5a5cd7f67f624c14b52f0de033fdd31a74cbae",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-TEST-0017 (Native ARM64 CI Execution), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-TEST-0018",
+      "title": "Debug Failure Backtraces",
+      "source": "wsp/testing/test-strategy.md",
+      "source_sha256": "386827091623651ed40d7888cd5a5cd7f67f624c14b52f0de033fdd31a74cbae",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-TEST-0018 (Debug Failure Backtraces), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-TEST-0019",
+      "title": "Native Standard-Input Decision Coverage",
+      "source": "wsp/testing/test-strategy.md",
+      "source_sha256": "386827091623651ed40d7888cd5a5cd7f67f624c14b52f0de033fdd31a74cbae",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-TEST-0019 (Native Standard-Input Decision Coverage), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-TEST-0020",
+      "title": "Native Standard-Input Transport Fidelity",
+      "source": "wsp/testing/test-strategy.md",
+      "source_sha256": "386827091623651ed40d7888cd5a5cd7f67f624c14b52f0de033fdd31a74cbae",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-TEST-0020 (Native Standard-Input Transport Fidelity), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-TEST-0021",
+      "title": "Native Input-Mode Separation",
+      "source": "wsp/testing/test-strategy.md",
+      "source_sha256": "386827091623651ed40d7888cd5a5cd7f67f624c14b52f0de033fdd31a74cbae",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-TEST-0021 (Native Input-Mode Separation), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-TOOL-0001",
+      "title": "Pinned Tool Revision",
+      "source": "wsp/tools/requirements.md",
+      "source_sha256": "baf59ede73d86faf6d0576141cb19e3947fd2c3944de933dfa8d837531a220e7",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-TOOL-0001 (Pinned Tool Revision), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-TOOL-0002",
+      "title": "Explicit Project Context",
+      "source": "wsp/tools/requirements.md",
+      "source_sha256": "baf59ede73d86faf6d0576141cb19e3947fd2c3944de933dfa8d837531a220e7",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-TOOL-0002 (Explicit Project Context), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-TOOL-0003",
+      "title": "Deterministic Result",
+      "source": "wsp/tools/requirements.md",
+      "source_sha256": "baf59ede73d86faf6d0576141cb19e3947fd2c3944de933dfa8d837531a220e7",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-TOOL-0003 (Deterministic Result), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-TOOL-0004",
+      "title": "Failure Contract",
+      "source": "wsp/tools/requirements.md",
+      "source_sha256": "baf59ede73d86faf6d0576141cb19e3947fd2c3944de933dfa8d837531a220e7",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-TOOL-0004 (Failure Contract), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-TOOL-0005",
+      "title": "Actionable Diagnostics",
+      "source": "wsp/tools/requirements.md",
+      "source_sha256": "baf59ede73d86faf6d0576141cb19e3947fd2c3944de933dfa8d837531a220e7",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-TOOL-0005 (Actionable Diagnostics), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-TOOL-0006",
+      "title": "Project Output Isolation",
+      "source": "wsp/tools/requirements.md",
+      "source_sha256": "baf59ede73d86faf6d0576141cb19e3947fd2c3944de933dfa8d837531a220e7",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-TOOL-0006 (Project Output Isolation), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-TOOL-0007",
+      "title": "Secret Safety",
+      "source": "wsp/tools/requirements.md",
+      "source_sha256": "baf59ede73d86faf6d0576141cb19e3947fd2c3944de933dfa8d837531a220e7",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-TOOL-0007 (Secret Safety), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-TOOL-0008",
+      "title": "Tool Self-Verification",
+      "source": "wsp/tools/requirements.md",
+      "source_sha256": "baf59ede73d86faf6d0576141cb19e3947fd2c3944de933dfa8d837531a220e7",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-TOOL-0008 (Tool Self-Verification), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-TOOL-0009",
+      "title": "GitHub Action Runtime Currency",
+      "source": "wsp/tools/requirements.md",
+      "source_sha256": "baf59ede73d86faf6d0576141cb19e3947fd2c3944de933dfa8d837531a220e7",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-TOOL-0009 (GitHub Action Runtime Currency), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0001",
+      "title": "Human-centred design plan",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0001 (Human-centred design plan), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0002",
+      "title": "Context of use",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0002 (Context of use), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0003",
+      "title": "Inclusive user-group coverage",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0003 (Inclusive user-group coverage), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0004",
+      "title": "User needs and measurable requirements",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0004 (User needs and measurable requirements), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0005",
+      "title": "User involvement",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0005 (User involvement), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0006",
+      "title": "Multidisciplinary design responsibility",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0006 (Multidisciplinary design responsibility), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0007",
+      "title": "Design alternatives",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0007 (Design alternatives), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0008",
+      "title": "Iterative formative evaluation",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0008 (Iterative formative evaluation), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0009",
+      "title": "Lifecycle feedback",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0009 (Lifecycle feedback), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0010",
+      "title": "Controlled design specification",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0010 (Controlled design specification), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0011",
+      "title": "Suitability for user tasks",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0011 (Suitability for user tasks), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0012",
+      "title": "Conceptual model and user vocabulary",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0012 (Conceptual model and user vocabulary), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0013",
+      "title": "Interaction sequences",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0013 (Interaction sequences), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0014",
+      "title": "Navigation and orientation",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0014 (Navigation and orientation), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0015",
+      "title": "Self-descriptive controls and actions",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0015 (Self-descriptive controls and actions), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0016",
+      "title": "Timely system feedback",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0016 (Timely system feedback), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0017",
+      "title": "Conformity with expectations",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0017 (Conformity with expectations), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0018",
+      "title": "Learnability and assistance",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0018 (Learnability and assistance), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0019",
+      "title": "Control of task progress",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0019 (Control of task progress), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0020",
+      "title": "Foreseeable use-error prevention",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0020 (Foreseeable use-error prevention), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0021",
+      "title": "Trustworthy user engagement",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0021 (Trustworthy user engagement), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0022",
+      "title": "Detectable presentation",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0022 (Detectable presentation), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0023",
+      "title": "Discriminable presentation",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0023 (Discriminable presentation), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0024",
+      "title": "Concise and task-relevant presentation",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0024 (Concise and task-relevant presentation), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0025",
+      "title": "Unambiguous interpretation",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0025 (Unambiguous interpretation), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0026",
+      "title": "Freedom from distraction",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0026 (Freedom from distraction), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0027",
+      "title": "Presentation consistency across modalities and outputs",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0027 (Presentation consistency across modalities and outputs), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0028",
+      "title": "EN 301 549 applicability matrix",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0028 (EN 301 549 applicability matrix), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0029",
+      "title": "EN 301 549 accessibility baseline",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0029 (EN 301 549 accessibility baseline), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0030",
+      "title": "Keyboard operation",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0030 (Keyboard operation), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0031",
+      "title": "Programmatic object semantics",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0031 (Programmatic object semantics), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0032",
+      "title": "Programmatic structure",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0032 (Programmatic structure), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0033",
+      "title": "Assistive-technology equivalent operation",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0033 (Assistive-technology equivalent operation), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0034",
+      "title": "Platform accessibility feature non-interference",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0034 (Platform accessibility feature non-interference), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0035",
+      "title": "Accessible alternatives and timing",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0035 (Accessible alternatives and timing), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0036",
+      "title": "Accessibility-feature documentation",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0036 (Accessibility-feature documentation), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0037",
+      "title": "Predefined UX acceptance criteria",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0037 (Predefined UX acceptance criteria), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0038",
+      "title": "Representative summative evaluation",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0038 (Representative summative evaluation), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0039",
+      "title": "Assistive-technology compatibility matrix",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0039 (Assistive-technology compatibility matrix), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0040",
+      "title": "UX/UI release gate and evidence",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0040 (UX/UI release gate and evidence), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0041",
+      "title": "Operation interruption and cancellation",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0041 (Operation interruption and cancellation), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0042",
+      "title": "Recovery from unintended navigation state",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0042 (Recovery from unintended navigation state), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0043",
+      "title": "Preference-change data preservation",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0043 (Preference-change data preservation), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0044",
+      "title": "Error identification",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0044 (Error identification), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0045",
+      "title": "Correction and valid-input preservation",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0045 (Correction and valid-input preservation), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0046",
+      "title": "High-consequence commitment control",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0046 (High-consequence commitment control), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0047",
+      "title": "Informed user choice",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0047 (Informed user choice), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0048",
+      "title": "Focus order",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0048 (Focus order), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0049",
+      "title": "Focus indication",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0049 (Focus indication), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0050",
+      "title": "No focus trap",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0050 (No focus trap), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0051",
+      "title": "Programmatic text",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0051 (Programmatic text), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0052",
+      "title": "Programmatic actions",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0052 (Programmatic actions), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0053",
+      "title": "Programmatic focus and selection",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0053 (Programmatic focus and selection), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0054",
+      "title": "Accessibility change notification",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0054 (Accessibility change notification), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0055",
+      "title": "Platform preference conformance",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0055 (Platform preference conformance), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0056",
+      "title": "Accessible electronic documentation format",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0056 (Accessible electronic documentation format), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0057",
+      "title": "Accessible support communication",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0057 (Accessible support communication), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-UX-0058",
+      "title": "Acceptance-criterion coverage",
+      "source": "wsp/ux/requirements.md",
+      "source_sha256": "d13a77f9b07d19118df041d15f05fbd903100c1a348cd7cee7e839c6f9e6e431",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-UX-0058 (Acceptance-criterion coverage), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-WINRES-0001",
+      "title": "VERSIONINFO Presence",
+      "source": "wsp/style/windows-version-resources.md",
+      "source_sha256": "5676aa89a51bbc478eb5f797082da3e9362478a1b61b4cdcf36e89044751ca16",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-WINRES-0001 (VERSIONINFO Presence), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-WINRES-0002",
+      "title": "Generated Version Source",
+      "source": "wsp/style/windows-version-resources.md",
+      "source_sha256": "5676aa89a51bbc478eb5f797082da3e9362478a1b61b4cdcf36e89044751ca16",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-WINRES-0002 (Generated Version Source), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-WINRES-0003",
+      "title": "Numeric Version Format",
+      "source": "wsp/style/windows-version-resources.md",
+      "source_sha256": "5676aa89a51bbc478eb5f797082da3e9362478a1b61b4cdcf36e89044751ca16",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-WINRES-0003 (Numeric Version Format), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-WINRES-0004",
+      "title": "Product and File Version Meaning",
+      "source": "wsp/style/windows-version-resources.md",
+      "source_sha256": "5676aa89a51bbc478eb5f797082da3e9362478a1b61b4cdcf36e89044751ca16",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-WINRES-0004 (Product and File Version Meaning), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-WINRES-0005",
+      "title": "Required String Information",
+      "source": "wsp/style/windows-version-resources.md",
+      "source_sha256": "5676aa89a51bbc478eb5f797082da3e9362478a1b61b4cdcf36e89044751ca16",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-WINRES-0005 (Required String Information), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-WINRES-0006",
+      "title": "Binary Identity",
+      "source": "wsp/style/windows-version-resources.md",
+      "source_sha256": "5676aa89a51bbc478eb5f797082da3e9362478a1b61b4cdcf36e89044751ca16",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-WINRES-0006 (Binary Identity), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-WINRES-0007",
+      "title": "File Type and Operating System",
+      "source": "wsp/style/windows-version-resources.md",
+      "source_sha256": "5676aa89a51bbc478eb5f797082da3e9362478a1b61b4cdcf36e89044751ca16",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-WINRES-0007 (File Type and Operating System), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-WINRES-0008",
+      "title": "File Flags",
+      "source": "wsp/style/windows-version-resources.md",
+      "source_sha256": "5676aa89a51bbc478eb5f797082da3e9362478a1b61b4cdcf36e89044751ca16",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-WINRES-0008 (File Flags), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-WINRES-0009",
+      "title": "Language and Code Page",
+      "source": "wsp/style/windows-version-resources.md",
+      "source_sha256": "5676aa89a51bbc478eb5f797082da3e9362478a1b61b4cdcf36e89044751ca16",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-WINRES-0009 (Language and Code Page), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-WINRES-0010",
+      "title": "Architecture Consistency",
+      "source": "wsp/style/windows-version-resources.md",
+      "source_sha256": "5676aa89a51bbc478eb5f797082da3e9362478a1b61b4cdcf36e89044751ca16",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-WINRES-0010 (Architecture Consistency), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-WINRES-0011",
+      "title": "Legal and Public Information",
+      "source": "wsp/style/windows-version-resources.md",
+      "source_sha256": "5676aa89a51bbc478eb5f797082da3e9362478a1b61b4cdcf36e89044751ca16",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-WINRES-0011 (Legal and Public Information), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    },
+    {
+      "id": "WSP-WINRES-0012",
+      "title": "Artifact Verification",
+      "source": "wsp/style/windows-version-resources.md",
+      "source_sha256": "5676aa89a51bbc478eb5f797082da3e9362478a1b61b4cdcf36e89044751ca16",
+      "review_status": "pending",
+      "owner": "Overlord Bridge maintainer",
+      "rationale": "New 1.4.0 adoption requires requirement-specific applicability and evidence review; no disposition has been approved.",
+      "completion_condition": "Review WSP-WINRES-0012 (Artifact Verification), record scope and a controlled disposition, then link verification evidence or approved tailoring."
+    }
+  ]
+}

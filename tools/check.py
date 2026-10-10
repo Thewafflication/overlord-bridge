@@ -24,7 +24,12 @@ def lint() -> int:
         except (OSError, SyntaxError, UnicodeError) as exc:
             print(f"{path}: {exc}", file=sys.stderr)
             failed = True
-    return int(failed)
+    if failed:
+        return 1
+    return subprocess.run(
+        [sys.executable, str(ROOT / "tools/wsp_inventory.py")],
+        cwd=ROOT, check=False,
+    ).returncode
 
 
 def run(stage: str) -> int:

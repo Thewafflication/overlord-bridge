@@ -42,3 +42,5 @@ These checks launch no model turns. Sanitized real-provider protocol replay,
 live qualification, full traceability, and WSP adoption dispositions are still
 required before the increment can close. Do not equate mock/offline results
 with live Claude/Codex qualification.
+
+Canonical lint also verifies the controlled WSP requirement inventory and pinned gitlink. Initialize the baseline using `git submodule update --init --recursive` before running checks. This inventory check does not demonstrate WSP conformance.

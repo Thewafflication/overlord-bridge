@@ -49,3 +49,7 @@ WSP 1.4.0. The planned integration remains a required increment gate.
 
 See [the increment plan](plans/next-increment.md) and
 [the WSP release](https://github.com/Thewafflication/wsp/releases/tag/1.4.0).
+
+## Controlled review inventory
+
+[The numbered requirement inventory](wsp-inventory.json) records all 258 numbered requirements in the pinned baseline, including profiles awaiting applicability review. Each entry records its source, normalized-text SHA-256, title, owner, rationale, and completion condition. Every review remains pending; this is neither an approved deferral nor a conformance result. The common/profile disposition review and release gate remain open. Canonical lint rejects omitted, duplicated or changed requirements and mismatches between the controlled commit, checked-out submodule and Git index gitlink. Hosted checks initialize the pinned submodule and apply the same validation.
