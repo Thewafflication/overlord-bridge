@@ -346,3 +346,15 @@ workflow lands.
 Dispatch with `brain: "openrouter"` and an exact tool-capable `model` ID ending in `:free`. Enable `OVERLORD_WORKER_OPENROUTER_ENABLED=1` and configure `OVERLORD_WORKER_OPENROUTER_API_KEY` in the bridge environment. This explicitly permits sending worker task and project context to OpenRouter providers. The bridge validates current catalog input/output prices before reading hinted files, and sends a zero-price provider ceiling with fallback disabled on every turn. Missing consent, keys, pricing, or tool support fails closed. Resume is rejected. The existing worker file/command restrictions apply. This manual pilot is not automatically routed or live-qualified; no provider calls were made during offline testing.
 
 Provider contract: [OpenRouter provider routing](https://openrouter.ai/docs/guides/routing/provider-selection).
+
+### Automatic per-prompt model selection
+
+Configure a local OpenAI-compatible classifier (for example an existing Ollama server) with `OVERLORD_ROUTER_MODEL` and `OVERLORD_ROUTER_API_BASE`, then set `OVERLORD_ROUTER_ENABLED=1`. The endpoint must be loopback HTTP. `OVERLORD_ROUTER_PROFILES` is JSON keyed by `claude` and `codex`; each entry has `model`, a capability/cost `description`, and `qualified: true` only after that exact model has been validated with the provider. Unqualified entries cannot be selected. No classifier model is downloaded or started automatically.
+
+```json
+{"claude":[{"model":"sonnet","description":"Lower-cost routine implementation and explanation","qualified":false},{"model":"opus","description":"Difficult design and high-stakes judgment","qualified":false}]}
+```
+
+The classifier interprets each prompt with up to eight recent dialogue entries (6,000 characters), chooses from the active provider's qualified list, and returns a validated model ID and reason. It has no tools, does not enter the persistent native conversation, and has a 12-second deadline. Invalid selections, outages, oversized prompts, or refused native model changes retain the current model; the user prompt is sent once. Native session IDs and permission grants are retained. This pilot requires operator-qualified profiles; native catalog discovery, gas-aware cross-provider routing, and a live routing evaluation set remain open.
+
+`/model` shows routing state and the last decision. `/model <name>` sets a manual override for this bridge process; `/model auto` restores automatic selection after configuration. Routing decisions do not overwrite the saved manual model. A live shared Claude terminal retains its own model because its transport does not expose per-turn model selection. No paid classifier calls or live qualification were performed for this increment.

@@ -42,6 +42,7 @@ from typing import Any
 
 from modules import cli_notify
 from modules.brain import Brain, PermissionGate
+from modules.prompt_router import PromptRouter
 from modules.codex_discovery import resolve_codex_binary
 from modules.commands import (
     HELP_TEXT,
@@ -386,6 +387,7 @@ def build_brain(gate: PermissionGate, brain_name: str | None = None) -> Brain:
 
 class Bridge:
     def __init__(self) -> None:
+        self.prompt_router = PromptRouter.from_environment()
         self.inbound: "Queue[tuple[int, str]]" = Queue()
         self._shutdown_event = asyncio.Event()
         self.gate = PermissionGate(
@@ -1273,10 +1275,18 @@ class Bridge:
         env_key = self._env_key_for(kind, self.brain.name)
 
         if len(parts) == 1 or not parts[1].strip():
+            routing = ""
+            router = getattr(self, "prompt_router", None)
+            if kind == "model" and router is not None:
+                automatic = router.enabled and self.brain.name not in router.manual
+                routing = f"\nRouting: {'automatic' if automatic else 'manual'}."
+                last = router.last.get(self.brain.name)
+                if last:
+                    routing += f"\nLast route: {last['status']} — {last['reason']}"
             self.telegram.send(
                 chat_id,
                 f"{kind.capitalize()} [{self.brain.name}]: {current or 'default'}\n"
-                f"Change it with /{kind} <value>.",
+                f"Change it with /{kind} <value>.{routing}",
             )
             return
         if kind == "effort" and not getattr(self.brain, "supports_effort", False):
@@ -1286,6 +1296,15 @@ class Bridge:
             return
 
         value = parts[1].strip()
+        router = getattr(self, "prompt_router", None)
+        if kind == "model" and value == "auto" and router is not None:
+            if not router.model or not router.choices(self.brain.name):
+                self.telegram.send(chat_id, "Configure a local classifier and qualified model profiles first.")
+                return
+            router.enabled = True
+            router.manual.discard(self.brain.name)
+            self.telegram.send(chat_id, f"Automatic model selection enabled for {self.brain.name}.")
+            return
         async with self._brain_lock:
             setter = self.brain.set_model if kind == "model" else self.brain.set_effort
             try:
@@ -1296,6 +1315,9 @@ class Bridge:
         if error:
             self.telegram.send(chat_id, f"⚠️ {error}")
             return
+
+        if kind == "model" and router is not None:
+            router.manual.add(self.brain.name)
 
         applied = getattr(self.brain, kind, None) or "default"
         self._remember_engine_setting(kind, self.brain.name, applied)
@@ -1462,6 +1484,35 @@ class Bridge:
         except Exception as exc:  # noqa: BLE001 - accounting is never load-bearing
             log.warning("Could not record token usage for this turn: %s", exc)
 
+    async def _route_prompt(self, chat_id: int, text: str) -> None:
+        """Select within the active provider before sending the user turn once."""
+        router = getattr(self, "prompt_router", None)
+        if router is None or not router.enabled or self.brain.name in router.manual:
+            return
+        try:
+            if self.brain.name == "claude":
+                from modules import shared_job
+                if await asyncio.to_thread(shared_job.live_job, self.brain.session_file) is not None:
+                    router.last[self.brain.name] = {"status": "fallback",
+                        "reason": "Shared terminal owns model selection"}
+                    return
+            selection = await router.select(
+                self.brain.name, text, self._conversation_history.routing_context()
+            )
+            if selection and selection["model"] != getattr(self.brain, "model", None):
+                error = await self.brain.set_model(selection["model"])
+                if error:
+                    router.last[self.brain.name] = {"status": "fallback",
+                        "reason": "Native model change refused"}
+                else:
+                    self.telegram.send(chat_id,
+                        f"Model: {selection['model']} — {selection['reason']}")
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            router.last[self.brain.name] = {"status": "fallback",
+                "reason": "Native model selection unavailable"}
+
     async def _handle_turn(self, chat_id: int, text: str) -> None:
         log.info("Dispatching turn: %s", text)
         chunks: list[str] = []
@@ -1470,6 +1521,7 @@ class Bridge:
         self.telegram.begin_typing(chat_id)
         try:
             async with self._brain_lock:
+                await self._route_prompt(chat_id, text)
                 query_text = (
                     add_handoff_to_turn(self._pending_handoff, text)
                     if self._pending_handoff is not None

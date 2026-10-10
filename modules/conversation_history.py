@@ -207,6 +207,12 @@ class SharedConversationHistory:
         self.persistence_note = None
         self._save(reset=True)
 
+    def routing_context(self) -> str:
+        """Provide bounded recent dialogue without advancing seen markers."""
+        return "\n\n".join(
+            f"{entry.role}: {entry.text}" for entry in self._entries[-8:]
+        )[-6000:]
+
     def handoff_for(self, brain_name: str) -> Handoff | None:
         unseen = [
             entry
