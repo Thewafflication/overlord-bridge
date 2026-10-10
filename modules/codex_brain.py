@@ -341,6 +341,8 @@ class CodexBrain(Brain):
         self._delta_buf: dict[str, str] = {}
         self._reader_task: asyncio.Task | None = None
         self._write_lock = asyncio.Lock()
+        self._server_requests: dict[asyncio.Task, str | None] = {}
+        self._server_request_lock = asyncio.Lock()
         self._visible_report_turn_active = False
         self._active_turn_id: str | None = None
         self._active_model: str | None = self.model
@@ -446,6 +448,7 @@ class CodexBrain(Brain):
             log.exception("Codex reader loop crashed")
         finally:
             # Unblock anyone waiting on the process if it died.
+            self._cancel_server_requests()
             for fut in self._pending.values():
                 if not fut.done():
                     fut.set_exception(CodexError("Codex app-server stream closed."))
@@ -483,17 +486,54 @@ class CodexBrain(Brain):
 
         # 2) Server-initiated request (has an id) -> we must reply.
         if "id" in msg:
-            await self._handle_server_request(msg)
+            # Operator waits must not block RPC replies or turn notifications.
+            task = asyncio.create_task(self._serve_server_request(msg))
+            self._server_requests[task] = (msg.get("params") or {}).get("turnId")
+            task.add_done_callback(self._server_request_finished)
             return
 
         # 3) Notification (no id).
         self._handle_notification(method, msg.get("params") or {})
 
     # ---------------------------------------------------------------- approvals
+    async def _serve_server_request(self, msg: dict[str, Any]) -> None:
+        try:
+            async with self._server_request_lock:
+                await self._handle_server_request(msg)
+        except asyncio.CancelledError:
+            try:
+                async with asyncio.timeout(CONTROL_REQUEST_TIMEOUT):
+                    await self._respond(msg.get("id"), self._decline_result(msg.get("method")))
+            except Exception:
+                pass
+            raise
+        except Exception:
+            await self._respond(msg.get("id"), self._decline_result(msg.get("method")))
+
+    @staticmethod
+    def _decline_result(method: str | None) -> dict[str, Any]:
+        if method == R_TOOL_USER_INPUT:
+            return {"answers": {}}
+        return {"decision": DECISION_CANCEL if method in APPROVAL_METHODS else DECISION_DECLINE}
+
+    def _server_request_finished(self, task: asyncio.Task) -> None:
+        self._server_requests.pop(task, None)
+        if not task.cancelled() and task.exception() is not None:
+            log.warning("Codex interactive request handler failed.")
+
+    def _cancel_server_requests(self, turn_id: str | None = None) -> None:
+        for task, requested_turn in list(self._server_requests.items()):
+            if turn_id is None or requested_turn is None or requested_turn == turn_id:
+                task.cancel()
+
     async def _handle_server_request(self, msg: dict[str, Any]) -> None:
         method = msg.get("method")
         req_id = msg.get("id")
         params = msg.get("params") or {}
+
+        if params.get("threadId") and params["threadId"] != self._thread_id:
+            await self._respond(req_id, self._decline_result(method))
+            return
 
         if self._visible_report_turn_active or self._compaction_active:
             await self._decline_visible_report_request(req_id, method)
@@ -524,8 +564,7 @@ class CodexBrain(Brain):
     ) -> None:
         """Keep opt-in report turns from taking actions or prompting Ben."""
         log.warning("Declining %s during bridge visible worker-report turn", method)
-        decision = DECISION_CANCEL if method in APPROVAL_METHODS else DECISION_DECLINE
-        await self._respond(req_id, {"decision": decision})
+        await self._respond(req_id, self._decline_result(method))
 
     async def _request_user_input(
         self, params: dict[str, Any]
@@ -698,6 +737,7 @@ class CodexBrain(Brain):
         if method == N_TURN_COMPLETED:
             turn = params.get("turn") or {}
             turn_id = turn.get("id")
+            self._cancel_server_requests(turn_id)
             if isinstance(turn_id, str) and turn_id == self._active_turn_id:
                 self._active_turn_id = None
             status = turn.get("status")
@@ -1043,6 +1083,7 @@ class CodexBrain(Brain):
         )
 
     async def reset(self) -> None:
+        self._cancel_server_requests()
         self.session_file.unlink(missing_ok=True)
         self._thread_id = None
         self._compaction_active = False
@@ -1052,6 +1093,7 @@ class CodexBrain(Brain):
         log.info("Codex thread reset via /new (new thread=%s)", self._thread_id)
 
     async def disconnect(self) -> None:
+        self._cancel_server_requests()
         if self._reader_task is not None:
             self._reader_task.cancel()
         if self._proc is not None:
@@ -1199,6 +1241,7 @@ class CodexBrain(Brain):
                     yield chunk
         finally:
             self._turn_queue = None
+            self._cancel_server_requests(self._active_turn_id)
             # Book the usage here, not after the loop: /stop and /steer cancel
             # this generator mid-await, so anything below the try would never
             # run and an interrupted turn's tokens would go unreported.
