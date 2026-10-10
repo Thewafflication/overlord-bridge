@@ -53,6 +53,7 @@ ENV_INSTRUCTIONS_FILE = "OVERLORD_CODEX_INSTRUCTIONS_FILE"
 CODEX_USAGE_CACHE = Path.home() / ".cache" / "overlord" / "codex_usage.json"
 VISIBLE_REPORT_PREFIX = "[BRIDGE/SYSTEM WORKER STATUS]"
 APP_SERVER_STREAM_LIMIT_BYTES = 64 * 1024 * 1024
+CONTROL_REQUEST_TIMEOUT = 2.0
 DEFAULT_APP_SERVER_SOCKET = PROJECT_ROOT / "run" / "codex-app-server.sock"
 
 # --- checked JSON-RPC surface (codex app-server) ----------------------------
@@ -449,6 +450,12 @@ class CodexBrain(Brain):
                 if not fut.done():
                     fut.set_exception(CodexError("Codex app-server stream closed."))
             self._pending.clear()
+            if self._compaction_active:
+                self._turn_error = self._turn_error or "Codex stream closed; compaction completion is unknown."
+                self.compaction_status = "uncertain"
+                self.last_turn_outcome = "error"
+                if self._compaction_done is not None:
+                    self._compaction_done.set()
             if self._turn_queue is not None:
                 self._turn_error = self._turn_error or "Codex app-server stream closed."
                 self._turn_queue.put_nowait(None)
@@ -1306,13 +1313,11 @@ class CodexBrain(Brain):
         if self._thread_id is None or target_turn_id is None:
             return False
         try:
-            await self._request(
-                M_TURN_INTERRUPT,
-                {
-                    "threadId": self._thread_id,
-                    "turnId": target_turn_id,
-                },
-            )
+            async with asyncio.timeout(CONTROL_REQUEST_TIMEOUT):
+                await self._request(
+                    M_TURN_INTERRUPT,
+                    {"threadId": self._thread_id, "turnId": target_turn_id},
+                )
         except Exception as exc:  # noqa: BLE001 - best-effort control path
             log.warning("Could not interrupt Codex turn %s: %s", target_turn_id, exc)
             return False

@@ -98,6 +98,38 @@ def test_stop_cancels_an_active_turn_without_waiting_for_the_inbound_loop():
     asyncio.run(scenario())
 
 
+def test_stalled_interrupt_and_cleanup_do_not_hang_or_start_replacement(monkeypatch):
+    monkeypatch.setattr(bridge, "STOP_INTERRUPT_TIMEOUT", 0.01)
+    monkeypatch.setattr(bridge, "STOP_CLEANUP_TIMEOUT", 0.01)
+    async def scenario():
+        brain = BlockingBrain()
+        instance = make_bridge(brain)
+        release = asyncio.Event()
+        async def interrupt():
+            await asyncio.Event().wait()
+        brain.interrupt_active_turn = interrupt
+        async def cleanup():
+            while not release.is_set():
+                try:
+                    await release.wait()
+                except asyncio.CancelledError:
+                    continue
+        task = asyncio.create_task(cleanup())
+        instance._active_turn_task = task
+        await asyncio.sleep(0)
+        try:
+            assert not await asyncio.wait_for(instance._stop_active_turn(), 0.2)
+            await instance._handle_steer(42, "/steer replacement")
+            await instance._reset_session(42)
+            assert not task.done()
+            assert brain.queries == []
+            assert "cleanup" in instance.telegram.messages[-1][1]
+        finally:
+            release.set()
+            await task
+    asyncio.run(scenario())
+
+
 def test_steer_replaces_the_active_turn_after_cleanup():
     async def scenario():
         brain = BlockingBrain()

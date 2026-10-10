@@ -1,12 +1,14 @@
 """Native compaction must confirm completion and retain session identity."""
 
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 from claude_agent_sdk import ResultMessage, SystemMessage
 
 from modules.claude_brain import ClaudeBrain
 from modules.codex_brain import CodexBrain, CodexError
+from modules import codex_brain
 
 
 def codex(tmp_path, monkeypatch):
@@ -71,6 +73,47 @@ def test_codex_timeout_blocks_new_work_until_completion(tmp_path, monkeypatch):
         completed(brain)
         assert brain.compaction_status == "completed"
         assert not brain._compaction_active
+    asyncio.run(scenario())
+
+
+def test_compaction_stream_close_wakes_waiter_without_claiming_completion(tmp_path, monkeypatch):
+    async def scenario():
+        brain = codex(tmp_path, monkeypatch)
+        async def request(*args):
+            return {}
+        class Output:
+            async def readline(self):
+                return b""
+        monkeypatch.setattr(brain, "_request", request)
+        brain._proc = SimpleNamespace(stdout=Output())
+        task = asyncio.create_task(brain.compact(timeout=30))
+        await asyncio.sleep(0)
+        await brain._read_loop()
+        assert "unknown" in await asyncio.wait_for(task, timeout=0.1)
+        assert brain.compaction_status == "uncertain"
+        assert brain._compaction_active
+        assert brain.session_id == "thread-1"
+    asyncio.run(scenario())
+
+
+def test_compaction_cancellation_cannot_hang_on_interrupt(tmp_path, monkeypatch):
+    monkeypatch.setattr(codex_brain, "CONTROL_REQUEST_TIMEOUT", 0.01)
+    async def scenario():
+        brain = codex(tmp_path, monkeypatch)
+        async def request(method, params):
+            if method == "turn/interrupt":
+                await asyncio.Event().wait()
+            brain._active_turn_id = "compact-turn"
+            return {}
+        monkeypatch.setattr(brain, "_request", request)
+        task = asyncio.create_task(brain.compact())
+        await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, timeout=0.1)
+        assert brain.compaction_status == "uncertain"
+        assert brain._compaction_active
+        assert brain._active_turn_id == "compact-turn"
     asyncio.run(scenario())
 
 

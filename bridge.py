@@ -80,6 +80,8 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 logging.getLogger("telegram").setLevel(logging.WARNING)
 log = logging.getLogger("overlord.bridge")
+STOP_INTERRUPT_TIMEOUT = 2.0
+STOP_CLEANUP_TIMEOUT = 5.0
 
 BASE_DIR = Path(__file__).resolve().parent
 CONSOLE_LOG_FILE = BASE_DIR / "run" / "overlord.log"
@@ -847,6 +849,9 @@ class Bridge:
 
     async def _reset_session(self, chat_id: int) -> None:
         await self._stop_active_turn()
+        if self._turn_is_active():
+            self.telegram.send(chat_id, "Session reset is waiting for the active operation to finish cleanup.")
+            return
         try:
             async with self._brain_lock:
                 await self.brain.reset()
@@ -1180,20 +1185,20 @@ class Bridge:
         task = self._active_turn_task
         if task is None or task.done():
             return False
-        interrupted = await self.brain.interrupt_active_turn()
+        try:
+            async with asyncio.timeout(STOP_INTERRUPT_TIMEOUT):
+                interrupted = await self.brain.interrupt_active_turn()
+        except Exception:
+            interrupted = False
         if not interrupted:
             task.cancel()
-        try:
-            await asyncio.wait_for(asyncio.shield(task), timeout=5)
-        except asyncio.CancelledError:
-            pass
-        except asyncio.TimeoutError:
+        done, pending = await asyncio.wait({task}, timeout=STOP_CLEANUP_TIMEOUT)
+        if pending:
             task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
-        return True
+            done, pending = await asyncio.wait({task}, timeout=STOP_CLEANUP_TIMEOUT)
+        if done and not task.cancelled():
+            task.exception()  # retrieve a finished task's failure
+        return not pending
 
     async def _handle_stop(self, chat_id: int) -> None:
         if not self._turn_is_active():
@@ -1201,6 +1206,8 @@ class Bridge:
             return
         self.telegram.send(chat_id, "⏹️ Stopping the active turn…")
         await self._stop_active_turn()
+        if self._turn_is_active():
+            self.telegram.send(chat_id, "Cancellation requested; operation cleanup is still pending.")
 
     async def _handle_steer(self, chat_id: int, text: str) -> None:
         parts = text.strip().split(maxsplit=1)
@@ -1210,6 +1217,9 @@ class Bridge:
         if self._turn_is_active():
             self.telegram.send(chat_id, "↪️ Steering the active turn…")
         await self._stop_active_turn()
+        if self._turn_is_active():
+            self.telegram.send(chat_id, "Steering is waiting for the previous operation to finish cleanup.")
+            return
         self._start_turn(chat_id, parts[1].strip())
 
     def _handle_tokens(self, chat_id: int, text: str) -> None:
