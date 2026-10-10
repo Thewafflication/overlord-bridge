@@ -25,6 +25,14 @@ question tools have paired offline end-to-end tests through the real gate and
 Telegram handler. Full multi-question review and restart recovery remain open.
 The WP1 hosted Windows/Linux check workflow passed for `bed6cb7`.
 
+WP2 permissions slice: replaced the global keyboard grant with exact-action
+session grants, binding workspace, native arguments, and resolved paths.
+Added grant inspection/revocation and cancellation-safe button invalidation.
+`/new` stops an active turn before acquiring its lock and revokes grants.
+Existing configured global auto mode is labelled and can be revoked at runtime.
+Task/project grant persistence, full action audit, and equivalent enforcement
+for the Linux Claude shared-job transport remain open WP2 requirements.
+
 ## Objective and scope
 
 Every prompt should reach a suitable available model, retain the conversation's

@@ -165,7 +165,7 @@ def test_cancelled_gate_ignores_late_responses(kind):
             pending = asyncio.create_task(gate.request("Read", "file", ["file"]))
             registry = gate.pending
             callback = gate.on_permission_response
-            response = "always"
+            response = "session"
         else:
             pending = asyncio.create_task(gate.choose("Which?", []))
             registry = gate.choice_pending

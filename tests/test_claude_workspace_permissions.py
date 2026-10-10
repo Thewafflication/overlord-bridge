@@ -15,7 +15,7 @@ class FakeGate:
 
     offlimits_match = staticmethod(PermissionGate.offlimits_match)
 
-    async def request(self, title, detail, candidates):
+    async def request(self, title, detail, candidates, **kwargs):
         self.requests.append((title, detail, candidates))
         return False
 

@@ -70,22 +70,23 @@ def test_permission_prompt_offers_three_choices(monkeypatch):
     assert [button.text for button in buttons] == [
         "✅ Allow once",
         "⛔ Deny",
-        "⚡ Always allow (this run)",
+        "✅ This exact action (session)",
     ]
-    assert buttons[-1].callback_data == "perm:request-1:always"
+    assert buttons[-1].callback_data == "perm:request-1:session"
 
 
-def test_always_callback_is_forwarded_and_explained():
+def test_session_callback_is_forwarded_and_explained():
     decisions = []
     edits = []
     handler = TelegramHandler.__new__(TelegramHandler)
     handler.owner_chat_id = 42
+    handler._permission_live = {"request-1": 42}
     handler.on_permission_response = (
         lambda request_id, decision: decisions.append((request_id, decision))
     )
 
     class FakeQuery:
-        data = "perm:request-1:always"
+        data = "perm:request-1:session"
         message = SimpleNamespace(chat_id=42, text="Permission request")
 
         async def answer(self):
@@ -97,8 +98,8 @@ def test_always_callback_is_forwarded_and_explained():
     update = SimpleNamespace(callback_query=FakeQuery())
     asyncio.run(handler._handle_callback(update, None))
 
-    assert decisions == [("request-1", "always")]
-    assert "until Overlord restarts" in edits[0]
+    assert decisions == [("request-1", "session")]
+    assert "this exact action" in edits[0]
 
 
 def test_model_choice_buttons_return_selected_label(monkeypatch):

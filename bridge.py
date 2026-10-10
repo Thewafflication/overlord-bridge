@@ -678,6 +678,9 @@ class Bridge:
                 if text.strip().lower().split(maxsplit=1)[0] == "/effort":
                     await self._handle_effort(chat_id, text)
                     continue
+                if text.strip().lower().split(maxsplit=1)[0] == "/permissions":
+                    self._handle_permissions(chat_id, text)
+                    continue
                 self._start_turn(chat_id, text)
         finally:
             if self._turn_is_active():
@@ -826,6 +829,7 @@ class Bridge:
             log.warning("Terminal inject failed for tmux session %s", session)
 
     async def _reset_session(self, chat_id: int) -> None:
+        await self._stop_active_turn()
         try:
             async with self._brain_lock:
                 await self.brain.reset()
@@ -835,6 +839,8 @@ class Bridge:
                 # "Session tokens" in /status means this conversation, so a
                 # clean slate starts the tally over too.
                 self.tokens.clear()
+                if hasattr(self, "gate"):
+                    self.gate.revoke_grants()
         except Exception as exc:
             log.exception("Brain reset failed")
             self.telegram.send(chat_id, f"⚠️ Could not reset session: {exc}")
@@ -843,6 +849,18 @@ class Bridge:
             chat_id, "🆕 Fresh session started — previous context cleared."
         )
         log.info("Session reset via /new")
+
+    def _handle_permissions(self, chat_id: int, text: str) -> None:
+        parts = text.split()
+        if len(parts) == 1:
+            self.telegram.send(chat_id, self.gate.format_grants())
+        elif len(parts) == 3 and parts[1].lower() == "revoke":
+            count = self.gate.revoke_grants(
+                None if parts[2].lower() == "all" else parts[2]
+            )
+            self.telegram.send(chat_id, f"Revoked {count} permission grants.")
+        else:
+            self.telegram.send(chat_id, "Usage: /permissions [revoke <id|all>]")
 
     async def _handle_status(self, chat_id: int, text: str = "/status") -> None:
         """Answer /status with a reading taken NOW, not the previous one.

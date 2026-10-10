@@ -6,7 +6,8 @@ Codex (the `codex app-server`), selected with one env flag.
 
 The Overlord runs in `/home/user`, so it can dispatch agents into any
 `~/Projects/*` or `~/Documents/*` folder. Any action that isn't pre-approved is
-bounced to your phone as an **Allow once / Deny / Always allow** prompt, and an
+bounced to your phone as an **Allow once / Deny / This exact action (session)**
+prompt, and an
 off-limits backstop auto-denies obvious secrets — both apply regardless of
 which brain is active.
 
@@ -540,6 +541,10 @@ tmux, which does own the pty of an interactive session:
   spawns an agent scoped to `~/Projects/plexorcist`, works, reports back, done.
 - One persistent conversation, so it remembers context across messages.
 - Anything outside the allowlist → you get **Allow once**, **Deny**, and
-  **Always allow (this run)** buttons. The runtime-wide choice lasts until
-  Overlord restarts and never bypasses the hard off-limits checks. No answer
+  **This exact action (session)** buttons. The session grant binds the tool,
+  arguments, workspace, and resolved paths; changing them asks again. Grants
+  expire on `/new` or restart. `/permissions` lists grants and
+  `/permissions revoke <id|all>` revokes them. Hard off-limits checks run first.
+  Explicit `OVERLORD_AUTO_APPROVE` configuration remains a legacy global mode,
+  labelled in `/permissions`; revoke all also disables it until restart. No answer
   within `OVERLORD_PERMISSION_TIMEOUT` (default 5 min) = auto-deny.

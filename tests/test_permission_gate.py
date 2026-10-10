@@ -21,7 +21,7 @@ class FakeTelegram:
         return None
 
 
-def test_always_allow_applies_for_runtime_but_not_offlimits():
+def test_session_grant_applies_only_to_exact_action_and_not_offlimits():
     async def scenario():
         telegram = FakeTelegram()
         gate = PermissionGate(telegram, owner=42, timeout=1)
@@ -31,11 +31,11 @@ def test_always_allow_applies_for_runtime_but_not_offlimits():
         )
         await asyncio.sleep(0)
         request_id = telegram.prompts[0][2]
-        gate.on_permission_response(request_id, "always")
+        gate.on_permission_response(request_id, "session")
 
         assert await first is True
-        assert gate.auto_approve is True
-        assert await gate.request("Bash", "git diff", ["git diff"]) is True
+        assert gate.auto_approve is False
+        assert await gate.request("Bash", "git status", ["git status"]) is True
         assert len(telegram.prompts) == 1
 
         denied = await gate.request(

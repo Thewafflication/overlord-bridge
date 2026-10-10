@@ -550,14 +550,27 @@ class CodexBrain(Brain):
 
     async def _approve(self, method: str, params: dict[str, Any]) -> bool:
         """Route a Codex approval through the shared gate. True=accept."""
+        action = {
+            key: value for key, value in params.items()
+            if key not in {"turnId", "itemId", "approvalId", "requestId"}
+        }
         if method == R_EXEC_APPROVAL:
             command = params.get("command") or ""
             cwd = params.get("cwd") or ""
-            detail = command or "(command execution)"
+            detail = (
+                " ".join(str(part) for part in command)
+                if isinstance(command, list) else str(command)
+            ) or "(command execution)"
             if cwd:
                 detail = f"{detail}\n(cwd: {cwd})"
-            candidates = [command, cwd]
-            return await self.gate.request("Codex: run command", detail, candidates)
+            candidates = (
+                [str(part) for part in command]
+                if isinstance(command, list) else [str(command)]
+            ) + [cwd]
+            return await self.gate.request(
+                "Codex: run command", detail, candidates,
+                context={"workspace": self.cwd, "request": action},
+            )
 
         # File-change approval. The params don't always carry the path inline,
         # so surface the reason and let the operator decide after the shared
@@ -565,7 +578,13 @@ class CodexBrain(Brain):
         reason = params.get("reason") or "Codex wants to write file changes."
         grant_root = params.get("grantRoot") or ""
         candidates = [grant_root]
-        return await self.gate.request("Codex: apply file changes", reason, candidates)
+        return await self.gate.request(
+            "Codex: apply file changes", reason, candidates,
+            context={
+                "workspace": self.cwd, "request": action,
+                "paths": [grant_root] if grant_root else [],
+            },
+        )
 
     # ---------------------------------------------------------------- streaming
     def _handle_notification(self, method: str, params: dict[str, Any]) -> None:

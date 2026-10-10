@@ -20,8 +20,11 @@ from __future__ import annotations
 
 import abc
 import asyncio
+import hashlib
+import json
 import logging
 import uuid
+from pathlib import Path
 from typing import Any, AsyncIterator
 
 from modules.telegram_handler import TelegramHandler
@@ -47,7 +50,7 @@ OFFLIMITS_FRAGMENTS = (
 
 
 class PermissionGate:
-    """Shared approval logic with one-time and runtime-wide Telegram choices.
+    """Shared approval logic with one-time and exact-action session grants.
 
     A brain calls :meth:`request` with a human-readable description of what the
     agent wants to do plus a list of strings to scan for off-limits fragments
@@ -70,6 +73,8 @@ class PermissionGate:
         # BUT only after the off-limits pre-screen below. "Trust me, stop asking"
         # must never extend to reading secrets, so the hard floor still applies.
         self.auto_approve = auto_approve
+        self.grants: dict[str, dict[str, Any]] = {}
+        self._permission_scopes: dict[str, dict[str, Any]] = {}
         # request_id -> (loop, future); the Telegram thread resolves the future
         # created on this loop when a button is tapped.
         self.pending: dict[str, tuple[asyncio.AbstractEventLoop, asyncio.Future]] = {}
@@ -93,12 +98,14 @@ class PermissionGate:
                 if decision is False
                 else decision
             )
-            if normalized == "always":
-                self.auto_approve = True
-                log.warning(
-                    "Operator enabled runtime auto-approval; off-limits checks remain active"
-                )
-            fut.set_result(normalized in ("allow", "always"))
+            if normalized == "session":
+                scope = self._permission_scopes.get(request_id)
+                if scope is not None:
+                    self.grants[scope["id"]] = dict(scope)
+                    log.info("Granted exact action %s for this session", scope["id"])
+                else:
+                    normalized = "deny"
+            fut.set_result(normalized in ("allow", "session"))
         if not loop.is_closed():
             loop.call_soon_threadsafe(resolve)
 
@@ -132,16 +139,32 @@ class PermissionGate:
         title: str,
         detail: str,
         candidates: list[str],
+        *,
+        context: dict[str, Any] | None = None,
     ) -> bool:
         """Ask the owner to approve an action; return True=allow, False=deny.
 
         *candidates* are scanned against ``OFFLIMITS_FRAGMENTS`` first; a match
         is auto-denied without bothering the phone. Otherwise a Telegram
-        prompt is sent and we await Allow once, Deny, or Always allow. The last
-        choice enables auto-approval only for this process lifetime; off-limits
-        checks still run before it.
+        prompt is sent and we await Allow once, Deny, or an exact-action grant.
+        Grants expire on session reset, revocation, or process restart. Context
+        binds grants to provider workspace and complete native tool arguments.
         """
-        frag = self.offlimits_match(candidates)
+        screened = list(candidates)
+        if context and context.get("paths"):
+            try:
+                workspace = Path(context["workspace"]).resolve()
+                for target in context["paths"]:
+                    path = Path(target).expanduser()
+                    resolved = (
+                        path.resolve() if path.is_absolute()
+                        else (workspace / path).resolve()
+                    )
+                    screened.append(str(resolved))
+            except (OSError, RuntimeError, ValueError, TypeError, KeyError):
+                self.telegram.send(self.owner, "⛔ Could not resolve action paths.")
+                return False
+        frag = self.offlimits_match(screened)
         if frag is not None:
             self.telegram.send(
                 self.owner, f"⛔ Auto-denied {title} (off-limits: {frag})"
@@ -153,17 +176,31 @@ class PermissionGate:
             log.info("Auto-approved %s (auto_approve on; not off-limits)", title)
             return True
 
+        identity = json.dumps(
+            [title, detail, screened, context or {}],
+            sort_keys=True, ensure_ascii=False, default=str,
+        )
+        grant_id = hashlib.sha256(identity.encode("utf-8")).hexdigest()
+        if grant_id in self.grants:
+            log.info("Allowed %s through exact-action grant %s", title, grant_id)
+            return True
+
         request_id = uuid.uuid4().hex[:8]
         loop = asyncio.get_running_loop()
         fut: asyncio.Future = loop.create_future()
         self.pending[request_id] = (loop, fut)
+        self._permission_scopes[request_id] = {
+            "id": grant_id, "title": title, "detail": detail,
+            "candidates": list(candidates), "context": context or {},
+        }
 
         header = f"\U0001f510 Permission request: {title}"
         if detail:
             header += f"\n\n{detail[:1500]}"
         header += (
-            "\n\nAllow this? “Always allow” applies until Overlord restarts; "
-            "off-limits paths remain denied."
+            "\n\nAllow once, deny, or allow this exact action again for this "
+            "session. Changed arguments or workspace require a new approval. "
+            "Use /permissions to inspect or revoke grants."
         )
         try:
             self.telegram.ask_permission(self.owner, header, request_id)
@@ -176,6 +213,30 @@ class PermissionGate:
             return False
         finally:
             self.pending.pop(request_id, None)
+            self._permission_scopes.pop(request_id, None)
+            cancel = getattr(self.telegram, "cancel_permission", None)
+            if cancel is not None:
+                cancel(self.owner, request_id)
+
+    def revoke_grants(self, grant_id: str | None = None) -> int:
+        """Revoke one exact grant or all grants, including legacy auto mode."""
+        if grant_id is not None:
+            return int(self.grants.pop(grant_id, None) is not None)
+        count = len(self.grants) + int(self.auto_approve)
+        self.grants.clear()
+        self.auto_approve = False
+        return count
+
+    def format_grants(self) -> str:
+        lines = ["Permission grants (current session)"]
+        if self.auto_approve:
+            lines.append("Legacy configured global auto-approval is active.")
+        if not self.grants:
+            lines.append("No exact-action grants.")
+        for grant_id, grant in self.grants.items():
+            lines.append(f"{grant_id}\n{grant['title']}: {grant['detail'][:200]}")
+        lines.append("/permissions revoke <id|all>")
+        return "\n\n".join(lines)
 
     async def choose(
         self,

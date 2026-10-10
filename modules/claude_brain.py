@@ -259,7 +259,16 @@ class ClaudeBrain(Brain):
             log.info("Auto-approved %s inside workspace", tool_name)
             return PermissionResultAllow()
         detail = self._format_detail(tool_name, tool_input, context)
-        allow = await self.gate.request(tool_name, detail, candidates)
+        allow = await self.gate.request(
+            tool_name, detail, candidates,
+            context={
+                "workspace": str(Path(self.cwd).resolve()), "input": tool_input,
+                "paths": [
+                    tool_input[key] for key in PATH_KEYS
+                    if isinstance(tool_input.get(key), str)
+                ],
+            },
+        )
         if allow:
             return PermissionResultAllow()
         return PermissionResultDeny(message="Denied by operator via Telegram.")
@@ -313,6 +322,8 @@ class ClaudeBrain(Brain):
         for candidate in candidates:
             path = Path(candidate).expanduser()
             resolved = (workspace / path).resolve() if not path.is_absolute() else path.resolve()
+            if self.gate.offlimits_match([str(resolved)]) is not None:
+                return False
             if not resolved.is_relative_to(workspace):
                 return False
         return True

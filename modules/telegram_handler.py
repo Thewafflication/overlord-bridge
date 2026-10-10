@@ -13,7 +13,7 @@ Improvements over the original:
   * **4096-char chunking** so long Overlord replies don't get rejected by the
     Telegram API.
   * **Permission prompts** -- ``ask_permission`` sends Allow once, Deny, and
-    runtime-scoped Always allow buttons; taps route through
+    exact-action session grant buttons; taps route through
     ``on_permission_response``.
   * No Joshua-specific dependencies (uses stdlib ``logging``).
 """
@@ -48,7 +48,7 @@ log = logging.getLogger("overlord.telegram")
 MAX_MESSAGE_LEN = 4096
 COMMANDS = (
     "new", "help", "status", "stop", "steer", "brain", "tokens", "quote",
-    "model", "effort", "questions", "reply", "cancelquestion",
+    "model", "effort", "questions", "reply", "cancelquestion", "permissions",
 )
 
 
@@ -82,6 +82,7 @@ class TelegramHandler(threading.Thread):
         self._choice_typing: set[str] = set()
         self._choice_messages: dict[str, int] = {}
         self._choice_prompts: dict[str, str] = {}
+        self._permission_live: dict[str, int] = {}
 
         self.application.add_handler(
             CommandHandler(
@@ -206,21 +207,25 @@ class TelegramHandler(threading.Thread):
             return
         if kind != "perm":
             return
+        live = getattr(self, "_permission_live", {})
+        if live.get(request_id) != chat_id:
+            return
         verdicts = {
             "allow": "✅ Allowed once",
             "deny": "⛔ Denied",
-            "always": "⚡ Always allowing until Overlord restarts",
+            "session": "✅ Allowed this exact action for the current session",
         }
         verdict = verdicts.get(decision)
         if verdict is None:
             return
+        live.pop(request_id, None)
+        if self.on_permission_response is not None:
+            self.on_permission_response(request_id, decision)
         try:
             original = query.message.text if query.message else ""
             await query.edit_message_text(f"{original}\n\n{verdict}")
         except Exception as exc:  # editing is best-effort
             log.debug("Could not edit permission message: %s", exc)
-        if self.on_permission_response is not None:
-            self.on_permission_response(request_id, decision)
 
     async def _handle_choice_callback(
         self, query, chat_id: int, request_id: str, decision: str
@@ -368,6 +373,9 @@ class TelegramHandler(threading.Thread):
     async def _ask_permission(
         self, chat_id: int, prompt_text: str, request_id: str
     ) -> None:
+        if not hasattr(self, "_permission_live"):
+            self._permission_live = {}
+        self._permission_live[request_id] = chat_id
         keyboard = InlineKeyboardMarkup(
             [
                 [
@@ -380,8 +388,8 @@ class TelegramHandler(threading.Thread):
                 ],
                 [
                     InlineKeyboardButton(
-                        "⚡ Always allow (this run)",
-                        callback_data=f"perm:{request_id}:always",
+                        "✅ This exact action (session)",
+                        callback_data=f"perm:{request_id}:session",
                     )
                 ]
             ]
@@ -398,6 +406,19 @@ class TelegramHandler(threading.Thread):
             # Do not leave the brain blocked until the full permission timeout
             # when the owner never had a prompt they could approve.
             self.on_permission_response(request_id, "deny")
+            self._permission_live.pop(request_id, None)
+
+    def cancel_permission(self, chat_id: int, request_id: str) -> None:
+        """Invalidate buttons belonging to a completed or cancelled request."""
+        if self.loop is not None:
+            self.loop.call_soon_threadsafe(
+                self._cancel_permission, chat_id, request_id
+            )
+
+    def _cancel_permission(self, chat_id: int, request_id: str) -> None:
+        live = getattr(self, "_permission_live", {})
+        if live.get(request_id) == chat_id:
+            live.pop(request_id, None)
 
     def ask_choice(
         self,
