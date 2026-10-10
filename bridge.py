@@ -888,6 +888,12 @@ class Bridge:
             if isinstance(window, int) else "\nModel context window: unknown"
         )
         text += "\nLive context pressure: unknown"
+        snapshot = getattr(self.brain, "context_snapshot", None)
+        if (snapshot and snapshot.get("session_id") == self.brain.session_id
+                and snapshot.get("model") == self.brain.model):
+            text += (f"\nLast native snapshot: {snapshot['used']:,}/"
+                     f"{snapshot['maximum']:,} tokens ({snapshot['percentage']:.1f}%)"
+                     f"\nObserved: {snapshot['observed_at']}")
         text += f"\nNative compaction: {getattr(self.brain, 'compaction_status', 'unknown')}"
         self.telegram.send(chat_id, text)
 

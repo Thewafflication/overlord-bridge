@@ -423,6 +423,7 @@ class ClaudeBrain(Brain):
         )
 
     async def reset(self) -> None:
+        self.context_snapshot = None
         self.session_file.unlink(missing_ok=True)
         self._session_id = None
         self.compaction_status = "idle"
@@ -437,6 +438,7 @@ class ClaudeBrain(Brain):
         self.last_turn_usage = None
         self.last_turn_cost_usd = None
         self.last_turn_outcome = "ok"
+        self.context_snapshot = None
         if not self._session_id:
             return "No Claude conversation is loaded."
         job = await asyncio.to_thread(shared_job.live_job, self.session_file)
@@ -523,6 +525,8 @@ class ClaudeBrain(Brain):
         name = (model or "").strip()
         if not name:
             return "Give a model name, e.g. /model sonnet"
+        if name != self.model:
+            self.context_snapshot = None
         self.model = name
         self._active_model = name
         return None
@@ -644,6 +648,32 @@ class ClaudeBrain(Brain):
         except Exception as exc:  # noqa: BLE001 - a watcher must never crash the loop
             log.error("Async reply watcher for %s failed: %s", job.job_id, exc)
 
+    async def _capture_context(self, client) -> None:
+        """Read native context control data; never infer pressure from billing."""
+        self.context_snapshot = None
+        # Upstream #1159 reports hidden provider spend for this control on
+        # Bedrock. Do not enable collection implicitly or call it free.
+        if os.environ.get("OVERLORD_CLAUDE_CONTEXT_SNAPSHOTS") != "1":
+            return
+        try:
+            async with asyncio.timeout(2):
+                data = await client.get_context_usage()
+            used, maximum = data.get("totalTokens"), data.get("maxTokens")
+            if (type(used) is not int or type(maximum) is not int
+                    or used < 0 or maximum <= 0):
+                return
+            self.context_snapshot = {
+                "used": used, "maximum": maximum,
+                "percentage": used / maximum * 100,
+                "session_id": self.session_id, "model": self.model,
+                "observed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            }
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # Older SDKs/CLI builds do not support this control request.
+            pass
+
     async def query(self, text: str) -> AsyncIterator[str]:
         # Near-cap reset contract with ~/.claude/hooks/near-limit-handoff.sh: the
         # hook cannot just delete the pin itself, because query() re-pins on every
@@ -658,6 +688,7 @@ class ClaudeBrain(Brain):
         self.last_turn_usage = None
         self.last_turn_cost_usd = None
         self.last_turn_outcome = "ok"
+        self.context_snapshot = None
 
         reset_flag = self.session_file.parent / f".reset-requested{self.session_file.suffix}"
         reset_requested = reset_flag.exists()
@@ -781,6 +812,8 @@ class ClaudeBrain(Brain):
                         yield f"⚠️ {msg.result or 'The Overlord hit an error.'}"
                     elif not sent_text and msg.result:
                         yield msg.result
+            if authoritative and self.last_turn_outcome == "ok":
+                await self._capture_context(client)
         finally:
             # Runs on success, on failure, and on the CancelledError that /stop
             # and /steer raise, so an interrupted turn is still accounted for.

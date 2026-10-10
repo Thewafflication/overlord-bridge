@@ -304,6 +304,7 @@ class Brain(abc.ABC):
     # Whether ``set_effort`` does anything for this brain.
     supports_effort: bool = False
     compaction_status: str = "idle"
+    context_snapshot: dict[str, Any] | None = None
 
     async def compact(self, *, timeout: float = 120) -> str | None:
         """Compact natively; return an error, or None after verified completion."""
