@@ -693,6 +693,9 @@ class Bridge:
                 if text.strip() == "/context":
                     self._handle_context(chat_id)
                     continue
+                if text.strip() == "/compact":
+                    self._start_compaction(chat_id)
+                    continue
                 self._start_turn(chat_id, text)
         finally:
             if self._turn_is_active():
@@ -883,7 +886,40 @@ class Bridge:
             if isinstance(window, int) else "\nModel context window: unknown"
         )
         text += "\nLive context pressure: unknown"
+        text += f"\nNative compaction: {getattr(self.brain, 'compaction_status', 'unknown')}"
         self.telegram.send(chat_id, text)
+
+    def _start_compaction(self, chat_id: int) -> None:
+        if self._turn_is_active() or self.gate.pending or self.gate.choice_pending:
+            self.telegram.send(chat_id, "Finish or stop the active operation before compacting.")
+            return
+        self._active_turn_task = asyncio.create_task(self._handle_compaction(chat_id))
+
+    async def _handle_compaction(self, chat_id: int) -> None:
+        outcome = "ok"
+        started = False
+        try:
+            async with self._brain_lock:
+                if not self._conversation_history.checkpoint():
+                    self.telegram.send(chat_id, "Compaction not started: checkpoint save failed.")
+                    return
+                self.telegram.send(chat_id, "Compacting the conversation…")
+                started = True
+                error = await self.brain.compact()
+                if error:
+                    outcome = "error"
+                    self.telegram.send(chat_id, f"⚠️ {error}")
+                else:
+                    self.telegram.send(chat_id, "Conversation compacted; session and grants preserved.")
+        except asyncio.CancelledError:
+            outcome = "stopped"
+            raise
+        except Exception as exc:
+            outcome = "error"
+            self.telegram.send(chat_id, f"⚠️ Compaction did not complete: {exc}")
+        finally:
+            if started:
+                self._record_turn_tokens(chat_id, "/compact", outcome=outcome)
 
     async def _handle_status(self, chat_id: int, text: str = "/status") -> None:
         """Answer /status with a reading taken NOW, not the previous one.

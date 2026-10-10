@@ -40,6 +40,15 @@ warnings. `/new` clears the recovery copy. Structured summaries and native/
 automatic compaction remain open. Hosted Windows testing exposed a duplicate
 console timestamp bug, repaired with monotonic IDs and a frozen-clock test.
 
+WP3 native compaction slice: `/compact` checkpoints before native operations,
+discovers Claude command availability, verifies completion boundaries on both
+brains, accounts reported usage, and blocks unsettled Codex operations.
+Compaction does not reset sessions or grants. Automatic thresholds, structured
+cross-provider summaries, and Claude shared-terminal control remain open.
+
+Protocol references: [Codex app-server compaction](https://learn.chatgpt.com/docs/app-server)
+and [Claude SDK commands](https://code.claude.com/docs/en/agent-sdk/slash-commands).
+
 ## Objective and scope
 
 Every prompt should reach a suitable available model, retain the conversation's

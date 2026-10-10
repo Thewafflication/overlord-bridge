@@ -125,9 +125,9 @@ class SharedConversationHistory:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
 
-    def _save(self, *, reset: bool = False) -> None:
+    def _save(self, *, reset: bool = False) -> bool:
         if self.path is None:
-            return
+            return False
         data = {
             "schema": 1, "workspace": self.workspace,
             "sequence": self._sequence, "seen": self._seen,
@@ -153,6 +153,12 @@ class SharedConversationHistory:
         except OSError as exc:
             self.persistence_note = f"Context save failed: {exc}"
             log.warning(self.persistence_note)
+            return False
+        return True
+
+    def checkpoint(self) -> bool:
+        """Persist a recoverable snapshot before a native context operation."""
+        return self._save()
 
     def status(self) -> str:
         text = (

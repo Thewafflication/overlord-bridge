@@ -45,6 +45,7 @@ from claude_agent_sdk import (
     PermissionResultAllow,
     PermissionResultDeny,
     ResultMessage,
+    SystemMessage,
     TextBlock,
     ToolPermissionContext,
 )
@@ -224,6 +225,9 @@ class ClaudeBrain(Brain):
         self.last_turn_usage: dict[str, Any] | None = None
         self.last_turn_cost_usd: float | None = None
         self.last_turn_outcome: str = "ok"
+        self._available_commands: set[str] | None = None
+        self._compaction_active = False
+        self.compaction_status = "idle"
 
     @property
     def session_id(self) -> str | None:
@@ -250,6 +254,8 @@ class ClaudeBrain(Brain):
     async def can_use_tool(
         self, tool_name: str, tool_input: dict[str, Any], context: ToolPermissionContext
     ) -> PermissionResultAllow | PermissionResultDeny:
+        if self._compaction_active:
+            return PermissionResultDeny(message="Tool actions are disabled during compaction.")
         if tool_name == "AskUserQuestion":
             return await self._answer_user_questions(tool_input)
         candidates = collect_candidates(tool_input, PATH_KEYS)
@@ -419,11 +425,77 @@ class ClaudeBrain(Brain):
     async def reset(self) -> None:
         self.session_file.unlink(missing_ok=True)
         self._session_id = None
+        self.compaction_status = "idle"
         log.info("Claude session reset via /new")
 
     async def disconnect(self) -> None:
         # Nothing to tear down: no client is held outside an active turn.
         return
+
+    async def compact(self, *, timeout: float = 120) -> str | None:
+        """Discover /compact and require its compact_boundary completion evidence."""
+        self.last_turn_usage = None
+        self.last_turn_cost_usd = None
+        self.last_turn_outcome = "ok"
+        if not self._session_id:
+            return "No Claude conversation is loaded."
+        job = await asyncio.to_thread(shared_job.live_job, self.session_file)
+        if job is not None:
+            return "Claude's live shared terminal owns this session; SDK compaction cannot attach."
+        client = await self._open(self._session_id)
+        boundary = False
+        successful_result = False
+        try:
+            info = await client.get_server_info()
+            commands = (info or {}).get("commands")
+            if isinstance(commands, list):
+                available = {
+                    item.get("name") if isinstance(item, dict) else item
+                    for item in commands
+                    if isinstance(item, (str, dict))
+                }
+            else:
+                available = self._available_commands or set()
+            if "compact" not in available:
+                return "This Claude session does not advertise a compact command."
+            self._compaction_active = True
+            self.compaction_status = "running"
+            async with asyncio.timeout(timeout):
+                await client.query("/compact")
+                async for message in client.receive_response():
+                    if isinstance(message, SystemMessage) and message.subtype == "compact_boundary":
+                        boundary = True
+                    if isinstance(message, ResultMessage):
+                        successful_result = (
+                            not message.is_error and message.subtype == "success"
+                        )
+                        self.last_turn_usage = message.usage
+                        self.last_turn_cost_usd = message.total_cost_usd
+                        self._save_session(message.session_id)
+            if not boundary or not successful_result:
+                self.compaction_status = "failed"
+                self.last_turn_outcome = "error"
+                return "Claude did not confirm a successful compaction boundary."
+            self.compaction_status = "completed"
+            return None
+        except asyncio.TimeoutError:
+            self.compaction_status = "uncertain"
+            self.last_turn_outcome = "error"
+            return "Claude compaction timed out; completion is unknown."
+        except asyncio.CancelledError:
+            self.compaction_status = "uncertain"
+            self.last_turn_outcome = "error"
+            raise
+        except Exception as exc:
+            self.compaction_status = "failed"
+            self.last_turn_outcome = "error"
+            return f"Claude compaction failed: {exc}"
+        finally:
+            self._compaction_active = False
+            try:
+                await client.disconnect()
+            except Exception as exc:
+                log.warning("Compaction client cleanup failed: %s", exc)
 
     async def status(self, *, force_refresh: bool = False) -> dict[str, Any]:
         payload, stale = await _claude_usage_payload(
@@ -676,6 +748,15 @@ class ClaudeBrain(Brain):
             await client.query(text)
             sent_text = False
             async for msg in client.receive_response():
+                if isinstance(msg, SystemMessage):
+                    if msg.subtype == "init":
+                        commands = msg.data.get("slash_commands")
+                        if isinstance(commands, list):
+                            self._available_commands = {
+                                name for name in commands if isinstance(name, str)
+                            }
+                    elif msg.subtype == "compact_boundary":
+                        self.compaction_status = "completed"
                 if isinstance(msg, AssistantMessage):
                     if msg.model:
                         self._active_model = msg.model

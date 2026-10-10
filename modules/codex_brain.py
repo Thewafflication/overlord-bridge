@@ -89,6 +89,10 @@ DECISION_CANCEL = "cancel"
 class CodexError(RuntimeError):
     """Raised for unrecoverable Codex App Server problems (binary missing, etc.)."""
 
+    def __init__(self, message: str, *, code: int | None = None) -> None:
+        super().__init__(message)
+        self.code = code
+
 
 def _find_rate_limits(obj: Any) -> dict[str, Any] | None:
     if isinstance(obj, dict):
@@ -357,6 +361,11 @@ class CodexBrain(Brain):
         # terminal `codex resume` turns on the SAME thread so Telegram picks
         # them up (parity with the Claude brain). See _maybe_refresh.
         self._loaded_mtime: float = 0.0
+        self._compaction_active = False
+        self._compaction_done: asyncio.Event | None = None
+        self._compaction_item_completed = False
+        self._compaction_turn_completed = False
+        self.compaction_status = "idle"
 
     @property
     def session_id(self) -> str | None:
@@ -387,10 +396,9 @@ class CodexBrain(Brain):
         self._pending[req_id] = fut
         try:
             await self._send({"id": req_id, "method": method, "params": params})
-        except Exception:
+            return await fut
+        finally:
             self._pending.pop(req_id, None)
-            raise
-        return await fut
 
     async def _notify(self, method: str, params: dict[str, Any]) -> None:
         await self._send({"method": method, "params": params})
@@ -454,7 +462,10 @@ class CodexBrain(Brain):
             if fut is None or fut.done():
                 return
             if "error" in msg:
-                fut.set_exception(CodexError(str(msg["error"])))
+                error = msg["error"]
+                fut.set_exception(CodexError(
+                    str(error), code=error.get("code") if isinstance(error, dict) else None,
+                ))
             else:
                 fut.set_result(msg.get("result", {}))
             return
@@ -477,7 +488,7 @@ class CodexBrain(Brain):
         req_id = msg.get("id")
         params = msg.get("params") or {}
 
-        if self._visible_report_turn_active:
+        if self._visible_report_turn_active or self._compaction_active:
             await self._decline_visible_report_request(req_id, method)
             return
 
@@ -588,6 +599,20 @@ class CodexBrain(Brain):
 
     # ---------------------------------------------------------------- streaming
     def _handle_notification(self, method: str, params: dict[str, Any]) -> None:
+        thread_id = params.get("threadId")
+        if thread_id and self._thread_id and thread_id != self._thread_id:
+            return
+        if method in {"item/started", N_ITEM_COMPLETED}:
+            item = params.get("item") or {}
+            if item.get("type") == "contextCompaction":
+                self.compaction_status = (
+                    "running" if method == "item/started" else "completed"
+                )
+                if method == N_ITEM_COMPLETED:
+                    self._compaction_item_completed = True
+                    if self._compaction_done is not None and self._compaction_turn_completed:
+                        self._compaction_active = False
+                        self._compaction_done.set()
         if method == "thread/tokenUsage/updated":
             token_usage = params.get("tokenUsage")
             if isinstance(token_usage, dict):
@@ -651,6 +676,18 @@ class CodexBrain(Brain):
                 self._turn_error = (
                     err.get("message") if isinstance(err, dict) else None
                 ) or f"Codex turn {status}."
+                if self._compaction_active:
+                    self.compaction_status = "failed"
+                    self._compaction_active = False
+                    if self._compaction_done is not None:
+                        self._compaction_done.set()
+            elif self._compaction_active and status == "completed":
+                self._compaction_turn_completed = True
+                if self._compaction_item_completed:
+                    self.compaction_status = "completed"
+                    self._compaction_active = False
+                    if self._compaction_done is not None:
+                        self._compaction_done.set()
             if self._turn_queue is not None:
                 self._turn_queue.put_nowait(None)
             return
@@ -976,6 +1013,8 @@ class CodexBrain(Brain):
     async def reset(self) -> None:
         self.session_file.unlink(missing_ok=True)
         self._thread_id = None
+        self._compaction_active = False
+        self.compaction_status = "idle"
         await self._start_thread(None)
         self._record_mtime()
         log.info("Codex thread reset via /new (new thread=%s)", self._thread_id)
@@ -1089,6 +1128,8 @@ class CodexBrain(Brain):
         return estimate_tokens(text), "estimate"
 
     async def query(self, text: str) -> AsyncIterator[str]:
+        if self._compaction_active:
+            raise RuntimeError("Compaction has not settled; inspect /context first.")
         if self._thread_id is None:
             raise RuntimeError("CodexBrain.query called before connect()")
         # Per-turn accounting starts clean so a turn that reports nothing can't
@@ -1149,6 +1190,51 @@ class CodexBrain(Brain):
             if any(value > 0 for value in delta.values()):
                 return delta
         return None
+
+    async def compact(self, *, timeout: float = 120) -> str | None:
+        """Wait for contextCompaction completion, not just the RPC acknowledgement."""
+        self.last_turn_usage = None
+        self.last_turn_cost_usd = None
+        self.last_turn_outcome = "ok"
+        if not self._thread_id:
+            return "No Codex conversation is loaded."
+        if self._compaction_active or self._active_turn_id or self._turn_queue:
+            return "Codex has an active operation; compaction was not started."
+        self._prev_token_usage_total = (
+            dict(self._token_usage_total) if self._token_usage_total else None
+        )
+        self._last_turn_token_usage = None
+        self._turn_error = None
+        self._compaction_done = asyncio.Event()
+        self._compaction_item_completed = False
+        self._compaction_turn_completed = False
+        self._compaction_active = True
+        self.compaction_status = "running"
+        try:
+            async with asyncio.timeout(timeout):
+                await self._request("thread/compact/start", {"threadId": self._thread_id})
+                await self._compaction_done.wait()
+            if self.compaction_status == "completed":
+                self._record_mtime()
+                return None
+            self.last_turn_outcome = "error"
+            return self._turn_error or "Codex compaction failed."
+        except asyncio.CancelledError:
+            self.compaction_status = "uncertain"
+            await self.interrupt_active_turn()
+            raise
+        except asyncio.TimeoutError:
+            self.compaction_status = "uncertain"
+            self.last_turn_outcome = "error"
+            return "Compaction timed out; completion is unknown. Inspect /context."
+        except Exception as exc:
+            rejected = isinstance(exc, CodexError) and exc.code is not None
+            self.compaction_status = "failed" if rejected else "uncertain"
+            self._compaction_active = not rejected
+            self.last_turn_outcome = "error"
+            return f"Native compaction could not complete: {exc}"
+        finally:
+            self.last_turn_usage = self._resolve_turn_usage()
 
     async def record_event(
         self, text: str, metadata: dict[str, Any] | None = None

@@ -123,6 +123,13 @@ Telegram commands:
   and restored on restart. A damaged primary can recover the previous snapshot.
   Checkpoints are bound to the configured workspace; `/new` clears both copies.
   Provider context pressure is labelled unknown when it cannot be measured.
+- `/compact` saves a recovery checkpoint and runs native compaction while idle.
+  Claude discovers its available command and requires a `compact_boundary`;
+  Codex waits for its `contextCompaction` item and compaction turn to finish.
+  A timeout reports unknown completion. Codex blocks new work until its pending
+  compaction settles. Usage is recorded separately when reported by the provider.
+  The Claude shared-terminal path still needs a separate native control transport;
+  this command currently refuses that path without replacing its session.
 
 Every reply is followed by a one-line token footer (`🧮 in … · out … · total …`)
 with the running session total. Set `OVERLORD_TOKEN_FOOTER=false` to suppress the
