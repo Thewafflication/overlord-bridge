@@ -18,6 +18,9 @@ HELP_TEXT = """Overlord commands
 /quote <text> — estimate the input tokens a prompt would cost
 /model [name] — show or switch the active brain's model
 /effort [level] — show or switch the reasoning effort level
+/questions — show the pending question and its ID
+/reply <id> <answer> — answer a specific pending question
+/cancelquestion <id> — cancel a specific pending question
 /stop — stop the active AI turn
 /steer <message> — stop the active turn and replace it with new guidance
 /brain — show or switch the active brain

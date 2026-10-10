@@ -138,7 +138,10 @@ When Claude or Codex needs a short clarification or offers several discrete
 paths, Overlord asks it to use its native interactive-input tool. Telegram then
 shows one button per option, including the model's descriptions, plus
 **Type another answer**. Multi-question requests are shown sequentially, and a
-plain typed reply supplies a custom answer. Secret-input requests are never
+typed reply supplies a custom answer after selecting **Type another answer**,
+or when replying directly to the question message. Unrelated messages remain
+ordinary conversation. `/questions` lists the pending ID; `/reply <id> <answer>`
+answers it and `/cancelquestion <id>` cancels it. Secret-input requests are never
 forwarded to Telegram.
 
 As a managed service:

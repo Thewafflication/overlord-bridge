@@ -46,6 +46,10 @@ log = logging.getLogger("overlord.telegram")
 
 # Telegram hard limit on a single text message.
 MAX_MESSAGE_LEN = 4096
+COMMANDS = (
+    "new", "help", "status", "stop", "steer", "brain", "tokens", "quote",
+    "model", "effort", "questions", "reply", "cancelquestion",
+)
 
 
 class TelegramHandler(threading.Thread):
@@ -75,10 +79,13 @@ class TelegramHandler(threading.Thread):
         self._typing_tasks: dict[int, asyncio.Task] = {}
         self._choice_for_chat: dict[int, str] = {}
         self._choice_options: dict[str, list[str]] = {}
+        self._choice_typing: set[str] = set()
+        self._choice_messages: dict[str, int] = {}
+        self._choice_prompts: dict[str, str] = {}
 
         self.application.add_handler(
             CommandHandler(
-                ("new", "help", "status", "stop", "steer", "brain"),
+                COMMANDS,
                 self._handle_command,
             )
         )
@@ -96,11 +103,18 @@ class TelegramHandler(threading.Thread):
         if chat_id != self.owner_chat_id:
             log.warning("Dropping message from unauthorized chat_id=%s", chat_id)
             return
-        request_id = self._choice_for_chat.pop(chat_id, None)
-        if request_id is not None:
-            self._choice_options.pop(request_id, None)
-            if self.on_choice_response is not None:
-                self.on_choice_response(request_id, text)
+        self._ensure_choice_state()
+        request_id = self._choice_for_chat.get(chat_id)
+        reply_to = getattr(update.message, "reply_to_message", None)
+        linked_reply = (
+            reply_to is not None
+            and getattr(reply_to, "message_id", None)
+            == self._choice_messages.get(request_id)
+        )
+        if request_id and (request_id in self._choice_typing or linked_reply):
+            if not text.strip():
+                return
+            self._answer_choice(chat_id, request_id, text)
             log.info("Owner supplied a typed choice response")
             return
         self.inbound_queue.put((chat_id, text))
@@ -116,20 +130,62 @@ class TelegramHandler(threading.Thread):
             return
         parts = (update.message.text or "").strip().split(maxsplit=1)
         command = parts[0].split("@", 1)[0].lower() if parts else ""
-        if command not in {
-            "/new",
-            "/help",
-            "/status",
-            "/stop",
-            "/steer",
-            "/brain",
-        }:
+        if command.lstrip("/") not in COMMANDS:
+            return
+        if command in {"/questions", "/reply", "/cancelquestion"}:
+            await self._handle_question_command(chat_id, command, parts[1:])
             return
         normalized = command
-        if command in {"/brain", "/steer"} and len(parts) > 1:
+        if command not in {"/new", "/help", "/stop"} and len(parts) > 1:
             normalized += " " + parts[1].strip()
         self.inbound_queue.put((chat_id, normalized))
         log.info("Owner requested %s", normalized)
+
+    def _ensure_choice_state(self) -> None:
+        """Initialize optional state for handlers restored or built in tests."""
+        for name, factory in (
+            ("_choice_typing", set), ("_choice_messages", dict),
+            ("_choice_prompts", dict),
+        ):
+            if not hasattr(self, name):
+                setattr(self, name, factory())
+
+    def _answer_choice(self, chat_id: int, request_id: str, answer: str) -> bool:
+        if self._choice_for_chat.get(chat_id) != request_id:
+            return False
+        self._cancel_choice(chat_id, request_id)
+        if self.on_choice_response is not None:
+            self.on_choice_response(request_id, answer)
+        return True
+
+    async def _handle_question_command(
+        self, chat_id: int, command: str, arguments: list[str]
+    ) -> None:
+        self._ensure_choice_state()
+        current = self._choice_for_chat.get(chat_id)
+        if command == "/questions":
+            text = (
+                f"Pending question: {current}\n"
+                f"{self._choice_prompts.get(current, '')}\n\n"
+                f"/reply {current} <answer>\n/cancelquestion {current}"
+                if current else "No question is pending."
+            )
+            await self._send(chat_id, text)
+            return
+        fields = arguments[0].split(maxsplit=1) if arguments else []
+        if not fields or fields[0] != current:
+            await self._send(
+                chat_id, "Question ID is missing or expired. Use /questions."
+            )
+            return
+        if command == "/reply" and (len(fields) < 2 or not fields[1].strip()):
+            await self._send(chat_id, f"Usage: /reply {current} <answer>")
+            return
+        answer = fields[1].strip() if command == "/reply" else ""
+        self._answer_choice(chat_id, current, answer)
+        await self._send(
+            chat_id, "Answer submitted." if answer else "Question cancelled."
+        )
 
     async def _handle_callback(self, update: Update, context: CallbackContext) -> None:
         """Handle permission and model-question inline keyboards."""
@@ -174,6 +230,8 @@ class TelegramHandler(threading.Thread):
             return
         original = query.message.text if query.message else ""
         if decision == "other":
+            self._ensure_choice_state()
+            self._choice_typing.add(request_id)
             try:
                 await query.edit_message_text(
                     f"{original}\n\n✍️ Reply with your own answer."
@@ -182,17 +240,17 @@ class TelegramHandler(threading.Thread):
                 log.debug("Could not edit choice message: %s", exc)
             return
         try:
-            answer = options[int(decision)]
+            index = int(decision)
+            if index < 0:
+                return
+            answer = options[index]
         except (ValueError, IndexError):
             return
-        self._choice_for_chat.pop(chat_id, None)
-        self._choice_options.pop(request_id, None)
+        self._answer_choice(chat_id, request_id, answer)
         try:
             await query.edit_message_text(f"{original}\n\n✅ Selected: {answer}")
         except Exception as exc:
             log.debug("Could not edit choice message: %s", exc)
-        if self.on_choice_response is not None:
-            self.on_choice_response(request_id, answer)
 
     # ------------------------------------------------------------------ outbound
     def send(self, chat_id: int, text: str) -> None:
@@ -363,8 +421,13 @@ class TelegramHandler(threading.Thread):
         options: list[tuple[str, str]],
     ) -> None:
         labels = [label for label, _description in options]
+        self._ensure_choice_state()
+        previous = self._choice_for_chat.get(chat_id)
+        if previous and previous != request_id:
+            self._answer_choice(chat_id, previous, "")
         self._choice_for_chat[chat_id] = request_id
         self._choice_options[request_id] = labels
+        self._choice_prompts[request_id] = prompt_text[:2000]
         rows = [
             [
                 InlineKeyboardButton(
@@ -389,20 +452,28 @@ class TelegramHandler(threading.Thread):
         text = prompt_text
         if details:
             text += f"\n\n{details}"
-        text += "\n\nTap an option or reply with your own answer."
-        delivered = await self._telegram_call(
-            "ask_choice",
-            lambda: self.bot.send_message(
-                chat_id=chat_id,
-                text=text[:MAX_MESSAGE_LEN],
+        text += (
+            "\n\nTap an option, select Type another answer, or reply directly "
+            f"to this message.\nQuestion ID: {request_id}\n"
+            f"/reply {request_id} <answer>"
+        )
+
+        async def send_prompt():
+            message = await self.bot.send_message(
+                chat_id=chat_id, text=text[:MAX_MESSAGE_LEN],
                 reply_markup=InlineKeyboardMarkup(rows),
-            ),
+            )
+            if self._choice_for_chat.get(chat_id) == request_id:
+                message_id = getattr(message, "message_id", None)
+                if message_id is not None:
+                    self._choice_messages[request_id] = message_id
+            return message
+
+        delivered = await self._telegram_call(
+            "ask_choice", send_prompt,
         )
         if not delivered:
-            self._choice_for_chat.pop(chat_id, None)
-            self._choice_options.pop(request_id, None)
-            if self.on_choice_response is not None:
-                self.on_choice_response(request_id, "")
+            self._answer_choice(chat_id, request_id, "")
 
     def cancel_choice(self, chat_id: int, request_id: str) -> None:
         """Forget a timed-out/cancelled question without consuming later chat."""
@@ -411,9 +482,13 @@ class TelegramHandler(threading.Thread):
         self.loop.call_soon_threadsafe(self._cancel_choice, chat_id, request_id)
 
     def _cancel_choice(self, chat_id: int, request_id: str) -> None:
+        self._ensure_choice_state()
         if self._choice_for_chat.get(chat_id) == request_id:
             self._choice_for_chat.pop(chat_id, None)
         self._choice_options.pop(request_id, None)
+        self._choice_typing.discard(request_id)
+        self._choice_messages.pop(request_id, None)
+        self._choice_prompts.pop(request_id, None)
 
     # ------------------------------------------------------------------ lifecycle
     async def _initialize_application(self) -> bool:

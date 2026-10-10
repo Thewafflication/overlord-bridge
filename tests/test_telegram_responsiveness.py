@@ -166,6 +166,7 @@ def test_typed_message_answers_pending_model_question():
     )
     handler._choice_for_chat = {42: "choice-1"}
     handler._choice_options = {"choice-1": ["A", "B"]}
+    handler._choice_typing = {"choice-1"}
     update = SimpleNamespace(
         message=SimpleNamespace(chat_id=42, text="Something else")
     )

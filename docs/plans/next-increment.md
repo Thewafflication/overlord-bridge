@@ -17,6 +17,14 @@ were repaired. An infinite usage counter no longer crashes accounting.
 See `docs/testing.md` for the declared inventory and remaining verification.
 The rest of WP1 and WP2 through WP5 remain open; no increment release is claimed.
 
+WP2 prompting slice: registered all documented Telegram commands, preserved
+arguments, added explicit question IDs/reply/cancel controls, and prevented
+unrelated messages from answering questions. Gate callbacks now resolve on the
+owning loop and cancellation removes pending records. Native Claude and Codex
+question tools have paired offline end-to-end tests through the real gate and
+Telegram handler. Full multi-question review and restart recovery remain open.
+The WP1 hosted Windows/Linux check workflow passed for `bed6cb7`.
+
 ## Objective and scope
 
 Every prompt should reach a suitable available model, retain the conversation's

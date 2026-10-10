@@ -79,11 +79,13 @@ class PermissionGate:
 
     def on_permission_response(self, request_id: str, decision: str | bool) -> None:
         """Resolve a Telegram permission decision on the requesting event loop."""
-        item = self.pending.pop(request_id, None)
+        item = self.pending.get(request_id)
         if item is None:
             return
         loop, fut = item
-        if not fut.done():
+        def resolve():
+            if self.pending.pop(request_id, None) is None or fut.done():
+                return
             normalized = (
                 "allow"
                 if decision is True
@@ -96,18 +98,22 @@ class PermissionGate:
                 log.warning(
                     "Operator enabled runtime auto-approval; off-limits checks remain active"
                 )
-            loop.call_soon_threadsafe(
-                fut.set_result, normalized in ("allow", "always")
-            )
+            fut.set_result(normalized in ("allow", "always"))
+        if not loop.is_closed():
+            loop.call_soon_threadsafe(resolve)
 
     def on_choice_response(self, request_id: str, answer: str) -> None:
         """Resolve a model-authored Telegram question."""
-        item = self.choice_pending.pop(request_id, None)
+        item = self.choice_pending.get(request_id)
         if item is None:
             return
         loop, fut = item
-        if not fut.done():
-            loop.call_soon_threadsafe(fut.set_result, answer)
+        def resolve():
+            if self.choice_pending.pop(request_id, None) is not None:
+                if not fut.done():
+                    fut.set_result(answer)
+        if not loop.is_closed():
+            loop.call_soon_threadsafe(resolve)
 
     @staticmethod
     def offlimits_match(candidates: list[str]) -> str | None:
@@ -159,9 +165,8 @@ class PermissionGate:
             "\n\nAllow this? “Always allow” applies until Overlord restarts; "
             "off-limits paths remain denied."
         )
-        self.telegram.ask_permission(self.owner, header, request_id)
-
         try:
+            self.telegram.ask_permission(self.owner, header, request_id)
             return await asyncio.wait_for(fut, timeout=self.timeout)
         except asyncio.TimeoutError:
             self.pending.pop(request_id, None)
@@ -169,6 +174,8 @@ class PermissionGate:
                 self.owner, f"⏱ Permission timed out for {title} — denied."
             )
             return False
+        finally:
+            self.pending.pop(request_id, None)
 
     async def choose(
         self,
@@ -180,8 +187,8 @@ class PermissionGate:
         loop = asyncio.get_running_loop()
         fut: asyncio.Future = loop.create_future()
         self.choice_pending[request_id] = (loop, fut)
-        self.telegram.ask_choice(self.owner, prompt, request_id, options)
         try:
+            self.telegram.ask_choice(self.owner, prompt, request_id, options)
             answer = await asyncio.wait_for(fut, timeout=self.timeout)
             if not isinstance(answer, str):
                 return None
