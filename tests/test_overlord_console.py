@@ -67,7 +67,10 @@ def _console(tmp_path, command_path):
     """A console instance without a Tk mainloop, for the file-writing path."""
     console = MODULE.OverlordConsole.__new__(MODULE.OverlordConsole)
     console.command_path = command_path
-    console.action_status = MODULE.tk.StringVar(value="")
+    console.interpreter = MODULE.tk.Tcl()
+    console.action_status = MODULE.tk.StringVar(
+        master=console.interpreter, value=""
+    )
     console.root = type("Root", (), {"after": lambda self, *a: None})()
     return console
 

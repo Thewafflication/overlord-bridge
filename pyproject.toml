@@ -34,3 +34,8 @@ overlord-bridge = "bridge:main"
 [tool.setuptools]
 py-modules = ["bridge"]
 packages = ["modules"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-markers"
+markers = ["live: opt-in tests that consume provider usage"]

@@ -67,7 +67,7 @@ _ALIASES: dict[str, tuple[str, ...]] = {
 def _as_int(value: Any) -> int:
     try:
         number = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return 0
     return number if number > 0 else 0
 

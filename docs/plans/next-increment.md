@@ -8,6 +8,15 @@
 **Target:** Proposed 1.1.0; confirm after compatibility review.
 **Status:** Planned; functional implementation and verification remain open.
 
+## Execution progress
+
+2026-10-10: WP1's initial offline Python check runner, controlled pre-commit
+configuration, Windows/Linux CI definition, test collection isolation, and
+usage-resilience regression tests are implemented. Headless console fixtures
+were repaired. An infinite usage counter no longer crashes accounting.
+See `docs/testing.md` for the declared inventory and remaining verification.
+The rest of WP1 and WP2 through WP5 remain open; no increment release is claimed.
+
 ## Objective and scope
 
 Every prompt should reach a suitable available model, retain the conversation's

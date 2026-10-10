@@ -6,6 +6,7 @@ __pycache__/
 build/
 dist/
 *.egg-info/
+out/checks/
 .env
 .session
 .session.*
