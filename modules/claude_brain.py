@@ -285,13 +285,22 @@ class ClaudeBrain(Brain):
         questions = tool_input.get("questions")
         if not isinstance(questions, list) or not questions:
             return PermissionResultDeny(message="No valid question was provided.")
+        if len(questions) > 4:
+            return PermissionResultDeny(message="Split requests into at most four questions.")
+        keys = [q.get("question") if isinstance(q, dict) else None for q in questions]
+        if (any(not isinstance(key, str) or not key.strip() for key in keys)
+                or len({key.strip() for key in keys}) != len(keys)):
+            return PermissionResultDeny(message="Every question must have unique, nonempty text.")
         answers: dict[str, str] = {}
-        for item in questions[:4]:
+        review = []
+        for index, item in enumerate(questions):
             if not isinstance(item, dict):
                 continue
             question = str(item.get("question") or "").strip()
             if not question:
                 continue
+            if question in answers:
+                return PermissionResultDeny(message="Question text must be unique within a set.")
             header = str(item.get("header") or "Question").strip()
             options = []
             for option in item.get("options") or []:
@@ -303,6 +312,8 @@ class ClaudeBrain(Brain):
                         (label, str(option.get("description") or "").strip())
                     )
             prompt = f"❓ {header}\n\n{question}"
+            if len(questions) > 1:
+                prompt = f"Question {index + 1} of {len(questions)}\n\n" + prompt
             if item.get("multiSelect"):
                 prompt += (
                     "\n\nYou may reply with multiple choices separated by commas."
@@ -313,8 +324,14 @@ class ClaudeBrain(Brain):
                     message="The operator did not answer the Telegram question."
                 )
             answers[question] = answer
+            review.append({"key": question, "prompt": prompt, "options": options[:8]})
         if not answers:
             return PermissionResultDeny(message="No valid question was provided.")
+        if len(review) > 1:
+            reviewed = await self.gate.review_answers(review, answers)
+            if reviewed is None:
+                return PermissionResultDeny(message="The operator did not submit the complete answer set.")
+            answers = reviewed
         return PermissionResultAllow(
             updated_input={**tool_input, "answers": answers}
         )

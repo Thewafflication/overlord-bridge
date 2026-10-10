@@ -277,6 +277,45 @@ class PermissionGate:
             self.choice_pending.pop(request_id, None)
             self.telegram.cancel_choice(self.owner, request_id)
 
+    async def review_answers(self, questions: list[dict], answers: dict[str, str]) -> dict[str, str] | None:
+        """Review an entire native question set before submitting any answer."""
+        edited = dict(answers)
+        for _ in range(20):
+            summary = "Review answers before submission:\n\n" + "\n\n".join(
+                f"{index + 1}. {q['prompt']}\nAnswer: {edited[q['key']]}"
+                for index, q in enumerate(questions)
+            )
+            if len(summary) > 3500:
+                # Telegram.send chunks long text; the final action prompt must
+                # not truncate later answers out of the review.
+                self.telegram.send(self.owner, summary)
+                summary = "Review the complete answer set above before submission."
+            decision = await self.choose(summary, [
+                ("Submit answers", "Send the complete set to the agent"),
+                ("Edit an answer", "Choose a question to revise"),
+                ("Cancel answers", "Return the entire set as unanswered"),
+            ])
+            if decision == "Submit answers":
+                return edited
+            if decision is None or decision == "Cancel answers":
+                return None
+            if decision != "Edit an answer":
+                continue
+            labels = {f"Question {i + 1}": q for i, q in enumerate(questions)}
+            selected = await self.choose("Which answer should change?", [
+                (label, q["prompt"]) for label, q in labels.items()
+            ])
+            if selected is None:
+                return None
+            if selected not in labels:
+                continue
+            question = labels[selected]
+            answer = await self.choose(question["prompt"], question["options"])
+            if answer is None:
+                return None
+            edited[question["key"]] = answer
+        return None
+
 
 class Brain(abc.ABC):
     """A swappable conversational engine driving one persistent conversation.

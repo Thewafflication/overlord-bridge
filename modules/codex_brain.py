@@ -528,21 +528,36 @@ class CodexBrain(Brain):
         questions = params.get("questions")
         if not isinstance(questions, list):
             return {"answers": answers}
-        for item in questions[:4]:
+        if len(questions) > 4:
+            return {"answers": answers}
+        keys = [q.get("id") if isinstance(q, dict) else None for q in questions]
+        if (any(not isinstance(key, str) or not key.strip() for key in keys)
+                or len({key.strip() for key in keys}) != len(keys)
+                or any(not isinstance(q.get("question"), str) or not q["question"].strip()
+                       for q in questions)):
+            return {"answers": {}}
+        if any(q.get("isSecret") for q in questions):
+            self.gate.telegram.send(self.gate.owner,
+                "🔒 Codex requested secret input. Overlord will not collect secrets through Telegram.")
+            return {"answers": {}}
+        review = []
+        raw_answers = {}
+        for index, item in enumerate(questions):
             if not isinstance(item, dict):
                 continue
             question_id = str(item.get("id") or "").strip()
             question = str(item.get("question") or "").strip()
             if not question_id or not question:
                 continue
+            if question_id in answers:
+                return {"answers": {}}
             if item.get("isSecret"):
                 self.gate.telegram.send(
                     self.gate.owner,
                     "🔒 Codex requested secret input. Overlord will not collect "
                     "secrets through Telegram.",
                 )
-                answers[question_id] = {"answers": []}
-                continue
+                return {"answers": {}}
             header = str(item.get("header") or "Question").strip()
             options = []
             for option in item.get("options") or []:
@@ -553,10 +568,20 @@ class CodexBrain(Brain):
                     options.append(
                         (label, str(option.get("description") or "").strip())
                     )
-            answer = await self.gate.choose(
-                f"❓ {header}\n\n{question}", options[:8]
-            )
+            prompt = f"❓ {header}\n\n{question}"
+            if len(questions) > 1:
+                prompt = f"Question {index + 1} of {len(questions)}\n\n" + prompt
+            answer = await self.gate.choose(prompt, options[:8])
+            if not answer:
+                return {"answers": {}}
             answers[question_id] = {"answers": [answer] if answer else []}
+            raw_answers[question_id] = answer
+            review.append({"key": question_id, "prompt": prompt, "options": options[:8]})
+        if len(review) > 1:
+            reviewed = await self.gate.review_answers(review, raw_answers)
+            if reviewed is None:
+                return {"answers": {}}
+            answers = {key: {"answers": [value]} for key, value in reviewed.items()}
         return {"answers": answers}
 
     async def _approve(self, method: str, params: dict[str, Any]) -> bool:
