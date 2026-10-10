@@ -269,7 +269,9 @@ class OverlordConsole:
         if self.command_path is None:
             self.action_status.set("No bridge connected")
             return
-        payload = {"action": action, "at": time.time_ns()}
+        request_id = max(time.time_ns(), getattr(self, "_last_command_id", 0) + 1)
+        self._last_command_id = request_id
+        payload = {"action": action, "at": request_id}
         try:
             self.command_path.parent.mkdir(parents=True, exist_ok=True)
             temporary = self.command_path.with_suffix(".tmp")

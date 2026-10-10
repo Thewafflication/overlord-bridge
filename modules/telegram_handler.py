@@ -49,6 +49,7 @@ MAX_MESSAGE_LEN = 4096
 COMMANDS = (
     "new", "help", "status", "stop", "steer", "brain", "tokens", "quote",
     "model", "effort", "questions", "reply", "cancelquestion", "permissions",
+    "context",
 )
 
 

@@ -118,6 +118,11 @@ Telegram commands:
   conversation is handed to the newly selected brain with the next real user
   message, bounded by `OVERLORD_HANDOFF_CONTEXT_CHARS` (default 12,000).
 - `/new` starts a clean conversation and resets the token tally.
+- `/context` shows retained messages, checkpoint status, and recovery warnings.
+  Bounded cross-brain history is saved atomically under `run/conversation.json`
+  and restored on restart. A damaged primary can recover the previous snapshot.
+  Checkpoints are bound to the configured workspace; `/new` clears both copies.
+  Provider context pressure is labelled unknown when it cannot be measured.
 
 Every reply is followed by a one-line token footer (`🧮 in … · out … · total …`)
 with the running session total. Set `OVERLORD_TOKEN_FOOTER=false` to suppress the

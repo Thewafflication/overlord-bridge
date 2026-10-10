@@ -33,6 +33,13 @@ Existing configured global auto mode is labelled and can be revoked at runtime.
 Task/project grant persistence, full action audit, and equivalent enforcement
 for the Linux Claude shared-job transport remain open WP2 requirements.
 
+WP3 durability slice: workspace-bound versioned conversation checkpoints,
+atomic saves, previous-snapshot recovery, bounded retention, and `/context`
+inspection are implemented. Interrupted/failed turns retain reconciliation
+warnings. `/new` clears the recovery copy. Structured summaries and native/
+automatic compaction remain open. Hosted Windows testing exposed a duplicate
+console timestamp bug, repaired with monotonic IDs and a frozen-clock test.
+
 ## Objective and scope
 
 Every prompt should reach a suitable available model, retain the conversation's

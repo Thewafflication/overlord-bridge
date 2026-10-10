@@ -221,6 +221,9 @@ WORKER_REPORT_EVENTS_MAX_BYTES = max(
 HANDOFF_CONTEXT_CHARS = max(
     1_000, env_int("OVERLORD_HANDOFF_CONTEXT_CHARS", 12_000)
 )
+CONTEXT_CHECKPOINT_FILE = env_path(
+    "OVERLORD_CONTEXT_CHECKPOINT_FILE", BASE_DIR / "run" / "conversation.json"
+)
 
 # Per-prompt token accounting. The footer is the only part that touches every
 # reply, so it is the only part with an off switch.
@@ -416,9 +419,13 @@ class Bridge:
         )
         # Instance-level so a test (or a future /status --fast) can shorten it.
         self._status_timeout: float = STATUS_REFRESH_TIMEOUT
-        self._conversation_history = SharedConversationHistory(HANDOFF_CONTEXT_CHARS)
-        self._conversation_history.mark_seen(self.brain_name)
-        self._pending_handoff: Handoff | None = None
+        self._conversation_history = SharedConversationHistory(
+            HANDOFF_CONTEXT_CHARS, path=CONTEXT_CHECKPOINT_FILE,
+            workspace=str(Path(CWD).resolve()),
+        )
+        self._pending_handoff: Handoff | None = (
+            self._conversation_history.handoff_for(self.brain_name)
+        )
         self.tray = WindowsTray(
             self.request_shutdown,
             log_path=CONSOLE_LOG_FILE,
@@ -624,6 +631,8 @@ class Bridge:
             if AUTO_APPROVE
             else ""
         )
+        if self._conversation_history.persistence_note:
+            approve_note += "\n⚠️ " + self._conversation_history.persistence_note
         version = display_version()
         self.telegram.send(
             OWNER,
@@ -680,6 +689,9 @@ class Bridge:
                     continue
                 if text.strip().lower().split(maxsplit=1)[0] == "/permissions":
                     self._handle_permissions(chat_id, text)
+                    continue
+                if text.strip() == "/context":
+                    self._handle_context(chat_id)
                     continue
                 self._start_turn(chat_id, text)
         finally:
@@ -861,6 +873,17 @@ class Bridge:
             self.telegram.send(chat_id, f"Revoked {count} permission grants.")
         else:
             self.telegram.send(chat_id, "Usage: /permissions [revoke <id|all>]")
+
+    def _handle_context(self, chat_id: int) -> None:
+        text = self._conversation_history.status()
+        tokens = self._status_cache.get("tokens") or {}
+        window = tokens.get("modelContextWindow")
+        text += (
+            f"\nModel context window: {window:,} tokens"
+            if isinstance(window, int) else "\nModel context window: unknown"
+        )
+        text += "\nLive context pressure: unknown"
+        self.telegram.send(chat_id, text)
 
     async def _handle_status(self, chat_id: int, text: str = "/status") -> None:
         """Answer /status with a reading taken NOW, not the previous one.
@@ -1407,6 +1430,7 @@ class Bridge:
         log.info("Dispatching turn: %s", text)
         chunks: list[str] = []
         outcome = "ok"
+        history_recorded = False
         self.telegram.begin_typing(chat_id)
         try:
             async with self._brain_lock:
@@ -1422,6 +1446,7 @@ class Bridge:
                 self._conversation_history.append_exchange(text, "\n\n".join(chunks))
                 self._conversation_history.mark_seen(self.brain.name)
                 self._pending_handoff = None
+                history_recorded = True
         except asyncio.CancelledError:
             log.info("Active turn cancelled")
             # /stop and /steer land here. The turn still spent tokens, so mark
@@ -1433,6 +1458,12 @@ class Bridge:
             outcome = "error"
             self.telegram.send(chat_id, f"⚠️ Error: {exc}")
         finally:
+            if not history_recorded and outcome != "ok":
+                self._conversation_history.append_exchange(
+                    text, "\n\n".join(chunks) +
+                    f"\n[Turn {outcome}; effects may have occurred. "
+                    "Reconcile before continuing; do not replay automatically.]",
+                )
             # In the finally so every ending is accounted for: a clean answer,
             # a failure, a usage cap, and an interruption alike.
             self._record_turn_tokens(chat_id, text, outcome=outcome)

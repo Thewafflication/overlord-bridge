@@ -22,6 +22,7 @@ HELP_TEXT = """Overlord commands
 /reply <id> <answer> — answer a specific pending question
 /cancelquestion <id> — cancel a specific pending question
 /permissions [revoke <id|all>] — inspect or revoke exact-action grants
+/context — show retained context and checkpoint recovery status
 /stop — stop the active AI turn
 /steer <message> — stop the active turn and replace it with new guidance
 /brain — show or switch the active brain
