@@ -42,6 +42,7 @@ etc.; aliases live in _NVIDIA_MODEL_ALIASES.
 from __future__ import annotations
 
 import asyncio
+from modules.free_services import OPENROUTER_BASE, validate_free_model, free_provider_policy
 import json
 import logging
 import os
@@ -1249,7 +1250,31 @@ class WorkerManager:
         started_at = _now_iso()
         started_mono = asyncio.get_running_loop().time()
         is_nvidia = brain == "nvidia"
-        if is_nvidia:
+        is_openrouter = brain == "openrouter"
+        if is_openrouter:
+            # Validate consent and prices before reading or transmitting project files.
+            try:
+                if os.environ.get("OVERLORD_WORKER_OPENROUTER_ENABLED") != "1":
+                    raise ValueError("OpenRouter cloud workers require explicit opt-in")
+                api_key = os.environ.get("OVERLORD_WORKER_OPENROUTER_API_KEY", "")
+                if not api_key:
+                    raise ValueError("OpenRouter API key is not configured")
+                if resume:
+                    raise ValueError("OpenRouter workers do not support session resume")
+                amodel = model or os.environ.get("OVERLORD_WORKER_OPENROUTER_MODEL", "")
+                if not amodel.endswith(":free"):
+                    raise ValueError("OpenRouter worker requires an explicit :free model ID")
+                catalog = await _http_get_json(OPENROUTER_BASE + "/models", timeout=30, api_key=api_key)
+                validate_free_model(catalog, amodel)
+            except Exception as exc:
+                self._emit_report(self._base_report(name=name, folder=folder, brain=brain,
+                    session=sid, status="rejected", reason="free_service_admission", detail=str(exc)))
+                self._send(self.owner, f"❌ [{name}] free service rejected: {exc}")
+                return
+            context_tokens, hard_cap = None, None
+            api_base = OPENROUTER_BASE
+            max_steps, max_tokens = DEFAULT_LOCAL_AGENT_MAX_STEPS, 4096
+        elif is_nvidia:
             amodel = _resolve_nvidia_model(model, self.nvidia_model)
             context_tokens, hard_cap = None, None
             api_base = self.nvidia_api_base
@@ -1305,7 +1330,7 @@ class WorkerManager:
             if len(preload_blocks) >= 8:
                 break
 
-        answer_only = _is_answer_only_worker_task(task, files)
+        answer_only = False if is_openrouter else _is_answer_only_worker_task(task, files)
         if answer_only:
             system_prompt = (
                 "You are an answer-only worker running inside a bridge harness. "
@@ -1428,7 +1453,7 @@ class WorkerManager:
             }
 
         try:
-            if is_nvidia:
+            if is_nvidia or is_openrouter:
                 if not api_key:
                     raise RuntimeError(
                         "nvidia worker brain needs OVERLORD_WORKER_NVIDIA_API_KEY in .env"
@@ -1444,7 +1469,7 @@ class WorkerManager:
             for step in range(1, max_steps + 1):
                 payload: dict[str, Any] = {
                     # NIM ids keep their org prefix; local aliases strip it.
-                    "model": amodel if is_nvidia else _local_agent_model_name(amodel),
+                    "model": amodel if (is_nvidia or is_openrouter) else _local_agent_model_name(amodel),
                     "messages": messages,
                     "temperature": 0.2,
                     "max_tokens": max_tokens,
@@ -1452,6 +1477,8 @@ class WorkerManager:
                 if not answer_only:
                     payload["tools"] = _local_agent_tools()
                     payload["tool_choice"] = "auto"
+                if is_openrouter:
+                    payload["provider"] = free_provider_policy()
                 if is_nvidia:
                     payload.update(_NVIDIA_MODEL_PAYLOAD_OVERRIDES.get(amodel.lower(), {}))
                 chat_url = _openai_chat_url(api_base)
@@ -1786,7 +1813,7 @@ class WorkerManager:
             )
             self._send(self.owner, f"⏳ [{name}] already running; ignoring duplicate.")
             return
-        if brain not in ("claude", "codex", "local-agent", "nvidia"):
+        if brain not in ("claude", "codex", "local-agent", "nvidia", "openrouter"):
             self._emit_report(
                 self._base_report(
                     name=name,
@@ -1799,12 +1826,12 @@ class WorkerManager:
             )
             self._send(
                 self.owner,
-                f"❌ [{name}] bad worker brain: {brain}. Use claude, codex, local-agent, or nvidia.",
+                f"❌ [{name}] bad worker brain: {brain}. Use claude, codex, local-agent, nvidia, or openrouter.",
             )
             return
         files, files_error = (
             _worker_file_args(target, files_raw)
-            if brain in ("local-agent", "nvidia")
+            if brain in ("local-agent", "nvidia", "openrouter")
             else ([], None)
         )
         if files_error:
@@ -1892,7 +1919,7 @@ class WorkerManager:
         sandbox: str | None = None,
         bypass_codex_sandbox: bool = False,
     ) -> None:
-        if brain in ("local-agent", "nvidia"):
+        if brain in ("local-agent", "nvidia", "openrouter"):
             try:
                 await self._run_local_agent_worker(
                     name=name,

@@ -261,3 +261,5 @@ relabelled a documentation caveat to close this increment.
 - [Gemini API pricing](https://ai.google.dev/gemini-api/docs/pricing)
 - [OpenRouter limits](https://openrouter.ai/docs/api-reference/limits)
 - `CAPABILITIES.md`, `README.md`, and `wsp/processes/milestone-plan-template.md`
+
+Manual free-service pilot: OpenRouter dispatch now uses the existing worker tool harness after explicit cloud opt-in, exact :free model catalog qualification, and zero-price request ceilings with provider fallback disabled. Offline admission and actual worker request tests cover malformed/nonzero pricing, missing consent and tool support. Live qualification, other services, automatic selection and session resume remain open.

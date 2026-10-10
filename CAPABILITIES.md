@@ -340,3 +340,9 @@ workflow lands.
   the Overlord toolkit.
 - If a capability matters to Ben, mention it here before assuming either
   assistant will remember it on its own.
+
+### Manual free OpenRouter workers
+
+Dispatch with `brain: "openrouter"` and an exact tool-capable `model` ID ending in `:free`. Enable `OVERLORD_WORKER_OPENROUTER_ENABLED=1` and configure `OVERLORD_WORKER_OPENROUTER_API_KEY` in the bridge environment. This explicitly permits sending worker task and project context to OpenRouter providers. The bridge validates current catalog input/output prices before reading hinted files, and sends a zero-price provider ceiling with fallback disabled on every turn. Missing consent, keys, pricing, or tool support fails closed. Resume is rejected. The existing worker file/command restrictions apply. This manual pilot is not automatically routed or live-qualified; no provider calls were made during offline testing.
+
+Provider contract: [OpenRouter provider routing](https://openrouter.ai/docs/guides/routing/provider-selection).
