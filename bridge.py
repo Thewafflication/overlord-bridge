@@ -43,6 +43,7 @@ from typing import Any
 from modules import cli_notify
 from modules.brain import Brain, PermissionGate
 from modules.prompt_router import PromptRouter
+from modules.permission_audit import PermissionAudit
 from modules.codex_discovery import resolve_codex_binary
 from modules.commands import (
     HELP_TEXT,
@@ -397,6 +398,7 @@ class Bridge:
             owner=OWNER,
             timeout=PERMISSION_TIMEOUT,
             auto_approve=AUTO_APPROVE,
+            audit=PermissionAudit(BASE_DIR / "run/permissions.jsonl", root=BASE_DIR),
         )
         self.telegram = TelegramHandler(
             TOKEN,

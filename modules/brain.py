@@ -65,10 +65,13 @@ class PermissionGate:
         owner: int,
         timeout: int,
         auto_approve: bool = False,
+        audit=None,
     ) -> None:
         self.telegram = telegram
         self.owner = owner
         self.timeout = timeout
+        self.audit = audit
+        self.audit_ok: bool | None = None
         # When True, skip the Telegram permission round-trip and auto-allow —
         # BUT only after the off-limits pre-screen below. "Trust me, stop asking"
         # must never extend to reading secrets, so the hard floor still applies.
@@ -105,6 +108,9 @@ class PermissionGate:
                     log.info("Granted exact action %s for this session", scope["id"])
                 else:
                     normalized = "deny"
+            scope = self._permission_scopes.get(request_id)
+            if scope is not None:
+                scope["decision"] = normalized
             fut.set_result(normalized in ("allow", "session"))
         if not loop.is_closed():
             loop.call_soon_threadsafe(resolve)
@@ -163,27 +169,29 @@ class PermissionGate:
                     screened.append(str(resolved))
             except (OSError, RuntimeError, ValueError, TypeError, KeyError):
                 self.telegram.send(self.owner, "⛔ Could not resolve action paths.")
+                self._audit_decision(None, False, "invalid_paths")
                 return False
+        identity = json.dumps(
+            [title, detail, screened, context or {}],
+            sort_keys=True, ensure_ascii=False, default=str,
+        )
+        grant_id = hashlib.sha256(identity.encode("utf-8")).hexdigest()
         frag = self.offlimits_match(screened)
         if frag is not None:
             self.telegram.send(
                 self.owner, f"⛔ Auto-denied {title} (off-limits: {frag})"
             )
             log.warning("Auto-denied off-limits action %s (fragment %s)", title, frag)
+            self._audit_decision(grant_id, False, "off_limits")
             return False
 
         if self.auto_approve:
             log.info("Auto-approved %s (auto_approve on; not off-limits)", title)
-            return True
+            return self._audit_decision(grant_id, True, "configured_auto_approval")
 
-        identity = json.dumps(
-            [title, detail, screened, context or {}],
-            sort_keys=True, ensure_ascii=False, default=str,
-        )
-        grant_id = hashlib.sha256(identity.encode("utf-8")).hexdigest()
         if grant_id in self.grants:
             log.info("Allowed %s through exact-action grant %s", title, grant_id)
-            return True
+            return self._audit_decision(grant_id, True, "exact_session_grant")
 
         request_id = uuid.uuid4().hex[:8]
         loop = asyncio.get_running_loop()
@@ -204,13 +212,24 @@ class PermissionGate:
         )
         try:
             self.telegram.ask_permission(self.owner, header, request_id)
-            return await asyncio.wait_for(fut, timeout=self.timeout)
+            allowed = await asyncio.wait_for(fut, timeout=self.timeout)
+            decision = self._permission_scopes[request_id].get("decision", "deny")
+            recorded = self._audit_decision(grant_id, bool(allowed),
+                "revoked_pending" if decision == "revoked" else
+                "operator_session" if decision == "session" else "operator_once")
+            if allowed and not recorded:
+                self.grants.pop(grant_id, None)
+            return bool(allowed) and recorded
         except asyncio.TimeoutError:
             self.pending.pop(request_id, None)
             self.telegram.send(
                 self.owner, f"⏱ Permission timed out for {title} — denied."
             )
+            self._audit_decision(grant_id, False, "timeout")
             return False
+        except asyncio.CancelledError:
+            self._audit_decision(grant_id, False, "cancelled")
+            raise
         finally:
             self.pending.pop(request_id, None)
             self._permission_scopes.pop(request_id, None)
@@ -218,13 +237,27 @@ class PermissionGate:
             if cancel is not None:
                 cancel(self.owner, request_id)
 
+    def _audit_decision(self, action: str | None, allowed: bool, source: str) -> bool:
+        if self.audit is None:
+            return True
+        try:
+            recorded = self.audit.record(action=action, allowed=allowed, source=source, actor=self.owner)
+        except Exception:
+            recorded = False
+        self.audit_ok = bool(recorded)
+        if not recorded and allowed:
+            self.telegram.send(self.owner, "Permission audit could not be saved; action denied.")
+        return bool(recorded)
+
     def revoke_grants(self, grant_id: str | None = None) -> int:
         """Revoke one exact grant or all grants, including legacy auto mode."""
+        self._audit_decision(grant_id, False, "revoke_one" if grant_id else "revoke_all")
         # Invalidate immediately, before a queued Telegram callback can resolve.
         # The future belongs to the brain loop; only that loop may settle it.
         for request_id, scope in list(self._permission_scopes.items()):
             if grant_id is not None and scope["id"] != grant_id:
                 continue
+            scope["decision"] = "revoked"
             item = self.pending.pop(request_id, None)
             if item is not None:
                 loop, future = item
@@ -245,6 +278,9 @@ class PermissionGate:
 
     def format_grants(self) -> str:
         lines = ["Permission grants (current session)"]
+        if self.audit is not None:
+            state = "healthy" if self.audit_ok else "unavailable" if self.audit_ok is False else "not yet used"
+            lines.append(f"Local decision audit: {state} (action hashes; no arguments).")
         if self.auto_approve:
             lines.append("Legacy configured global auto-approval is active.")
         if not self.grants:
