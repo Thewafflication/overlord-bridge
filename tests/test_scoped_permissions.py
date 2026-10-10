@@ -34,6 +34,26 @@ async def approve(gate, context, decision="session"):
     return await task
 
 
+@pytest.mark.parametrize("exact", [False, True])
+def test_revocation_invalidates_pending_and_queued_grants(exact):
+    async def scenario():
+        gate = PermissionGate(Telegram(), 42, 1)
+        task = asyncio.create_task(gate.request("Write", "app.py", ["app.py"]))
+        await asyncio.sleep(0)
+        request_id = gate.telegram.prompts[-1]
+        grant_id = gate._permission_scopes[request_id]["id"]
+        # Queue an owner response, then revoke before the brain loop sees it.
+        gate.on_permission_response(request_id, "session")
+        gate.revoke_grants(grant_id if exact else None)
+        assert not await task
+        gate.on_permission_response(request_id, "session")
+        await asyncio.sleep(0)
+        assert not gate.grants
+        assert not gate.pending
+        assert request_id in gate.telegram.cancelled
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize("changed", [
     {"workspace": "other", "input": {"content": "original"}},
     {"workspace": "same", "input": {"content": "changed"}},

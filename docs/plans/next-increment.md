@@ -263,3 +263,5 @@ relabelled a documentation caveat to close this increment.
 - `CAPABILITIES.md`, `README.md`, and `wsp/processes/milestone-plan-template.md`
 
 Manual free-service pilot: OpenRouter dispatch now uses the existing worker tool harness after explicit cloud opt-in, exact :free model catalog qualification, and zero-price request ceilings with provider fallback disabled. Offline admission and actual worker request tests cover malformed/nonzero pricing, missing consent and tool support. Live qualification, other services, automatic selection and session resume remain open.
+
+Permission revocation also invalidates pending requests before queued Telegram callbacks run. Exact-ID and revoke-all race tests ensure delayed session-grant responses cannot recreate revoked permissions.

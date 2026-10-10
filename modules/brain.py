@@ -220,6 +220,22 @@ class PermissionGate:
 
     def revoke_grants(self, grant_id: str | None = None) -> int:
         """Revoke one exact grant or all grants, including legacy auto mode."""
+        # Invalidate immediately, before a queued Telegram callback can resolve.
+        # The future belongs to the brain loop; only that loop may settle it.
+        for request_id, scope in list(self._permission_scopes.items()):
+            if grant_id is not None and scope["id"] != grant_id:
+                continue
+            item = self.pending.pop(request_id, None)
+            if item is not None:
+                loop, future = item
+                def deny_pending(future=future):
+                    if not future.done():
+                        future.set_result(False)
+                if not loop.is_closed():
+                    loop.call_soon_threadsafe(deny_pending)
+            cancel = getattr(self.telegram, "cancel_permission", None)
+            if cancel is not None:
+                cancel(self.owner, request_id)
         if grant_id is not None:
             return int(self.grants.pop(grant_id, None) is not None)
         count = len(self.grants) + int(self.auto_approve)
