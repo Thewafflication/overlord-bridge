@@ -24,8 +24,9 @@ in this checkpoint is offline; provider model calls were not made by the tests.
 | REQ-OVL-007 model choice | Local LLM prompt/context interpretation into qualified active-provider models; manual override, native refusal fallback, same-session paired tests | Native model catalog discovery, gas/privacy-aware cross-provider and worker routing, effort selection, curated live evaluation |
 
 Every requirement remains an increment gate. Offline coverage does not turn a
-missing live qualification into a pass. Version 1.0.5 has not been advanced;
-annotated `increment/ovl-m02-*` tags identify reviewable development slices.
+missing live qualification into a pass. The owner requested releasing the latest
+build as 1.0.6 on 2026-10-11; this does not close the remaining increment gates.
+Annotated `increment/ovl-m02-*` tags identify reviewable development slices.
 
 ## WSP integration
 
