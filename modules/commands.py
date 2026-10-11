@@ -34,7 +34,7 @@ VALID_BRAINS = ("claude", "codex")
 
 def set_env_value(path: Any, key: str, value: str) -> None:
     """Update one dotenv setting while preserving unrelated configuration."""
-    text = path.read_text(encoding="utf-8") if path.exists() else ""
+    text = path.read_bytes().decode("utf-8") if path.exists() else ""
     newline = "\r\n" if "\r\n" in text else "\n"
     lines = text.splitlines()
     replaced = False
@@ -49,7 +49,7 @@ def set_env_value(path: Any, key: str, value: str) -> None:
     if not replaced:
         lines.append(f"{key}={value}")
     rendered = newline.join(lines) + newline
-    path.write_text(rendered, encoding="utf-8")
+    path.write_bytes(rendered.encode("utf-8"))
 
 
 def _friendly_local_time(
