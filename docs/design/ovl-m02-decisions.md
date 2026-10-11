@@ -43,6 +43,11 @@ Foreign-thread requests are declined. Multi-question answers are submitted as
 one reviewed set, with edits preserving native identifiers and cancellation
 returning no partial answers. Pending requests are not restored on restart.
 
+The latest 256 completed native turns are retained as thread-scoped tombstones.
+Late permission/question requests for those turns are declined before operator
+prompting, including when they wait behind another interactive handler. This is
+a bounded in-process safeguard; it is not durable restart restoration.
+
 ## Provider admission and model routing
 
 OpenRouter is a manual worker pilot. It requires explicit cloud opt-in, an exact

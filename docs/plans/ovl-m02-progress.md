@@ -2,7 +2,7 @@
 
 **Content type:** Work and verification record
 
-**Date:** 2026-10-10
+**Date:** 2026-10-11
 
 **State:** In progress; development checkpoints, not a product release
 
@@ -40,9 +40,9 @@ open.
 
 ## Validation and development slices
 
-The full local offline suite at `12c0cb3` produced 332 passes and one platform
-skip. Syntax checks and wheel build passed. Hosted Windows/Linux checks passed
-through the responsive request-pump slice on both Windows and Linux.
+The full local offline suite for the completed-turn request guard produced 334
+passes and one platform skip. Syntax checks and wheel build passed. Hosted
+Windows/Linux checks passed through `37a50b6` on both Windows and Linux.
 Canonical JUnit and wheel artifacts are retained under `out/checks/` locally and
 uploaded by CI. No runtime logs or private conversations are test evidence.
 
@@ -57,6 +57,9 @@ Recent development checkpoints:
 - `ef22608`: bounded controls and uncertain compaction transport loss.
 - `548062c`: bounded permission audit with fail-closed approval writes.
 - `12c0cb3`: responsive Codex reader with ordered, cancellable operator requests.
+- `37a50b6`: reject local classifier redirects and record remaining release gates.
+- Completed-turn request guard: delayed approvals/questions cannot reopen prompts
+  for the latest 256 completed turns; identifiers are scoped to their native thread.
 
 See [the increment plan](next-increment.md), [WSP adoption](../wsp-adoption.md),
 and [the implementation decisions](../design/ovl-m02-decisions.md).

@@ -34,6 +34,9 @@ def test_local_classifier_redirect_is_not_followed(monkeypatch):
     monkeypatch.setenv("NO_PROXY", "127.0.0.1,localhost,::1")
     class Redirect(BaseHTTPRequestHandler):
         def do_POST(self):
+            # Consume the body before closing: unread bytes can cause a TCP
+            # reset on Windows instead of exposing the redirect response.
+            self.rfile.read(int(self.headers.get("Content-Length", "0")))
             self.send_response(302)
             self.send_header("Location", "http://192.0.2.1/classify")
             self.send_header("Content-Length", "0")

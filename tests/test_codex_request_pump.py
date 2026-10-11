@@ -62,3 +62,33 @@ def test_interactive_requests_are_ordered_and_foreign_threads_are_denied(tmp_pat
         assert replies[-1] == (3, {"answers": {}})
         assert len(gate.telegram.prompts) == 2
     asyncio.run(scenario())
+
+
+def test_late_completed_turn_requests_never_reopen_operator_prompts(tmp_path, monkeypatch):
+    async def scenario():
+        brain, gate = make_brain(tmp_path)
+        replies = []
+        async def respond(request_id, result):
+            replies.append((request_id, result))
+        monkeypatch.setattr(brain, "_respond", respond)
+        await brain._dispatch({"method": "turn/completed", "params": {
+            "threadId": "thread", "turn": {"id": "turn", "status": "completed"}}})
+        brain._active_turn_id = "next"
+        for request_id, method in ((1, R_EXEC_APPROVAL), (2, R_TOOL_USER_INPUT)):
+            await brain._dispatch({"id": request_id, "method": method, "params": {
+                "threadId": "thread", "turnId": "turn", "command": "inspect",
+                "questions": [{"id": "q", "question": "Continue?"}]}})
+        await asyncio.gather(*list(brain._server_requests))
+        assert replies == [(1, {"decision": "cancel"}), (2, {"answers": {}})]
+        assert gate.telegram.prompts == []
+        assert gate.pending == {}
+        # Turn identifiers are scoped to the native thread, not globally.
+        brain._thread_id = "new-thread"
+        await brain._dispatch({"id": 3, "method": R_EXEC_APPROVAL, "params": {
+            "threadId": "new-thread", "turnId": "turn", "command": "inspect"}})
+        await asyncio.sleep(0)
+        assert len(gate.telegram.prompts) == 1
+        gate.on_permission_response(gate.telegram.prompts[0], "deny")
+        await asyncio.gather(*list(brain._server_requests))
+        assert replies[-1] == (3, {"decision": "decline"})
+    asyncio.run(scenario())

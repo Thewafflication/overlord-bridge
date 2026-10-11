@@ -35,6 +35,7 @@ import logging
 import os
 import shutil
 import socket
+from collections import deque
 from pathlib import Path
 from typing import Any, AsyncIterator
 
@@ -343,6 +344,7 @@ class CodexBrain(Brain):
         self._write_lock = asyncio.Lock()
         self._server_requests: dict[asyncio.Task, str | None] = {}
         self._server_request_lock = asyncio.Lock()
+        self._completed_turns = deque(maxlen=256)
         self._visible_report_turn_active = False
         self._active_turn_id: str | None = None
         self._active_model: str | None = self.model
@@ -532,6 +534,13 @@ class CodexBrain(Brain):
         params = msg.get("params") or {}
 
         if params.get("threadId") and params["threadId"] != self._thread_id:
+            await self._respond(req_id, self._decline_result(method))
+            return
+
+        # Recheck after acquiring the ordering lock: completion may arrive while
+        # this request is queued, or before the server delivers a late request.
+        requested_turn = params.get("turnId")
+        if requested_turn and (self._thread_id, requested_turn) in self._completed_turns:
             await self._respond(req_id, self._decline_result(method))
             return
 
@@ -737,6 +746,8 @@ class CodexBrain(Brain):
         if method == N_TURN_COMPLETED:
             turn = params.get("turn") or {}
             turn_id = turn.get("id")
+            if isinstance(turn_id, str) and turn_id:
+                self._completed_turns.append((self._thread_id, turn_id))
             self._cancel_server_requests(turn_id)
             if isinstance(turn_id, str) and turn_id == self._active_turn_id:
                 self._active_turn_id = None
