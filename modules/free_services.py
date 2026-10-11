@@ -24,7 +24,9 @@ def validate_free_model(catalog: object, model: str) -> None:
             raise ValueError("Free model pricing is invalid") from None
         if not price.is_finite() or price != 0:
             raise ValueError("Free model must have zero input and output prices")
-    if "tools" not in (entry.get("supported_parameters") or []):
+    supported = entry.get("supported_parameters")
+    # A bare string would make `"tools" in supported` a substring test.
+    if not isinstance(supported, list) or "tools" not in supported:
         raise ValueError("Free worker model must advertise tool support")
 
 

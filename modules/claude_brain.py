@@ -416,12 +416,14 @@ class ClaudeBrain(Brain):
         except Exception as exc:
             if resume is None:
                 raise
-            # Stale/invalid saved session -> drop it and start fresh.
+            # Stale/invalid saved session -> start fresh. The pin is dropped only
+            # once the fresh client is up: if the CLI itself is down or missing,
+            # the failure was not the session's fault and the pin must survive.
             log.warning("Resume of %s failed (%s); starting fresh.", resume, exc)
-            self._session_id = None
-            self.session_file.unlink(missing_ok=True)
             client = ClaudeSDKClient(options=self._build_options(None))
             await client.connect()
+            self._session_id = None
+            self.session_file.unlink(missing_ok=True)
             return client
 
     # ---------------------------------------------------------------- lifecycle

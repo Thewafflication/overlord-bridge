@@ -32,7 +32,7 @@ from telegram import (
     Update,
 )
 from telegram.constants import ChatAction
-from telegram.error import Conflict, NetworkError, RetryAfter, TelegramError
+from telegram.error import BadRequest, Conflict, NetworkError, RetryAfter, TelegramError
 from telegram.ext import (
     Application,
     CallbackContext,
@@ -298,6 +298,11 @@ class TelegramHandler(threading.Thread):
                     if hasattr(retry_after, "total_seconds")
                     else float(retry_after)
                 )
+            except BadRequest as exc:
+                # A NetworkError subclass, but the API understood and refused the
+                # request (chat not found, message too long); retrying cannot help.
+                log.error("%s rejected by Telegram: %s", label, exc)
+                return False
             except NetworkError as exc:
                 last_error = exc
                 delay = min(0.5 * (2 ** (attempt - 1)), 4.0)

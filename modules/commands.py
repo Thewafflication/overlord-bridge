@@ -81,18 +81,21 @@ def _format_reset(value: Any) -> str | None:
             reset = datetime.datetime.fromtimestamp(
                 value, tz=datetime.timezone.utc
             ).astimezone()
+            return _friendly_local_time(reset)
         except (OSError, OverflowError, ValueError):
             return None
-        return _friendly_local_time(reset)
     if isinstance(value, str) and value.strip():
         text = value.strip()
         try:
             reset = datetime.datetime.fromisoformat(text.replace("Z", "+00:00"))
         except ValueError:
             return text
-        if reset.tzinfo is None:
-            reset = reset.astimezone()
-        return _friendly_local_time(reset)
+        try:
+            if reset.tzinfo is None:
+                reset = reset.astimezone()
+            return _friendly_local_time(reset)
+        except (OSError, OverflowError, ValueError):
+            return text  # a date the platform cannot localize (e.g. year 1 or 9999)
     return None
 
 

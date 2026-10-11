@@ -1,5 +1,6 @@
 """Per-prompt token accounting: normalization, ledger, and rendering."""
 
+import json
 import sys
 from pathlib import Path
 
@@ -211,3 +212,88 @@ def test_a_normal_turn_carries_no_label():
     assert ok.outcome == "ok"
     assert "stopped" not in format_footer(ok)
     assert "failed" not in format_footer(ok)
+
+
+def test_human_never_prints_a_thousand_k():
+    assert human(999_949) == "999.9k"
+    assert human(999_950) == "1.00M"
+    assert human(999_999) == "1.00M"
+    assert human(9_999) == "9,999"
+    assert human(10_000) == "10k"
+    assert human(None) == "?"
+
+
+def test_ledger_with_hand_edited_garbage_loads_and_still_renders(tmp_path):
+    path = tmp_path / "ledger.json"
+    path.write_text(json.dumps({"entries": [
+        {"input_tokens": "lots", "output_tokens": 5, "at": "yesterday",
+         "cost_usd": "free", "brain": 7, "outcome": None, "prompt_preview": ["x"]},
+        {"input_tokens": 3, "at": 1e30, "cost_usd": float("nan"), "outcome": "stopped"},
+        {"input_tokens": 2, "cost_usd": -1, "unknown_field": True},
+        "not a row",
+    ]}), encoding="utf-8")
+    ledger = TokenLedger(path=path)
+    assert len(ledger.entries) == 3
+    first, second, third = ledger.entries
+    assert (first.input_tokens, first.output_tokens, first.at) == (0, 5, 0.0)
+    assert first.cost_usd is None and first.brain == "" and first.outcome == "ok"
+    assert second.outcome == "stopped" and second.at == 0.0 and second.cost_usd is None
+    assert third.cost_usd is None
+    # None of the display paths may raise on restored data.
+    assert "Last 3 prompts" in format_history(ledger)
+    assert format_status_block(ledger)
+    assert format_footer(ledger.last, ledger.totals)
+
+
+def test_ledger_accepts_a_bare_list_and_ignores_other_shapes(tmp_path):
+    path = tmp_path / "ledger.json"
+    path.write_text(json.dumps([{"input_tokens": 4, "output_tokens": 1}]), encoding="utf-8")
+    assert TokenLedger(path=path).totals.prompts == 1
+    path.write_text(json.dumps({"entries": "nope"}), encoding="utf-8")
+    assert TokenLedger(path=path).totals.prompts == 0
+    path.write_text(json.dumps(42), encoding="utf-8")
+    assert TokenLedger(path=path).totals.prompts == 0
+
+
+def test_totals_by_brain_and_cost_rounding():
+    ledger = TokenLedger()
+    ledger.record(normalize_usage({"input_tokens": 10, "output_tokens": 1},
+                                  brain="claude", cost_usd=0.1))
+    ledger.record(normalize_usage({"input_tokens": 20, "output_tokens": 2},
+                                  brain="codex"))
+    ledger.record(normalize_usage({"input_tokens": 30, "output_tokens": 3},
+                                  brain="claude", cost_usd=0.2))
+    assert ledger.totals_for_brain("claude").prompts == 2
+    assert ledger.totals_for_brain("claude").cost_usd == 0.3
+    assert ledger.totals_for_brain("codex").cost_usd is None
+    assert ledger.totals.billed_input == 60
+
+
+def test_recent_handles_non_positive_limits_and_oversized_ones():
+    ledger = TokenLedger()
+    for n in range(1, 4):
+        ledger.record(normalize_usage({"input_tokens": n, "output_tokens": 1}))
+    assert ledger.recent(0) == [] and ledger.recent(-3) == []
+    assert len(ledger.recent(99)) == 3
+    assert ledger.recent(2)[0].input_tokens == 2
+
+
+def test_normalize_ignores_nan_negative_and_non_numeric_counters():
+    usage = normalize_usage({"input_tokens": float("nan"), "output_tokens": "7",
+                             "cache_read_input_tokens": -4})
+    assert usage.input_tokens == 0 and usage.output_tokens == 7
+    assert usage.cache_read_tokens == 0
+    assert usage.total_tokens == 7
+    assert normalize_usage("not a dict") is None
+    assert normalize_usage({}) is None
+
+
+def test_subtract_usage_handles_missing_baselines():
+    assert subtract_usage({"inputTokens": 5, "outputTokens": 2}, None)["input_tokens"] == 5
+    assert subtract_usage({"inputTokens": 5}, {"inputTokens": 9})["input_tokens"] == 5
+
+
+def test_prompt_preview_collapses_whitespace_and_truncates():
+    usage = normalize_usage({"output_tokens": 1}, prompt="a\n\n  b   " + "z" * 100)
+    assert usage.prompt_preview.startswith("a b zzz")
+    assert len(usage.prompt_preview) == 60 and usage.prompt_preview.endswith("…")

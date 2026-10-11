@@ -126,12 +126,49 @@ def overlord_status() -> dict[str, Any]:
     return _run([str(OVERLORD_BIN), "status"], timeout=30)
 
 
+# Kept in step with modules.brain.OFFLIMITS_FRAGMENTS (a test enforces it); this
+# script runs standalone, so it cannot import the bridge package.
+_OFFLIMITS_FRAGMENTS = (
+    "/.ssh", "/.gnupg", "/.1password", "/.netrc", "/.smbcredentials", "/.aws",
+    "/.config/google-chrome", "/.mozilla", "id_rsa", "id_ed25519",
+)
+
+
+def _attachment_offlimits(attachment: str) -> str | None:
+    """Why *attachment* must not leave the machine by email, or None if it may.
+
+    The permission prompt for an MCP call shows the tool name, not the attachment
+    list, so this is the only place that can see what is being sent.
+    """
+    raw = str(attachment)
+    try:
+        resolved = str(Path(raw).expanduser().resolve())
+    except (OSError, RuntimeError, ValueError):
+        resolved = raw
+    for text in (raw, resolved):
+        lowered = text.replace("\\", "/").lower()
+        for fragment in _OFFLIMITS_FRAGMENTS:
+            if fragment in lowered:
+                return fragment
+    name = Path(resolved).name.lower()
+    if name == ".env" or (name.startswith(".env.") and name != ".env.example"):
+        return ".env"
+    return None
+
+
 def send_overlord_email(
     to: list[str],
     subject: str,
     body: str,
     attachments: list[str] | None = None,
 ) -> dict[str, Any]:
+    for attachment in attachments or []:
+        blocked = _attachment_offlimits(attachment)
+        if blocked:
+            return {
+                "ok": False, "returncode": None, "stdout": "",
+                "stderr": f"refused: attachment {attachment!r} is off-limits ({blocked})",
+            }
     argv = [str(EMAIL_BIN)]
     for recipient in to:
         argv.extend(["--to", recipient])
@@ -139,6 +176,11 @@ def send_overlord_email(
     for attachment in attachments or []:
         argv.extend(["--attach", attachment])
     return _run(argv, timeout=90)
+
+
+# The session becomes a file name in the dispatch queue, so it must not be able
+# to name a path.
+_SAFE_SESSION = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 
 
 def _gauge_key(brain: str) -> str:
@@ -212,6 +254,12 @@ def dispatch_overlord_worker(
     context_size: str = "small",
     prefer: str | None = None,
 ) -> dict[str, Any]:
+    if session is not None and not _SAFE_SESSION.fullmatch(session):
+        # Checked before any handoff or timer is written for this dispatch.
+        return {
+            "ok": False, "dispatched": False,
+            "error": "session must be 1-128 characters of letters, digits, '.', '_' or '-'",
+        }
     key = _gauge_key(brain)
     recommendation: dict[str, Any] | None = None
     handoff: dict[str, Any] | None = None
@@ -481,9 +529,12 @@ def schedule_resume_after_cap(
     # (Requires lingering, which is already enabled for this user.)
     unit_dir = Path.home() / ".config" / "systemd" / "user"
     unit_dir.mkdir(parents=True, exist_ok=True)
+    # `name` lands on a Description= line: a newline would let it add directives
+    # (including ExecStart=) to the unit, and % is a systemd specifier.
+    label = re.sub(r"[\x00-\x1f\x7f]+", " ", name).replace("%", "%%").strip()
     (unit_dir / f"{unit}.service").write_text(
         f"""[Unit]
-Description=Overlord scheduled resume: {name}
+Description=Overlord scheduled resume: {label}
 
 [Service]
 Type=oneshot
@@ -495,7 +546,7 @@ ExecStartPost=/usr/bin/systemctl --user disable --now {unit}.timer
     )
     (unit_dir / f"{unit}.timer").write_text(
         f"""[Unit]
-Description=Overlord scheduled resume timer: {name}
+Description=Overlord scheduled resume timer: {label}
 
 [Timer]
 OnCalendar={fire_dt.strftime('%Y-%m-%d %H:%M:%S')}
@@ -1118,6 +1169,15 @@ def main() -> None:
                     "jsonrpc": "2.0",
                     "id": None,
                     "error": {"code": -32700, "message": f"parse error: {exc}"},
+                }
+            )
+            continue
+        if not isinstance(message, dict):
+            _write(
+                {
+                    "jsonrpc": "2.0",
+                    "id": None,
+                    "error": {"code": -32600, "message": "invalid request: expected an object"},
                 }
             )
             continue

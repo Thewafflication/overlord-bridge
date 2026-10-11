@@ -55,7 +55,12 @@ def load_env(path: Path) -> None:
     """Minimal .env loader (no external dependency); mirrors bridge.py."""
     if not path.exists():
         return
-    for raw in path.read_text().splitlines():
+    data = path.read_bytes()
+    try:
+        text = data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = data.decode("cp1252", errors="replace")
+    for raw in text.splitlines():
         line = raw.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue

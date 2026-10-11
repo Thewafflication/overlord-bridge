@@ -126,7 +126,14 @@ def load_env(path: Path) -> None:
     """Minimal .env loader (no external dependency)."""
     if not path.exists():
         return
-    for raw in path.read_text().splitlines():
+    # set_env_value() writes UTF-8 (a BOM is tolerated); a hand-edited ANSI file
+    # still loads rather than aborting the bridge at import time.
+    data = path.read_bytes()
+    try:
+        text = data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = data.decode("cp1252", errors="replace")
+    for raw in text.splitlines():
         line = raw.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -191,7 +198,7 @@ INSTRUCTIONS_FILE = os.environ.get("OVERLORD_INSTRUCTIONS_FILE", "").strip()
 CLAUDE_AUTO_APPROVE_EDITS = env_bool(
     "OVERLORD_CLAUDE_AUTO_APPROVE_EDITS", False
 )
-PERMISSION_TIMEOUT = int(os.environ.get("OVERLORD_PERMISSION_TIMEOUT", "300"))
+PERMISSION_TIMEOUT = env_int("OVERLORD_PERMISSION_TIMEOUT", 300)
 # Auto-approve every action EXCEPT off-limits secrets (which are always denied).
 # Trades per-tool Telegram prompts for "just do it".
 AUTO_APPROVE = os.environ.get("OVERLORD_AUTO_APPROVE", "0").strip().lower() in (
@@ -317,12 +324,16 @@ def load_shared_instructions() -> str:
     candidates.append(BASE_DIR / "AGENTS.md")
     for path in candidates:
         try:
-            text = path.read_text(encoding="utf-8")
+            data = path.read_bytes()
         except FileNotFoundError:
             continue
         except OSError as exc:
             log.warning("Could not read shared instructions from %s: %s", path, exc)
             continue
+        try:
+            text = data.decode("utf-8-sig")
+        except UnicodeDecodeError:  # an ANSI-saved file must not abort startup
+            text = data.decode("cp1252", errors="replace")
         if text.strip():
             log.info("Loaded shared brain instructions from %s", path)
             return text.strip()
@@ -331,15 +342,20 @@ def load_shared_instructions() -> str:
 
 def format_worker_inline_report(report: dict[str, Any]) -> str:
     """Single-line summary safe for tmux ``send-keys -l`` (no embedded newline)."""
-    name = report.get("name") or "worker"
-    status = report.get("status") or "unknown"
+    def one_line(value: Any) -> str:
+        # Names and folders come from dispatch files, so they can hold newlines;
+        # one would submit a partial message when typed into the pane.
+        return " ".join(str(value).split())
+
+    name = one_line(report.get("name") or "worker")
+    status = one_line(report.get("status") or "unknown")
     duration = report.get("duration_seconds")
     bits = [f"status={status}"]
     if duration is not None:
         bits.append(f"{duration}s")
     folder = report.get("folder")
     if folder:
-        bits.append(f"folder={folder}")
+        bits.append(f"folder={one_line(folder)}")
     return (
         f"[worker report] {name}: {', '.join(bits)} "
         f"(full report: worker_reports/latest/{name}.json)"
@@ -389,6 +405,10 @@ def build_brain(gate: PermissionGate, brain_name: str | None = None) -> Brain:
 
 
 class Bridge:
+    # Class-level default so partially built instances (tests, early failures)
+    # report "no active turn" rather than raising.
+    _active_turn_task: asyncio.Task[None] | None = None
+
     def __init__(self) -> None:
         self.prompt_router = PromptRouter.from_environment()
         self.inbound: "Queue[tuple[int, str]]" = Queue()
@@ -663,51 +683,57 @@ class Bridge:
                 )
                 if chat_id is None:
                     break
-                if text.strip() == "/new":
-                    await self._reset_session(chat_id)
-                    continue
-                if text.strip() == "/help":
-                    self.telegram.send(chat_id, HELP_TEXT)
-                    continue
-                if text.strip().lower().split(maxsplit=1)[0] == "/status":
-                    await self._handle_status(chat_id, text)
-                    continue
-                if text.strip() == "/stop":
-                    await self._handle_stop(chat_id)
-                    continue
-                if text.strip().lower().split(maxsplit=1)[0] == "/steer":
-                    await self._handle_steer(chat_id, text)
-                    continue
-                if text.strip().lower().split(maxsplit=1)[0] == "/brain":
-                    await self._handle_brain(chat_id, text)
-                    continue
-                if text.strip().lower().split(maxsplit=1)[0] == "/tokens":
-                    self._handle_tokens(chat_id, text)
-                    continue
-                if text.strip().lower().split(maxsplit=1)[0] == "/quote":
-                    await self._handle_quote(chat_id, text)
-                    continue
-                if text.strip().lower().split(maxsplit=1)[0] == "/model":
-                    await self._handle_model(chat_id, text)
-                    continue
-                if text.strip().lower().split(maxsplit=1)[0] == "/effort":
-                    await self._handle_effort(chat_id, text)
-                    continue
-                if text.strip().lower().split(maxsplit=1)[0] == "/permissions":
-                    self._handle_permissions(chat_id, text)
-                    continue
-                if text.strip() == "/context":
-                    self._handle_context(chat_id)
-                    continue
-                if text.strip() == "/compact":
-                    self._start_compaction(chat_id)
-                    continue
-                self._start_turn(chat_id, text)
+                await self._dispatch_inbound(chat_id, text)
         finally:
             if self._turn_is_active():
                 await self._stop_active_turn()
             await self.brain.disconnect()
             self.tray.stop()
+
+    async def _dispatch_inbound(self, chat_id: int, text: str) -> None:
+        """Route one owner message to its command handler or start a turn.
+
+        Handlers run on the main loop, so one that raises must not unwind it:
+        that would shut the whole bridge down over a single bad command.
+        """
+        stripped = text.strip()
+        if not stripped:
+            return
+        command = stripped.lower().split(maxsplit=1)[0]
+        try:
+            if command == "/new":
+                await self._reset_session(chat_id)
+            elif command == "/help":
+                self.telegram.send(chat_id, HELP_TEXT)
+            elif command == "/status":
+                await self._handle_status(chat_id, text)
+            elif command == "/stop":
+                await self._handle_stop(chat_id)
+            elif command == "/steer":
+                await self._handle_steer(chat_id, text)
+            elif command == "/brain":
+                await self._handle_brain(chat_id, text)
+            elif command == "/tokens":
+                self._handle_tokens(chat_id, text)
+            elif command == "/quote":
+                await self._handle_quote(chat_id, text)
+            elif command == "/model":
+                await self._handle_model(chat_id, text)
+            elif command == "/effort":
+                await self._handle_effort(chat_id, text)
+            elif command == "/permissions":
+                self._handle_permissions(chat_id, text)
+            elif command == "/context":
+                self._handle_context(chat_id)
+            elif command == "/compact":
+                self._start_compaction(chat_id)
+            else:
+                self._start_turn(chat_id, text)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - keep the bridge alive
+            log.exception("Command %r failed", command)
+            self.telegram.send(chat_id, f"⚠️ {command or 'Message'} failed: {exc}")
 
     def _inbound_get_with_shutdown(self) -> tuple[int | None, str | None]:
         if self._shutdown_event.is_set():
@@ -1323,6 +1349,14 @@ class Bridge:
             router.manual.discard(self.brain.name)
             self.telegram.send(chat_id, f"Automatic model selection enabled for {self.brain.name}.")
             return
+        if self._turn_is_active():
+            # The active turn holds the brain lock for its whole duration. Waiting
+            # for it here would stall this main loop, and /stop with it.
+            self.telegram.send(
+                chat_id,
+                f"⏳ A turn is active. /stop it (or wait) before changing the {kind}.",
+            )
+            return
         async with self._brain_lock:
             setter = self.brain.set_model if kind == "model" else self.brain.set_effort
             try:
@@ -1408,8 +1442,23 @@ class Bridge:
             self.telegram.send(chat_id, f"Already using {target}.")
             return
 
+        if self._turn_is_active():
+            # See _handle_engine_setting: waiting on the turn's lock would block /stop.
+            self.telegram.send(
+                chat_id, "⏳ A turn is active. /stop it (or wait) before switching brains."
+            )
+            return
+
         resumed = session_file_for(target).exists()
-        candidate = build_brain(self.gate, target)
+        try:
+            candidate = build_brain(self.gate, target)
+        except Exception as exc:  # noqa: BLE001 - keep the current brain alive
+            log.exception("Could not build brain %s", target)
+            self.telegram.send(
+                chat_id,
+                f"⚠️ Could not switch to {target}; still using {self.brain.name}: {exc}",
+            )
+            return
         async with self._brain_lock:
             try:
                 await candidate.connect()

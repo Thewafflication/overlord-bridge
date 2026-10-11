@@ -211,7 +211,8 @@ def human(count: int | float | None) -> str:
     number = float(count)
     if abs(number) < 10_000:
         return f"{int(round(number)):,}"
-    if abs(number) < 1_000_000:
+    # 999.95k would print as "1000.0k"; hand it to the M branch instead.
+    if abs(number) < 999_950:
         return f"{number / 1_000:.1f}k".replace(".0k", "k")
     return f"{number / 1_000_000:.2f}M"
 
@@ -333,6 +334,39 @@ def format_history(ledger: "TokenLedger", limit: int = 10) -> str:
     return "\n".join(lines)
 
 
+def _restore_usage(row: dict[str, Any]) -> TurnUsage:
+    """Rebuild one persisted row, coercing every field to its declared type.
+
+    The file is hand-editable and survives upgrades, so a bad value must degrade
+    to a default rather than raise later, inside /tokens or the reply footer.
+    """
+    def number(value: Any) -> float | None:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        return float(value) if math.isfinite(value) else None
+
+    def text(value: Any) -> str:
+        return value if isinstance(value, str) else ""
+
+    cost = number(row.get("cost_usd"))
+    at = number(row.get("at"))
+    return TurnUsage(
+        input_tokens=_as_int(row.get("input_tokens")),
+        output_tokens=_as_int(row.get("output_tokens")),
+        cache_read_tokens=_as_int(row.get("cache_read_tokens")),
+        cache_write_tokens=_as_int(row.get("cache_write_tokens")),
+        reasoning_tokens=_as_int(row.get("reasoning_tokens")),
+        total_tokens=_as_int(row.get("total_tokens")),
+        cost_usd=cost if cost is not None and cost >= 0 else None,
+        brain=text(row.get("brain")),
+        model=text(row.get("model")),
+        # Keep timestamps inside what datetime.fromtimestamp() accepts.
+        at=at if at is not None and 0 <= at < 4_102_444_800 else 0.0,
+        prompt_preview=text(row.get("prompt_preview")),
+        outcome=text(row.get("outcome")) or "ok",
+    )
+
+
 # --------------------------------------------------------------------- ledger
 @dataclass
 class LedgerTotals:
@@ -421,15 +455,10 @@ class TokenLedger:
         rows = raw.get("entries") if isinstance(raw, dict) else raw
         if not isinstance(rows, list):
             return
-        known = {f for f in TurnUsage().as_dict()}
         restored: list[TurnUsage] = []
         for row in rows[-self.max_entries :]:
-            if not isinstance(row, dict):
-                continue
-            try:
-                restored.append(TurnUsage(**{k: v for k, v in row.items() if k in known}))
-            except (TypeError, ValueError):
-                continue
+            if isinstance(row, dict):
+                restored.append(_restore_usage(row))
         self.entries = restored
 
     def save(self) -> None:

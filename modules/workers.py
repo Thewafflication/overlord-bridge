@@ -49,6 +49,7 @@ import os
 import re
 import signal
 import threading
+import time
 import uuid
 
 from modules import shared_job
@@ -63,6 +64,8 @@ log = logging.getLogger("overlord.workers")
 # Worker dispatch is confined to the same zones as the Overlord's allowlist.
 _ALLOWED_ROOTS = (Path.home() / "Projects", Path.home() / "Documents")
 DEFAULT_WORKER_TIMEOUT = 60 * 30  # 30 min ceiling per worker run
+# A dispatch file younger than this that fails to parse may still be mid-write.
+DISPATCH_PARTIAL_WRITE_GRACE = 10.0
 
 # codex prints "session id: <uuid>" in its output; grab it for the roster.
 _CODEX_SID_RE = re.compile(r"session id:\s*([0-9a-fA-F][0-9a-fA-F-]{6,})")
@@ -324,14 +327,21 @@ _NVIDIA_MODEL_PAYLOAD_OVERRIDES: dict[str, dict[str, Any]] = {
     "minimaxai/minimax-m3": {"temperature": 1.0, "top_p": 0.95, "max_tokens": 8192},
 }
 _SECRET_PATTERNS = (
+    # Scheme-prefixed credentials run first. Otherwise the key/value rule below
+    # consumes only the scheme word of "Authorization: Bearer <secret>" and
+    # leaves the secret itself in the report.
+    (re.compile(r"(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]+"), r"\1 <redacted>"),
     (
+        # The name may carry a prefix (OPENAI_API_KEY, db.password) and may be
+        # quoted (JSON); the value may be quoted, in which case it can hold spaces.
         re.compile(
-            r"(?i)\b(token|api[_-]?key|password|passwd|secret|authorization)\b"
-            r"\s*[:=]\s*([^\s]+)"
+            r"(?i)(?<![A-Za-z0-9])"
+            r"((?:[A-Za-z0-9]+[_.-])*(?:token|api[_-]?key|password|passwd|secret|authorization))"
+            r"([\"']?\s*[:=]\s*)"
+            r"(\"[^\"]*\"|'[^']*'|[^\s&]+)"
         ),
-        r"\1=<redacted>",
+        r"\1\2<redacted>",
     ),
-    (re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]+"), "Bearer <redacted>"),
 )
 _LOCAL_AGENT_DENY_FRAGMENTS = (
     "/.ssh",
@@ -794,7 +804,8 @@ def _local_agent_tools() -> list[dict[str, Any]]:
 
 
 def _local_agent_command_denial(command: str, folder: Path) -> str | None:
-    lowered = command.lower()
+    # Windows-style separators must not slip past the "/"-based fragments.
+    lowered = command.lower().replace("\\", "/")
     for fragment in _LOCAL_AGENT_DENY_FRAGMENTS:
         if fragment.lower() in lowered:
             return f"command_references_offlimits_fragment:{fragment}"
@@ -816,15 +827,15 @@ def _local_agent_command_denial(command: str, folder: Path) -> str | None:
             return f"command_denied_by_safety_pattern:{pattern}"
     if re.search(r"(?<![\w.-])\.env(?!\.example)(?:\.[\w-]+)?(?![\w.-])", command):
         return "command_references_secret_env_file"
-    root = str(folder.resolve())
-    home_prefix = str(Path.home()) + "/"
-    if home_prefix in command and root not in command:
+    root = str(folder.resolve()).lower().replace("\\", "/")
+    home_prefix = str(Path.home()).lower().replace("\\", "/") + "/"
+    if home_prefix in lowered and root not in lowered:
         return "command_references_home_path_outside_worker_folder"
     return None
 
 
 def _local_agent_path_denial(path: Path, folder: Path, *, write: bool) -> str | None:
-    lowered = str(path).lower()
+    lowered = str(path).lower().replace("\\", "/")
     for fragment in _LOCAL_AGENT_DENY_FRAGMENTS:
         if fragment.lower() in lowered:
             return f"path_references_offlimits_fragment:{fragment}"
@@ -1660,18 +1671,50 @@ class WorkerManager:
         log.info("Worker dispatch watcher started on %s", self.dispatch_dir)
         while True:
             try:
-                for f in sorted(self.dispatch_dir.glob("*.json")):
-                    try:
-                        raw = f.read_text()
-                    finally:
-                        f.unlink(missing_ok=True)  # consume once
-                    try:
-                        self._accept(json.loads(raw))
-                    except Exception as exc:  # noqa: BLE001
-                        log.error("Bad dispatch request %s: %s", f.name, exc)
+                self._scan_dispatch_once()
             except Exception:  # noqa: BLE001
                 log.exception("Dispatch watcher loop error")
             await asyncio.sleep(poll)
+
+    def _scan_dispatch_once(self) -> None:
+        """Consume every dispatch file currently in the queue, exactly once."""
+        for f in sorted(self.dispatch_dir.glob("*.json")):
+            try:
+                data = json.loads(f.read_text(encoding="utf-8-sig"))
+            except FileNotFoundError:
+                continue  # another scan (or the producer) removed it
+            except (ValueError, OSError) as exc:  # JSONDecodeError/UnicodeDecodeError
+                try:
+                    age = time.time() - f.stat().st_mtime
+                except OSError:
+                    continue
+                if isinstance(exc, ValueError) and age < DISPATCH_PARTIAL_WRITE_GRACE:
+                    # Producers write with a plain redirect, so the poll can land
+                    # mid-write. Leave a fresh file for the next scan instead of
+                    # destroying a request that was about to become valid.
+                    continue
+                f.unlink(missing_ok=True)
+                self._reject_dispatch_file(f, f"unreadable: {exc}")
+                continue
+            f.unlink(missing_ok=True)  # consume once
+            try:
+                if not isinstance(data, dict):
+                    raise ValueError("request must be a JSON object")
+                self._accept(data)
+            except Exception as exc:  # noqa: BLE001
+                log.error("Bad dispatch request %s: %s", f.name, exc)
+                self._reject_dispatch_file(f, str(exc))
+
+    def _reject_dispatch_file(self, path: Path, reason: str) -> None:
+        """A request that vanished without a word is the worst failure mode."""
+        log.error("Rejected dispatch file %s: %s", path.name, reason)
+        self._emit_report(
+            self._base_report(
+                name=path.stem, folder="", brain="?", session=None,
+                status="rejected", reason="bad_dispatch_file", detail=reason,
+            )
+        )
+        self._send(self.owner, f"❌ Dispatch file {path.name} was not run: {reason}")
 
     def _emit_report(self, report: dict[str, Any]) -> None:
         report.setdefault("event_id", uuid.uuid4().hex)
@@ -1913,6 +1956,60 @@ class WorkerManager:
         log.info("Accepted worker %s (brain=%s) in %s", name, brain, target)
 
     # ------------------------------------------------------------------ runner
+    @staticmethod
+    def _positional_task(task: str) -> str:
+        """Stop a task that opens with "-" (a markdown bullet) parsing as a CLI flag.
+
+        ``_accept`` strips the task, so a leading space can only be ours; it is
+        harmless to the model and keeps the argument positional.
+        """
+        return f" {task}" if task.startswith("-") else task
+
+    def _build_worker_argv(
+        self,
+        brain: str,
+        task: str,
+        sid: str,
+        session: str | None,
+        resume: bool,
+        model: str | None,
+        approval_policy: str | None,
+        sandbox: str | None,
+        bypass_codex_sandbox: bool,
+    ) -> list[str]:
+        prompt = self._positional_task(task)
+        if brain == "codex":
+            cmodel = model or self.codex_model
+            argv = [self.codex_bin]
+            if bypass_codex_sandbox:
+                argv += ["--dangerously-bypass-approvals-and-sandbox"]
+            else:
+                if approval_policy:
+                    argv += ["--ask-for-approval", approval_policy]
+                if sandbox:
+                    argv += ["--sandbox", sandbox]
+            argv += ["exec"]
+            if resume and session:
+                argv += ["resume", session]
+            if cmodel:
+                argv += ["--model", cmodel]
+            argv += ["--skip-git-repo-check", prompt]
+            return argv
+
+        ccmodel = model or self.claude_model
+        if resume and session:
+            argv = [self.claude_bin, "-p", prompt, "--resume", session]
+        else:
+            argv = [self.claude_bin, "-p", prompt, "--session-id", sid]
+        if ccmodel:
+            argv += ["--model", ccmodel]
+        # bypassPermissions: autonomous (no prompts) AND can edit/write/bash,
+        # while STILL honoring settings.json deny rules — measured: a bypass
+        # worker is blocked from deny-listed paths but writes normally. (dontAsk
+        # was wrong: it denies Edit/Write in headless, so workers can't work.)
+        argv += ["--permission-mode", "bypassPermissions"]
+        return argv
+
     async def _run(
         self,
         name: str,
@@ -1944,37 +2041,11 @@ class WorkerManager:
             return
 
         sid = session or str(uuid.uuid4())
-        if brain == "codex":
-            cmodel = model or self.codex_model
-            argv = [self.codex_bin]
-            if bypass_codex_sandbox:
-                argv += ["--dangerously-bypass-approvals-and-sandbox"]
-            else:
-                if approval_policy:
-                    argv += ["--ask-for-approval", approval_policy]
-                if sandbox:
-                    argv += ["--sandbox", sandbox]
-            argv += ["exec"]
-            if resume and session:
-                argv += ["resume", session]
-            if cmodel:
-                argv += ["--model", cmodel]
-            argv += ["--skip-git-repo-check", task]
-            env = None
-        else:  # claude
-            ccmodel = model or self.claude_model
-            if resume and session:
-                argv = [self.claude_bin, "-p", task, "--resume", session]
-            else:
-                argv = [self.claude_bin, "-p", task, "--session-id", sid]
-            if ccmodel:
-                argv += ["--model", ccmodel]
-            # bypassPermissions: autonomous (no prompts) AND can edit/write/bash,
-            # while STILL honoring settings.json deny rules — measured: a bypass
-            # worker is blocked from deny-listed paths but writes normally. (dontAsk
-            # was wrong: it denies Edit/Write in headless, so workers can't work.)
-            argv += ["--permission-mode", "bypassPermissions"]
-            env = None
+        argv = self._build_worker_argv(
+            brain, task, sid, session, resume, model,
+            approval_policy, sandbox, bypass_codex_sandbox,
+        )
+        env = None
 
         started_at = _now_iso()
         started_mono = asyncio.get_running_loop().time()

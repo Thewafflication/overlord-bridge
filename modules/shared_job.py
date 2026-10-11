@@ -585,16 +585,27 @@ def inject(
         return None
 
     master_fd, slave_fd = pty.openpty()
-    fcntl.ioctl(
-        slave_fd, termios.TIOCSWINSZ,
-        struct.pack("HHHH", ATTACH_ROWS, ATTACH_COLS, 0, 0),
-    )
-    proc = subprocess.Popen(
-        ["claude", "attach", job.job_id],
-        stdin=slave_fd, stdout=slave_fd, stderr=slave_fd,
-        start_new_session=True,
-    )
-    os.close(slave_fd)
+    try:
+        fcntl.ioctl(
+            slave_fd, termios.TIOCSWINSZ,
+            struct.pack("HHHH", ATTACH_ROWS, ATTACH_COLS, 0, 0),
+        )
+        proc = subprocess.Popen(
+            ["claude", "attach", job.job_id],
+            stdin=slave_fd, stdout=slave_fd, stderr=slave_fd,
+            start_new_session=True,
+        )
+    except Exception as exc:  # noqa: BLE001 - e.g. `claude` missing from PATH
+        # Documented contract: an attach failure is a hard None, never a raise,
+        # and it must not leak the pty pair (one per failed Telegram message).
+        log.error("Could not attach to shared job %s: %s", job.job_id, exc)
+        try:
+            os.close(master_fd)
+        except OSError:
+            pass
+        return None
+    finally:
+        os.close(slave_fd)
 
     try:
         # Ben's directive (2026-07-17): DELIVER the message regardless of what is

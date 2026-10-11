@@ -69,3 +69,37 @@ def test_no_cloud_call_without_consent(tmp_path, monkeypatch):
         task="Inspect", session=None, resume=False, model=MODEL,
         files=[], brain="openrouter"))
     assert reports[-1]["status"] == "rejected"
+
+
+@pytest.mark.parametrize("supported", ["tools", "tool_choice,tools", None, {"tools": True}, []])
+def test_tool_support_must_be_an_explicit_list_entry(supported):
+    catalog = deepcopy(CATALOG)
+    catalog["data"][0]["supported_parameters"] = supported
+    with pytest.raises(ValueError, match="tool support"):
+        validate_free_model(catalog, MODEL)
+
+
+def test_a_zero_priced_tool_model_is_admitted():
+    validate_free_model(deepcopy(CATALOG), MODEL)
+    catalog = deepcopy(CATALOG)
+    catalog["data"][0]["pricing"] = {"prompt": 0, "completion": "0.0"}
+    validate_free_model(catalog, MODEL)
+
+
+@pytest.mark.parametrize("pricing", [None, "free", {"prompt": "0"}, {"completion": "0"}])
+def test_missing_or_malformed_pricing_is_rejected(pricing):
+    catalog = deepcopy(CATALOG)
+    catalog["data"][0]["pricing"] = pricing
+    with pytest.raises(ValueError, match="pricing"):
+        validate_free_model(catalog, MODEL)
+
+
+def test_provider_policy_forbids_fallbacks_and_any_spend():
+    from modules.free_services import free_provider_policy
+
+    policy = free_provider_policy()
+    assert policy["allow_fallbacks"] is False
+    assert policy["require_parameters"] is True
+    assert policy["max_price"] == {"prompt": 0, "completion": 0}
+    policy["max_price"]["prompt"] = 5
+    assert free_provider_policy()["max_price"]["prompt"] == 0  # fresh dict every call

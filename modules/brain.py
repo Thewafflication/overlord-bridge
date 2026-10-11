@@ -23,6 +23,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import string
 import uuid
 from pathlib import Path
 from typing import Any, AsyncIterator
@@ -47,6 +48,19 @@ OFFLIMITS_FRAGMENTS = (
     "id_rsa",
     "id_ed25519",
 )
+
+
+_WORD_BREAKS = frozenset(string.whitespace + "'\"=(;|&<>`,:")
+
+
+def _starts_a_word(text: str, needle: str) -> bool:
+    """True when *needle* occurs at the start of *text* or right after a delimiter."""
+    start = 0
+    while (index := text.find(needle, start)) != -1:
+        if index == 0 or text[index - 1] in _WORD_BREAKS:
+            return True
+        start = index + 1
+    return False
 
 
 class PermissionGate:
@@ -137,6 +151,10 @@ class PermissionGate:
             normalized = s.replace("\\", "/").lower()
             for frag in OFFLIMITS_FRAGMENTS:
                 if frag.lower() in normalized:
+                    return frag
+                # "cat .ssh/config" names the same directory without a leading
+                # slash, so a bare dot-directory counts when it starts a word.
+                if frag.startswith("/.") and _starts_a_word(normalized, frag[1:].lower()):
                     return frag
         return None
 

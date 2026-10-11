@@ -323,11 +323,15 @@ def _probe_claude() -> dict[str, Any]:
     if util is None:
         return _entry("claude", usable=False, gas=None, state="offline",
                       reason="usage payload missing five_hour utilization")
-    used = int(round(float(util)))
+    try:
+        used = int(round(float(util)))
+        weekly_util = seven.get("utilization")
+        weekly_used = None if weekly_util is None else int(round(float(weekly_util)))
+    except (TypeError, ValueError, OverflowError):
+        return _entry("claude", usable=False, gas=None, state="offline",
+                      reason="usage payload has a non-numeric utilization")
     gas = max(0, 100 - used)
     resets_at = five.get("resets_at")
-    weekly_util = seven.get("utilization")
-    weekly_used = None if weekly_util is None else int(round(float(weekly_util)))
     weekly_gas = None if weekly_used is None else max(0, 100 - weekly_used)
     wk_txt = f", weekly {weekly_used}% used" if weekly_used is not None else ""
     detail = {"resets_at": resets_at, "weekly_resets_at": seven.get("resets_at"),
@@ -954,8 +958,13 @@ def engine_gas_gauge(engines: tuple[str, ...] = ENGINES) -> dict[str, Any]:
     gauge: dict[str, Any] = {"checked_at": _now().isoformat().replace("+00:00", "Z"), "engines": {}}
     for name in engines:
         probe = _PROBES.get(name)
-        gauge["engines"][name] = probe() if probe else _entry(
-            name, usable=False, gas=None, state="unavailable", reason="unknown engine")
+        try:
+            entry = probe() if probe else _entry(
+                name, usable=False, gas=None, state="unavailable", reason="unknown engine")
+        except Exception as exc:  # noqa: BLE001 - one bad probe must not blank the gauge
+            entry = _entry(name, usable=False, gas=None, state="unavailable",
+                           reason=f"probe failed: {type(exc).__name__}: {exc}")
+        gauge["engines"][name] = entry
     return gauge
 
 

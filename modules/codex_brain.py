@@ -756,9 +756,13 @@ class CodexBrain(Brain):
                 status = status.get("type")
             if status in N_TURN_FAILED_STATUSES:
                 err = (turn.get("error") or {})
+                # An earlier "error" notification carries the real cause; only
+                # fall back to the generic text when nothing better was captured.
                 self._turn_error = (
-                    err.get("message") if isinstance(err, dict) else None
-                ) or f"Codex turn {status}."
+                    (err.get("message") if isinstance(err, dict) else None)
+                    or self._turn_error
+                    or f"Codex turn {status}."
+                )
                 if self._compaction_active:
                     self.compaction_status = "failed"
                     self._compaction_active = False
@@ -1057,8 +1061,8 @@ class CodexBrain(Brain):
                 if not fallback_to_fresh:
                     raise
                 log.warning("Codex resume of %s failed (%s); starting fresh.", resume, exc)
-                self.session_file.unlink(missing_ok=True)
-                self._thread_id = None
+                # The pin is replaced by _save_thread_id below once the new thread
+                # exists; deleting it first would lose it if app-server is down.
                 result = await call(M_THREAD_START, dict(common))
         else:
             result = await call(M_THREAD_START, dict(common))
@@ -1231,6 +1235,7 @@ class CodexBrain(Brain):
             self.effort = previous
             return error
         if self._effort_unsupported:
+            self.effort = previous  # the server ignores it, so do not claim it
             return (
                 "This Codex build does not accept a reasoning-effort setting; "
                 "nothing was changed."
@@ -1265,16 +1270,18 @@ class CodexBrain(Brain):
         self._turn_error = None
         self._delta_buf.clear()
 
-        result = await self._request(
-            M_TURN_START,
-            {
-                "threadId": self._thread_id,
-                "input": [{"type": "text", "text": text}],
-            },
-        )
-        self._set_active_turn_id_from_result(result)
-
+        # The request is inside the try so a rejected turn/start still clears
+        # the queue; a stale one makes compact() think a turn is in flight.
         try:
+            result = await self._request(
+                M_TURN_START,
+                {
+                    "threadId": self._thread_id,
+                    "input": [{"type": "text", "text": text}],
+                },
+            )
+            self._set_active_turn_id_from_result(result)
+
             while True:
                 chunk = await self._turn_queue.get()
                 if chunk is None:
@@ -1589,12 +1596,19 @@ def _load_developer_instructions() -> str:
 
     for path in candidates:
         try:
-            text = path.read_text()
+            data = path.read_bytes()
         except FileNotFoundError:
             continue
         except OSError as exc:
             log.warning("Could not read Codex instruction file %s: %s", path, exc)
             continue
+        # UTF-8 first: these files hold em dashes and quotes, which the Windows
+        # default codec turns into mojibake inside the prompt. An ANSI-saved
+        # file still loads (lossily) instead of silently dropping the rules.
+        try:
+            text = data.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            text = data.decode("cp1252", errors="replace")
         if text.strip():
             log.info("Loaded Codex developer instructions from %s", path)
             return text.strip()
