@@ -1514,8 +1514,11 @@ class Bridge:
                     router.last[self.brain.name] = {"status": "fallback",
                         "reason": "Shared terminal owns model selection"}
                     return
+            catalog = getattr(self.brain, "routing_model_ids", None)
+            model_ids = await catalog() if callable(catalog) else None
             selection = await router.select(
-                self.brain.name, text, self._conversation_history.routing_context()
+                self.brain.name, text, self._conversation_history.routing_context(),
+                model_ids=model_ids,
             )
             if selection and selection["model"] != getattr(self.brain, "model", None):
                 error = await self.brain.set_model(selection["model"])

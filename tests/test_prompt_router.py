@@ -26,6 +26,25 @@ def test_classifier_receives_context_and_only_qualified_candidates(monkeypatch):
     assert asyncio.run(router.select("codex", "continue", "User: fix the previous issue"))["model"] == "large"
 
 
+def test_native_catalog_limits_candidates_and_rejects_absent_selection(monkeypatch):
+    async def post(url, payload, **kwargs):
+        data = json.loads(payload["messages"][1]["content"])
+        assert [p["model"] for p in data["models"]] == ["small"]
+        return {"choices": [{"message": {"content": '{"model":"large","reason":"Unavailable"}'}}]}
+    monkeypatch.setattr(prompt_router, "_http_post_json", post)
+    router = PromptRouter(enabled=True, profiles=PROFILES, model="local")
+    assert asyncio.run(router.select("codex", "prompt", model_ids={"small"})) is None
+    assert router.last["codex"]["status"] == "fallback"
+
+
+def test_empty_native_catalog_never_calls_classifier(monkeypatch):
+    async def post(*args, **kwargs):
+        pytest.fail("No eligible models: classifier must not be called")
+    monkeypatch.setattr(prompt_router, "_http_post_json", post)
+    router = PromptRouter(enabled=True, profiles=PROFILES, model="local")
+    assert asyncio.run(router.select("codex", "prompt", model_ids=set())) is None
+
+
 def test_local_classifier_redirect_is_not_followed(monkeypatch):
     import threading
     import urllib.error
@@ -114,6 +133,8 @@ def test_bridge_routes_before_one_user_turn_without_reset(monkeypatch, brain_nam
             if refuse:
                 return "unavailable"
             self.model = model
+        async def routing_model_ids(self):
+            return {"small", "large"}
         async def query(self, text):
             self.queries.append((self.model, text))
             yield "Answer"
@@ -131,6 +152,28 @@ def test_bridge_routes_before_one_user_turn_without_reset(monkeypatch, brain_nam
         assert brain.changes == ["large"]
         assert brain.queries == [("small" if refuse else "large", "Please solve this")]
         assert brain.session_id == "original-session"
+    asyncio.run(scenario())
+
+
+def test_native_catalog_failure_preserves_model_and_runs_user_turn_once(monkeypatch):
+    from test_bridge_turn_control import make_bridge, BlockingBrain
+    async def scenario():
+        brain = BlockingBrain()
+        brain.name = "codex"
+        queries = []
+        async def catalog():
+            raise TimeoutError("Native catalog unavailable")
+        async def query(text):
+            queries.append(text)
+            yield "Answer"
+        monkeypatch.setattr(brain, "routing_model_ids", catalog, raising=False)
+        monkeypatch.setattr(brain, "query", query)
+        instance = make_bridge(brain)
+        instance.prompt_router = PromptRouter(enabled=True, profiles=PROFILES, model="local")
+        await instance._handle_turn(42, "Continue work")
+        assert queries == ["Continue work"]
+        assert brain.model == "test-model"
+        assert instance.prompt_router.last["codex"]["status"] == "fallback"
     asyncio.run(scenario())
 
 

@@ -42,7 +42,7 @@ class PromptRouter:
             return []
         return [{"model": p["model"], "description": p["description"]} for p in choices]
 
-    async def select(self, brain, prompt, context=""):
+    async def select(self, brain, prompt, context="", *, model_ids=None):
         if not self.enabled or brain in self.manual:
             return None
         try:
@@ -51,6 +51,8 @@ class PromptRouter:
                     or parsed.username or parsed.password or parsed.query or parsed.fragment):
                 raise ValueError("Classifier endpoint must be local HTTP without credentials")
             choices = self.choices(brain)
+            if model_ids is not None:
+                choices = [p for p in choices if p["model"] in model_ids]
             if not choices or not self.model:
                 raise ValueError("Classifier model and qualified profiles are required")
             if len(prompt) > 12000:

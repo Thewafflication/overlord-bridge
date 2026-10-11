@@ -1093,6 +1093,37 @@ class CodexBrain(Brain):
             self._thread_id,
         )
 
+    async def routing_model_ids(self) -> set[str]:
+        """Read the visible native catalog, without claiming account entitlement."""
+        models = set()
+        cursors = set()
+        cursor = None
+        async with asyncio.timeout(5):
+            for _ in range(10):
+                page = await self._request("model/list", {
+                    "cursor": cursor, "limit": 100, "includeHidden": False})
+                data = page.get("data")
+                if not isinstance(data, list) or len(data) > 100:
+                    raise ValueError("Invalid native model catalog")
+                for entry in data:
+                    if not isinstance(entry, dict) or not isinstance(entry.get("hidden"), bool):
+                        raise ValueError("Invalid native model entry")
+                    model = entry.get("model")
+                    if not isinstance(model, str) or not model.strip():
+                        raise ValueError("Invalid native model ID")
+                    if entry["hidden"]:
+                        continue
+                    if model in models:
+                        raise ValueError("Duplicate native model ID")
+                    models.add(model)
+                cursor = page.get("nextCursor")
+                if cursor is None:
+                    return models
+                if not isinstance(cursor, str) or not cursor or cursor in cursors:
+                    raise ValueError("Invalid native catalog cursor")
+                cursors.add(cursor)
+        raise ValueError("Native model catalog exceeds page budget")
+
     async def reset(self) -> None:
         self._cancel_server_requests()
         self.session_file.unlink(missing_ok=True)

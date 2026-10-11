@@ -40,7 +40,7 @@ open.
 
 ## Validation and development slices
 
-The full local offline suite for the completed-turn request guard produced 334
+The full local offline suite for the native model catalog guard produced 346
 passes and one platform skip. Syntax checks and wheel build passed. Hosted
 Windows/Linux checks passed through `37a50b6` on both Windows and Linux.
 Canonical JUnit and wheel artifacts are retained under `out/checks/` locally and
@@ -58,8 +58,10 @@ Recent development checkpoints:
 - `548062c`: bounded permission audit with fail-closed approval writes.
 - `12c0cb3`: responsive Codex reader with ordered, cancellable operator requests.
 - `37a50b6`: reject local classifier redirects and record remaining release gates.
-- Completed-turn request guard: delayed approvals/questions cannot reopen prompts
+- `311e752`: delayed approvals/questions cannot reopen prompts
   for the latest 256 completed turns; identifiers are scoped to their native thread.
+- Native Codex model catalog: bounded visible-model discovery narrows qualified
+  routing candidates; malformed catalogs retain the current model and single turn.
 
 See [the increment plan](next-increment.md), [WSP adoption](../wsp-adoption.md),
 and [the implementation decisions](../design/ovl-m02-decisions.md).

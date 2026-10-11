@@ -66,7 +66,15 @@ native selection failure retains the current model. Routing does not overwrite
 the saved manual selection. Live shared Claude terminals retain their own model
 because their transport does not expose per-turn model control.
 
-Model catalog discovery, quota-aware cross-provider routing and live quality
+Codex routing intersects operator-qualified profiles with visible native
+`model/list` entries, using inference model IDs rather than picker IDs. Discovery
+is bounded to five seconds and ten pages; malformed/duplicate data and cyclic
+cursors fail closed. No discovery turn or transcript is submitted. The
+[official catalog contract](https://developers.openai.com/siwc/token-sharing-open-source/codex-app-server)
+allows bundled/cached results, so discovery does not establish account access.
+Native refusal still retains the current model.
+
+Claude catalog discovery, quota-aware cross-provider routing and live quality
 evaluation remain required work. There is no regex/keyword intent classifier in
 the new conversation routing path. Existing worker recommendation heuristics
 are not yet replaced by this pilot.
