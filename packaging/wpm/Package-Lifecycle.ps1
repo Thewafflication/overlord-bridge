@@ -71,10 +71,66 @@ function Assert-Python312 {
     return $python.Source
 }
 
+function Stop-InstalledOverlord {
+    param([string]$Root)
+    $processes = @(Get-CimInstance Win32_Process)
+    $owned = @{}
+    $wasRunning = $false
+    foreach ($process in $processes) {
+        if ($process.ProcessId -eq $PID) { continue }
+        foreach ($script in @('bridge.py', 'tools\overlord_console.py', 'tools\overlord_setup.py', 'run-windows.ps1')) {
+            $path = Join-Path $Root $script
+            $pattern = '(?i)(?:^|[\s"])' + [regex]::Escape($path) + '(?=$|[\s"])'
+            if ($process.CommandLine -match $pattern) {
+                $owned[[int]$process.ProcessId] = $true
+                if ($script -eq 'bridge.py') { $wasRunning = $true }
+            }
+        }
+    }
+    # Include worker/brain descendants so they cannot keep the old install locked.
+    do {
+        $added = $false
+        foreach ($process in $processes) {
+            if ($process.ProcessId -ne $PID -and $owned.ContainsKey([int]$process.ParentProcessId) -and
+                -not $owned.ContainsKey([int]$process.ProcessId)) {
+                $owned[[int]$process.ProcessId] = $true
+                $added = $true
+            }
+        }
+    } while ($added)
+    foreach ($processId in $owned.Keys) {
+        Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
+    }
+    foreach ($processId in $owned.Keys) {
+        Wait-Process -Id $processId -Timeout 15 -ErrorAction SilentlyContinue
+        if (Get-Process -Id $processId -ErrorAction SilentlyContinue) {
+            throw "Could not stop Overlord process $processId. Installation was not replaced."
+        }
+    }
+    return $wasRunning
+}
+
+function Start-InstalledOverlord {
+    param([string]$Root, [string]$Workspace)
+    $launcher = Join-Path $Root 'run-windows.ps1'
+    Start-Process -FilePath (Get-Command pwsh.exe -ErrorAction Stop).Source -WindowStyle Hidden `
+        -WorkingDirectory $Workspace -ArgumentList @(
+            '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden',
+            '-File', ('"{0}"' -f $launcher), '-WorkingDirectory', ('"{0}"' -f $Workspace)
+        ) | Out-Null
+}
+
 $installRoot = Get-OverlordInstallRoot
+$installRoot = [IO.Path]::GetFullPath($installRoot).TrimEnd([IO.Path]::DirectorySeparatorChar)
+$parent = Split-Path -Parent $installRoot
+if (-not $parent -or $installRoot -eq [IO.Path]::GetPathRoot($installRoot) -or
+    $installRoot -eq $env:USERPROFILE -or $installRoot -eq $env:LOCALAPPDATA) {
+    throw "Refusing unsafe installation target: $installRoot"
+}
 $stateRoot = Join-Path $env:LOCALAPPDATA 'Overlord\state'
 
 if ($Action -eq 'Remove') {
+    $null = Stop-InstalledOverlord -Root $installRoot
     Copy-PersistentState -From $installRoot -To $stateRoot
     $launcher = Join-Path $installRoot 'Install-WindowsLauncher.ps1'
     if (Test-Path -LiteralPath $launcher -PathType Leaf) {
@@ -96,17 +152,24 @@ if (-not (Get-Command pwsh.exe -CommandType Application -ErrorAction SilentlyCon
 }
 $python = Assert-Python312
 
-Copy-PersistentState -From $installRoot -To $stateRoot
-$parent = Split-Path -Parent $installRoot
 $leaf = Split-Path -Leaf $installRoot
 $newRoot = Join-Path $parent "$leaf.new-$PID"
 $backupRoot = Join-Path $parent "$leaf.backup-$PID"
+# Resolve and validate every recursive cleanup/move target before touching it.
+foreach ($target in @($newRoot, $backupRoot)) {
+    if ((Split-Path -Parent ([IO.Path]::GetFullPath($target))) -ne $parent -or
+        (Test-Path -LiteralPath $target)) {
+        throw "Unsafe or occupied staging target: $target"
+    }
+}
+$wasRunning = Stop-InstalledOverlord -Root $installRoot
+$swapped = $false
+$backedUp = $false
+$projectsRoot = Get-OverlordProjectsRoot
 
 try {
+    Copy-PersistentState -From $installRoot -To $stateRoot
     New-Item -ItemType Directory -Force -Path $parent | Out-Null
-    if (Test-Path -LiteralPath $newRoot) {
-        Remove-Item -LiteralPath $newRoot -Recurse -Force
-    }
     New-Item -ItemType Directory -Force -Path $newRoot | Out-Null
     Copy-Item -Path (Join-Path $SourceDirectory '*') -Destination $newRoot -Recurse -Force
     Copy-PersistentState -From $stateRoot -To $newRoot
@@ -117,8 +180,10 @@ try {
 
     if (Test-Path -LiteralPath $installRoot) {
         Move-Item -LiteralPath $installRoot -Destination $backupRoot
+        $backedUp = $true
     }
     Move-Item -LiteralPath $newRoot -Destination $installRoot
+    $swapped = $true
 
     $venv = Join-Path $installRoot '.venv'
     & $python -m venv $venv
@@ -131,7 +196,6 @@ try {
         throw 'Overlord dependency installation failed.'
     }
 
-    $projectsRoot = Get-OverlordProjectsRoot
     & (Join-Path $installRoot 'Install-WindowsLauncher.ps1') -ProjectsRoot $projectsRoot
     if ($LASTEXITCODE -ne 0) {
         throw 'Start Menu launcher installation failed.'
@@ -142,11 +206,14 @@ try {
     }
 }
 catch {
-    if (Test-Path -LiteralPath $installRoot) {
+    if ($swapped -and (Test-Path -LiteralPath $installRoot)) {
         Remove-Item -LiteralPath $installRoot -Recurse -Force
     }
-    if (Test-Path -LiteralPath $backupRoot) {
+    if ($backedUp -and (Test-Path -LiteralPath $backupRoot)) {
         Move-Item -LiteralPath $backupRoot -Destination $installRoot
+    }
+    if ($wasRunning -and (Test-Path -LiteralPath (Join-Path $installRoot 'run-windows.ps1'))) {
+        Start-InstalledOverlord -Root $installRoot -Workspace $projectsRoot
     }
     throw
 }
@@ -156,5 +223,9 @@ finally {
     }
 }
 
+if ($wasRunning) {
+    Start-InstalledOverlord -Root $installRoot -Workspace $projectsRoot
+    Write-Host 'Restarted the previously running Overlord.'
+}
 Write-Host "Installed Overlord $Version in $installRoot."
 Write-Host 'Edit the installed .env file with TELEGRAM_BOT_TOKEN and OWNER_CHAT_ID before first launch.'

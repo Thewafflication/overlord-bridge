@@ -1188,7 +1188,10 @@ class Bridge:
         self.telegram.send(OWNER, "🔑 Settings reloaded from the setup window.")
 
     async def _run_console_action(self, action: str) -> None:
-        if action == "refresh_status":
+        if action == "shutdown":
+            log.info("Stop requested from the console")
+            self.request_shutdown()
+        elif action == "refresh_status":
             await self._refresh_status(self.brain, force=True)
             self._write_console_status()
             log.info("Refreshed %s status from the console", self.brain.name)

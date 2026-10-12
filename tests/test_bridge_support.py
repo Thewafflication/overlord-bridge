@@ -248,6 +248,21 @@ def test_basic_status_for_a_standby_brain_reports_saved_sessions(tmp_path, monke
 
 
 # ------------------------------------------------------ console integration
+def test_console_shutdown_wakes_the_bridge_and_sets_shutdown(tmp_path):
+    async def scenario():
+        import asyncio
+        import queue
+
+        instance = make_bridge(tmp_path)
+        instance._shutdown_event = asyncio.Event()
+        instance.inbound = queue.Queue()
+        await instance._run_console_action("shutdown")
+        assert instance._shutdown_event.is_set()
+        assert instance.inbound.get_nowait() == (-1, "")
+
+    run(scenario())
+
+
 def test_console_status_file_is_written_atomically_with_turn_state(tmp_path):
     instance = make_bridge(tmp_path)
     instance._status_by_brain = {"claude": {"brain": "claude", "model": "opus"},

@@ -71,12 +71,22 @@ class OverlordConsole:
         # it is watching, and the bridge's number is the truthful one.
         self.version_label = tk.StringVar(value=self.version)
         self._build_ui()
+        if sys.platform == "win32":
+            self.root.state("zoomed")
         self._configure_tags()
         self._seek_initial_tail()
         self._write_visibility("visible")
         self.root.after(POLL_MS, self.poll)
 
     def _build_ui(self) -> None:
+        menu = tk.Menu(self.root)
+        file_menu = tk.Menu(menu, tearoff=False)
+        file_menu.add_command(label="Hide Console", command=self.hide)
+        file_menu.add_separator()
+        file_menu.add_command(label="Stop Overlord", command=lambda: self.send_command("shutdown"),
+                              state="normal" if self.command_path else "disabled")
+        menu.add_cascade(label="File", menu=file_menu)
+        self.root.configure(menu=menu)
         style = ttk.Style(self.root)
         try:
             style.theme_use("clam")
@@ -111,6 +121,11 @@ class OverlordConsole:
             side="right", padx=6
         )
         ttk.Button(toolbar, text="Hide", command=self.hide).pack(side="right")
+        stop_button = ttk.Button(toolbar, text="Stop Overlord",
+                                 command=lambda: self.send_command("shutdown"))
+        stop_button.pack(side="right", padx=6)
+        if self.command_path is None:
+            stop_button.state(["disabled"])
         ttk.Checkbutton(
             toolbar,
             text="Autoscroll",
@@ -260,7 +275,7 @@ class OverlordConsole:
             self.show()
 
     def send_command(self, action: str) -> None:
-        """Ask the bridge to do one read-only status action.
+        """Ask the bridge to perform a console action, including shutdown.
 
         Writes the request atomically (temp file + replace) so the bridge never
         reads a half-written file, and stamps it so two presses of the same

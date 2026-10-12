@@ -85,6 +85,13 @@ def test_a_status_button_writes_a_command_the_bridge_can_read(tmp_path):
     assert "refresh all" in console.action_status.get()
 
 
+def test_stop_overlord_writes_shutdown_request(tmp_path):
+    target = tmp_path / "console-command.json"
+    console = _console(tmp_path, target)
+    console.send_command("shutdown")
+    assert json.loads(target.read_text(encoding="utf-8"))["action"] == "shutdown"
+
+
 def test_pressing_the_same_button_twice_is_two_distinct_requests(tmp_path, monkeypatch):
     monkeypatch.setattr(MODULE.time, "time_ns", lambda: 100)
     target = tmp_path / "console-command.json"
