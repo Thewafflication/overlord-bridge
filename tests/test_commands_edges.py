@@ -212,7 +212,7 @@ def test_quote_estimates_are_flagged_and_defaults_are_filled_in():
 
 
 def test_help_text_and_valid_brains_agree():
-    assert commands.VALID_BRAINS == ("claude", "codex")
+    assert commands.VALID_BRAINS == ("claude", "codex", "free")
     for command in ("/help", "/status", "/stop", "/steer", "/brain", "/new", "/context",
                     "/compact", "/model", "/effort", "/tokens", "/quote", "/permissions"):
         assert command in commands.HELP_TEXT

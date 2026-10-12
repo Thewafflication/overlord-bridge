@@ -29,7 +29,7 @@ HELP_TEXT = """Overlord commands
 /brain — show or switch the active brain
 /new — start a clean conversation"""
 
-VALID_BRAINS = ("claude", "codex")
+VALID_BRAINS = ("claude", "codex", "free")
 
 
 def _decode_dotenv(data: bytes) -> str:
@@ -197,7 +197,11 @@ def format_status(status: dict[str, Any]) -> str:
         lines.append(token_line)
 
     usage = status.get("usage")
-    if isinstance(usage, dict):
+    summary = status.get("usage_summary")
+    if isinstance(summary, list):
+        # Brains without a plan window (free chat) describe their own limits.
+        lines.extend(str(line) for line in summary)
+    elif isinstance(usage, dict):
         plan = usage.get("plan_type")
         if plan:
             lines.append(f"Plan: {plan}")

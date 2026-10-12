@@ -270,12 +270,12 @@ OWNER = int(OWNER_RAW)
 # Per-brain session files: a Claude session id and a Codex thread id are not
 # interchangeable, so each brain keeps its own pinned thread across brain
 # switches. Normalize unknown brains to "claude".
-_BRAIN_NAME = "codex" if BRAIN == "codex" else "claude"
+_BRAIN_NAME = BRAIN if BRAIN in VALID_BRAINS else "claude"
 
 
 def session_file_for(brain_name: str) -> Path:
     """Return the incompatible, per-brain conversation pin."""
-    normalized = "codex" if brain_name == "codex" else "claude"
+    normalized = brain_name if brain_name in VALID_BRAINS else "claude"
     return BASE_DIR / f".session.{normalized}"
 
 
@@ -371,6 +371,33 @@ def build_brain(gate: PermissionGate, brain_name: str | None = None) -> Brain:
     developer_instructions = "\n\n".join(
         part for part in (shared_instructions, TELEGRAM_CHOICE_INSTRUCTIONS) if part
     )
+    if selected == "free":
+        from modules.free_brain import FreeBrain, UsageLimiter, DEFAULT_LIMITS, DEFAULT_MODELS, parse_models
+
+        limits = dict(DEFAULT_LIMITS)
+        for provider in ("nvidia", "openrouter"):
+            rpm_default, day_default = limits[provider]
+            limits[provider] = (
+                max(0, env_int(f"OVERLORD_FREE_{provider.upper()}_RPM", rpm_default)),
+                max(0, env_int(f"OVERLORD_FREE_{provider.upper()}_DAILY", day_default)),
+            )
+        nvidia_base = env_first(("OVERLORD_WORKER_NVIDIA_API_BASE",))
+        return FreeBrain(
+            session_file=session_file,
+            models=parse_models(os.environ.get("OVERLORD_FREE_MODELS") or DEFAULT_MODELS),
+            model=os.environ.get("OVERLORD_FREE_MODEL", "").strip() or None,
+            keys={
+                "nvidia": env_first(("OVERLORD_WORKER_NVIDIA_API_KEY", "NVIDIA_API_KEY")),
+                "openrouter": env_first(("OVERLORD_FREE_OPENROUTER_API_KEY",
+                                         "OVERLORD_WORKER_OPENROUTER_API_KEY")),
+            },
+            bases={"nvidia": nvidia_base} if nvidia_base else None,
+            openrouter_enabled=env_bool("OVERLORD_FREE_OPENROUTER_ENABLED", False),
+            limiter=UsageLimiter(BASE_DIR / "run" / "free_usage.json", limits),
+            max_tokens=env_int("OVERLORD_FREE_MAX_TOKENS", 2048),
+            history_chars=env_int("OVERLORD_FREE_HISTORY_CHARS", 24_000),
+        )
+
     if selected == "codex":
         # Imported lazily so the Claude path never needs codex deps and vice versa.
         from modules.codex_brain import CodexBrain
@@ -1095,8 +1122,12 @@ class Bridge:
             effort = getattr(self.brain, "effort", None)
             session_id = getattr(self.brain, "session_id", None)
         else:
-            model = MODEL if brain_name == "claude" else (CODEX_MODEL or "default")
-            effort = EFFORT if brain_name == "claude" else CODEX_EFFORT
+            if brain_name == "free":
+                model = os.environ.get("OVERLORD_FREE_MODEL", "").strip() or "default"
+                effort = None
+            else:
+                model = MODEL if brain_name == "claude" else (CODEX_MODEL or "default")
+                effort = EFFORT if brain_name == "claude" else CODEX_EFFORT
             session_id = "saved" if session_file_for(brain_name).exists() else None
         return {
             "brain": brain_name,
@@ -1108,7 +1139,7 @@ class Bridge:
 
     @staticmethod
     def _read_cached_usage(brain_name: str) -> dict[str, Any] | None:
-        if brain_name not in VALID_BRAINS:
+        if brain_name not in ("claude", "codex"):
             return None
         if brain_name == "codex":
             path = Path.home() / ".cache" / "overlord" / "codex_usage.json"
@@ -1336,7 +1367,9 @@ class Bridge:
             self.telegram.send(
                 chat_id,
                 f"{kind.capitalize()} [{self.brain.name}]: {current or 'default'}\n"
-                f"Change it with /{kind} <value>.{routing}",
+                f"Change it with /{kind} <value>.{routing}"
+                + (f"\n{self.brain.model_help}"
+                   if kind == "model" and getattr(self.brain, "model_help", None) else ""),
             )
             return
         if kind == "effort" and not getattr(self.brain, "supports_effort", False):
@@ -1405,7 +1438,7 @@ class Bridge:
 
     @staticmethod
     def _env_key_for(kind: str, brain_name: str) -> str:
-        prefix = "OVERLORD_CODEX_" if brain_name == "codex" else "OVERLORD_"
+        prefix = {"codex": "OVERLORD_CODEX_", "free": "OVERLORD_FREE_"}.get(brain_name, "OVERLORD_")
         return f"{prefix}{'MODEL' if kind == 'model' else 'EFFORT'}"
 
     @staticmethod
@@ -1416,6 +1449,8 @@ class Bridge:
         stored = "" if value == "default" else value
         key = Bridge._env_key_for(kind, brain_name)
         os.environ[key] = stored
+        if brain_name == "free":
+            return  # the environment variable above is the only state it keeps
         if brain_name == "codex":
             if kind == "model":
                 CODEX_MODEL = stored
@@ -1433,7 +1468,7 @@ class Bridge:
             self.telegram.send(
                 chat_id,
                 f"Active brain: {self.brain.name}\n"
-                "Switch with /brain claude or /brain codex.",
+                f"Switch with {' or '.join('/brain ' + n for n in VALID_BRAINS)}.",
             )
             return
 

@@ -584,3 +584,22 @@ The classifier interprets each prompt with up to eight recent dialogue entries (
 Multi-question requests show progress and require review before submitting the complete set. Use the review buttons to edit a selected answer or cancel all answers. Single-question requests retain direct submission. Cancellation or timeout during a set returns no partial answers. Invalid, duplicate, or oversized sets are rejected instead of silently dropping questions; requests support at most four questions. Pending native requests are not restored after a bridge restart.
 
 Permission decisions are recorded locally in `run/permissions.jsonl`, with one retained `.previous` file and a 256 KiB cap per file. Records contain UTC time, owner ID, decision source and a SHA-256 action identity; they omit command arguments, paths and conversation text. `/permissions` reports audit health. A failed audit write denies approvals (including configured auto-approval and reused grants); revocation and denial still take effect if storage is unavailable. The audit remains local and is not a complete audit of shared-terminal or worker side effects.
+
+## Free-model chat brain
+
+`/brain free` (or `OVERLORD_BRAIN=free`) switches Telegram to plain chat over free
+tiers. It is text-only: no tools, files, commands or workers, so it needs no
+permission prompts. Configure `OVERLORD_FREE_MODELS` (`provider:model`, comma
+separated; providers `nvidia` and `openrouter`) and use `/model` to list or switch.
+
+Usage limits are enforced before each request: a per-provider requests-per-minute
+window and optional daily cap (`OVERLORD_FREE_<PROVIDER>_RPM` / `_DAILY`, persisted
+in `run/free_usage.json` so restarts cannot reset them), plus cooldowns taken from
+`Retry-After` and rate-limit headers after a 429. A model that is cooling down or
+out of budget is skipped for the next configured one, the reply says which model
+answered, and when every model is spent you are told when the first returns.
+`/status` shows each provider's budget. OpenRouter is opt-in
+(`OVERLORD_FREE_OPENROUTER_ENABLED=1`), only accepts `:free` IDs, and is admitted
+only while the live catalog prices the model at zero. Chat history is kept in
+`.session.free`; `/new` clears it. Defaults are conservative published free-tier
+numbers, not live-verified; no provider calls were made in offline tests.
