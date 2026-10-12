@@ -166,6 +166,16 @@ def _parse_duration(value: Any) -> float | None:
         return None
 
 
+class FreeUnavailable(RuntimeError):
+    """No free model could answer in time; carries why and when one returns."""
+
+    def __init__(self, skipped: list[str], soonest: float) -> None:
+        self.skipped, self.soonest = skipped, soonest
+        hint = f" Next model free in about {format_wait(soonest)}." if soonest > 0 else ""
+        bullets = "\n".join(f"• {s}" for s in skipped)
+        super().__init__(f"No free model could answer right now:\n{bullets}{hint}")
+
+
 class UsageLimiter:
     """Per-provider request pacing plus per-model cooldowns, persisted to disk."""
 
@@ -531,27 +541,34 @@ class FreeBrain(Brain):
         }
 
     # ------------------------------------------------------------------- chat
-    async def _admit(self, spec: ModelSpec) -> str | None:
-        """OpenRouter only: the live catalog must still price the model at zero."""
+    async def _admit(self, spec: ModelSpec, tools: bool = False) -> str | None:
+        """OpenRouter only: the live catalog must still price the model at zero
+        (and, for agent work, advertise tool support)."""
         if spec.provider != "openrouter":
             return None
-        if spec.model not in self._admitted:
+        cache_key = (spec.model, tools)
+        if cache_key not in self._admitted:
             try:
                 catalog = await _http_get_json(
                     self.bases["openrouter"].rstrip("/") + "/models",
                     timeout=30, api_key=self.keys["openrouter"],
                 )
-                validate_free_model(catalog, spec.model, require_tools=False)
-                self._admitted[spec.model] = None
+                validate_free_model(catalog, spec.model, require_tools=tools)
+                self._admitted[cache_key] = None
             except Exception as exc:  # noqa: BLE001 - fail closed on any doubt
-                self._admitted[spec.model] = f"not admitted as free: {exc}"
-        return self._admitted[spec.model]
+                self._admitted[cache_key] = f"not admitted as free: {exc}"
+        return self._admitted[cache_key]
 
-    def _payload(self, spec: ModelSpec, messages: list[dict[str, str]]) -> dict[str, Any]:
+    def _payload(self, spec: ModelSpec, messages: list[dict[str, Any]],
+                 tools: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "model": spec.model, "messages": messages, "temperature": 0.7,
             "max_tokens": self.max_tokens,
         }
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
+            payload["temperature"] = 0.2  # steadier tool use
         if spec.provider == "nvidia":
             override = dict(_NVIDIA_MODEL_PAYLOAD_OVERRIDES.get(spec.model.lower(), {}))
             override["max_tokens"] = min(int(override.get("max_tokens", self.max_tokens)), self.max_tokens)
@@ -577,12 +594,15 @@ class FreeBrain(Brain):
             reset = _parse_duration(headers.get("x-ratelimit-reset-requests")) or 60.0
             self.limiter.cool_down(spec.key, min(reset, 3600.0))
 
-    async def _try(self, spec: ModelSpec, messages: list[dict[str, str]]) -> tuple[str | None, str]:
-        """(reply, why-not). Records usage and cooldowns as a side effect."""
+    async def _attempt(
+        self, spec: ModelSpec, messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+    ) -> tuple[dict[str, Any] | None, str]:
+        """(assistant message, why-not). Records usage and cooldowns as a side effect."""
         wait, reason = self.limiter.availability(spec)
         if wait > self.max_wait:
             return None, f"{reason}, back in {format_wait(wait)}"
-        denied = await self._admit(spec)
+        denied = await self._admit(spec, bool(tools))
         if denied:
             return None, denied
         if wait > 0:
@@ -591,7 +611,7 @@ class FreeBrain(Brain):
         url = self.bases[spec.provider].rstrip("/") + "/chat/completions"
         try:
             status, headers, body = await _post(
-                url, self._payload(spec, messages), self.keys[spec.provider], self.timeout
+                url, self._payload(spec, messages, tools), self.keys[spec.provider], self.timeout
             )
         except (OSError, TimeoutError, urllib.error.URLError) as exc:
             self.limiter.cool_down(spec.key, 30)
@@ -612,13 +632,46 @@ class FreeBrain(Brain):
                 isinstance(body.get("error"), dict) else None
             return None, f"HTTP {status}" + (f": {str(message)[:120]}" if message else "")
         self._note_rate_headers(spec, headers)
-        text = self._text_of(body)
-        if not text:
+        try:
+            message = dict(body["choices"][0]["message"])
+        except (KeyError, IndexError, TypeError, ValueError):
+            message = {}
+        message["content"] = self._text_of(body)
+        calls = message.get("tool_calls")
+        if not message["content"] and not (isinstance(calls, list) and calls):
             self.limiter.cool_down(spec.key, 30)
             return None, "empty reply"
         usage = body.get("usage") if isinstance(body, dict) else None
         self.last_turn_usage = dict(usage) if isinstance(usage, dict) else None
-        return text, ""
+        return message, ""
+
+    async def complete(
+        self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None,
+        *, patience: float = 0.0,
+    ) -> tuple[dict[str, Any], ModelSpec, list[str]]:
+        """One assistant message from the first model that can answer.
+
+        Tries the selected model, then the others, skipping any that are cooling
+        down or out of budget. With ``patience`` > 0 it will wait that long for a
+        model to come back instead of failing (agent work can afford to wait; chat
+        cannot). Returns (message, model that answered, why earlier ones were skipped);
+        raises :class:`FreeUnavailable` when nothing can answer in time.
+        """
+        waited = 0.0
+        while True:
+            skipped: list[str] = []
+            for spec in self._order():
+                message, why = await self._attempt(spec, messages, tools)
+                if message is not None:
+                    return message, spec, skipped
+                skipped.append(f"{spec.key} ({why})")
+            waits = [self.limiter.availability(s)[0] for s in self.models]
+            soonest = min(waits) if waits else 0.0
+            pause = max(1.0, soonest)
+            if not self.models or waited + pause > patience:
+                raise FreeUnavailable(skipped, soonest)
+            waited += pause
+            await self._sleep(pause)
 
     async def query(self, text: str) -> AsyncIterator[str]:
         self.last_turn_usage = None
@@ -631,21 +684,16 @@ class FreeBrain(Brain):
         messages = [{"role": "system", "content": SYSTEM_PROMPT}, *self._history,
                     {"role": "user", "content": text}]
         primary = self._order()[0]
-        skipped: list[str] = []
-        for spec in self._order():
-            reply, why = await self._try(spec, messages)
-            if reply is None:
-                skipped.append(f"{spec.key} ({why})")
-                continue
-            self._history += [{"role": "user", "content": text}, {"role": "assistant", "content": reply}]
-            self._trim_history()
-            self._save_history()
-            if spec != primary:
-                reply += f"\n\n— answered by {spec.key}; {skipped[0]}"
-            yield reply
+        try:
+            message, spec, skipped = await self.complete(messages)
+        except FreeUnavailable as exc:
+            self.last_turn_outcome = "error"
+            yield "⚠️ " + str(exc)
             return
-        self.last_turn_outcome = "error"
-        waits = [self.limiter.availability(s)[0] for s in self.models]
-        soonest = min(waits) if waits else 0
-        hint = f" Next model free in about {format_wait(soonest)}." if soonest > 0 else ""
-        yield "⚠️ No free model could answer right now:\n" + "\n".join(f"• {s}" for s in skipped) + hint
+        reply = message["content"]
+        self._history += [{"role": "user", "content": text}, {"role": "assistant", "content": reply}]
+        self._trim_history()
+        self._save_history()
+        if spec != primary:
+            reply += f"\n\n— answered by {spec.key}; {skipped[0]}"
+        yield reply

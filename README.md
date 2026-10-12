@@ -613,3 +613,29 @@ tail until Overlord is online, and stays up with the error if start-up fails.
 `OVERLORD_SPLASH=0` disables it. Chat history is kept in
 `.session.free`; `/new` clears it. Defaults are conservative published free-tier
 numbers, not live-verified; no provider calls were made in offline tests.
+
+### Free models working on projects (`/work`)
+
+The free chat brain has no tools, so project work runs as a *worker* fed by the same
+free-model pool (shared rate limits, cooldowns, discovery and fallback), from any
+active brain:
+
+- `/work` lists projects (folders under your workspace, `OVERLORD_PROJECTS_ROOT`,
+  `~/Projects`, `~/Documents`); `/work <project> <task>` starts a worker in that folder;
+  `/work status` and `/work stop [project]` manage it. You get a Telegram message when it
+  finishes, with the models that did the work.
+- The worker can list/read/write files and run commands **inside that one folder**,
+  under the same denial rules as the other agent workers (no `.env`, SSH/cloud
+  credentials, paths outside the folder, `sudo`, …).
+- Free models are unpredictable, so **writes and commands ask you first** on Telegram
+  (Allow once / Deny / allow this exact action for the session). `OVERLORD_FREE_WORK_APPROVAL`
+  = `all` (default) · `commands` · `none`. Reads and listings never ask.
+- When every free model is rate limited the worker waits up to
+  `OVERLORD_FREE_WORK_PATIENCE` seconds (default 120) for one to return, then stops with
+  the reason. `OVERLORD_FREE_WORK_STEPS` (default 30) caps tool steps.
+- Workers can also be dispatched directly with `"brain": "free"`. The workspace folder
+  is now an allowed worker root, so workers work where projects live (for example
+  `C:\Users\you\source\repos`), not only in `~/Projects`.
+
+Nothing here was exercised against live providers; tool-calling quality varies a lot
+between free models, so review what a free worker changed (it should commit locally).

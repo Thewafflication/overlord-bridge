@@ -109,6 +109,8 @@ def classify_worker_exit(returncode: int | None, shutting_down: bool) -> dict[st
     return {"status": "failed", "failed": True}
 _LOCAL_AGENT_BRAINS = {"local-agent"}
 _NVIDIA_BRAINS = {"nvidia", "nim", "nvidia-nim"}
+_FREE_BRAINS = {"free", "free-model", "free-models"}
+DEFAULT_FREE_MAX_STEPS = 30
 QWEN3_CODER_NEXT_MODEL = "openai/Qwen3-Coder-Next"
 _AIDER_MODEL_ALIASES = {
     "qwen3-coder-next": QWEN3_CODER_NEXT_MODEL,
@@ -633,12 +635,12 @@ async def _http_post_json_retry(
     raise last_exc if last_exc else RuntimeError("unreachable")
 
 
-def _under_allowed_root(folder: str) -> Path | None:
+def _under_allowed_root(folder: str, extra: tuple = ()) -> Path | None:
     try:
         p = Path(folder).expanduser().resolve()
     except Exception:
         return None
-    for root in _ALLOWED_ROOTS:
+    for root in tuple(_ALLOWED_ROOTS) + tuple(Path(r).expanduser().resolve() for r in extra):
         if p == root or root in p.parents:
             return p
     return None
@@ -957,6 +959,10 @@ class WorkerManager:
         nvidia_max_tokens: int = DEFAULT_NVIDIA_MAX_TOKENS,
         nvidia_max_steps: int = DEFAULT_NVIDIA_MAX_STEPS,
         timeout: int = DEFAULT_WORKER_TIMEOUT,
+        free_completer: Callable[..., Awaitable[dict[str, Any]]] | None = None,
+        tool_approver: Callable[..., Awaitable[str | None]] | None = None,
+        extra_roots: tuple = (),
+        free_max_steps: int = DEFAULT_FREE_MAX_STEPS,
         report_dir: Path | None = None,
         report_tail_chars: int = 4000,
         telegram_tail_chars: int = 12000,
@@ -1012,6 +1018,12 @@ class WorkerManager:
         self.nvidia_max_tokens = max(1024, int(nvidia_max_tokens))
         self.nvidia_max_steps = max(4, int(nvidia_max_steps))
         self.timeout = timeout
+        # Free-model workers: the bridge supplies the shared, rate-limited model
+        # pool and (optionally) an operator check before writes and commands.
+        self.free_completer = free_completer
+        self.tool_approver = tool_approver
+        self.extra_roots = tuple(extra_roots)
+        self.free_max_steps = max(4, int(free_max_steps))
         self._running: dict[str, asyncio.Task] = {}
         self.report_tail_chars = report_tail_chars
         self.telegram_tail_chars = telegram_tail_chars
@@ -1253,6 +1265,37 @@ class WorkerManager:
 
         return {"ok": False, "error": f"unknown_tool:{tool_name}"}
 
+    async def _execute_checked(
+        self, brain: str, folder: Path, tool_name: str, arguments: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Run a tool, asking the operator first for free-model writes/commands.
+
+        Calls the built-in denial rules first, so an action that would be refused
+        anyway never reaches the operator's phone.
+        """
+        approver = self.tool_approver if brain == "free" else None
+        if approver is not None:
+            tool = {"run": "run_command", "bash": "run_command", "shell": "run_command",
+                    "write": "write_file"}.get(tool_name, tool_name)
+            request: dict[str, Any] | None = None
+            if tool == "run_command":
+                command = str(arguments.get("command") or arguments.get("cmd") or "").strip()
+                if command and _local_agent_command_denial(command, folder) is None:
+                    request = {"command": command}
+            elif tool == "write_file":
+                path, error = _resolve_worker_relative_path(folder, str(arguments.get("path") or ""))
+                content = arguments.get("content")
+                if (path is not None and not error and isinstance(content, str)
+                        and _local_agent_path_denial(path, folder, write=True) is None):
+                    request = {"path": path.relative_to(folder.resolve()).as_posix(),
+                               "content": content}
+            if request is not None:
+                refusal = await approver(folder, tool, request)
+                if refusal:
+                    return {"ok": False, "tool": tool, "error": refusal, **{
+                        k: v for k, v in request.items() if k != "content"}}
+        return await self._local_agent_execute_tool(folder, tool_name, arguments)
+
     async def _run_local_agent_worker(
         self,
         *,
@@ -1270,7 +1313,19 @@ class WorkerManager:
         started_mono = asyncio.get_running_loop().time()
         is_nvidia = brain == "nvidia"
         is_openrouter = brain == "openrouter"
-        if is_openrouter:
+        is_free = brain == "free"
+        free_models: list[str] = []
+        if is_free:
+            if self.free_completer is None:
+                self._emit_report(self._base_report(name=name, folder=folder, brain=brain,
+                    session=sid, status="rejected", reason="free_pool_unavailable"))
+                self._send(self.owner, f"❌ [{name}] the free-model pool is not configured")
+                return
+            amodel = "free-model pool"
+            context_tokens, hard_cap = None, None
+            api_base, api_key = "", ""
+            max_steps, max_tokens = self.free_max_steps, 4096
+        elif is_openrouter:
             # Validate consent and prices before reading or transmitting project files.
             try:
                 if os.environ.get("OVERLORD_WORKER_OPENROUTER_ENABLED") != "1":
@@ -1472,7 +1527,9 @@ class WorkerManager:
             }
 
         try:
-            if is_nvidia or is_openrouter:
+            if is_free:
+                pass  # the pool checks its own keys and budgets per request
+            elif is_nvidia or is_openrouter:
                 if not api_key:
                     raise RuntimeError(
                         "nvidia worker brain needs OVERLORD_WORKER_NVIDIA_API_KEY in .env"
@@ -1501,7 +1558,13 @@ class WorkerManager:
                 if is_nvidia:
                     payload.update(_NVIDIA_MODEL_PAYLOAD_OVERRIDES.get(amodel.lower(), {}))
                 chat_url = _openai_chat_url(api_base)
-                if not is_nvidia and _is_llamacpp_aider_model(amodel):
+                if is_free:
+                    free_message = await self.free_completer(messages, payload.get("tools"))
+                    used = str(free_message.pop("_free_model", "") or "")
+                    if used:
+                        free_models.append(used)
+                    response = {"choices": [{"message": free_message}]}
+                elif not is_nvidia and _is_llamacpp_aider_model(amodel):
                     response = await _http_post_json_with_llamacpp_stall_guard(
                         chat_url,
                         payload,
@@ -1543,7 +1606,7 @@ class WorkerManager:
                         result = (
                             duplicate_result
                             if duplicate_result is not None
-                            else await self._local_agent_execute_tool(folder, tool_name, arguments)
+                            else await self._execute_checked(brain, folder, tool_name, arguments)
                         )
                         result_text = _local_agent_json_result(result, DEFAULT_LOCAL_AGENT_TOOL_OUTPUT_CHARS)
                         transcript.append(f"tool[{step}:{tool_name}]: {result_text}")
@@ -1585,7 +1648,7 @@ class WorkerManager:
                     result = (
                         duplicate_result
                         if duplicate_result is not None
-                        else await self._local_agent_execute_tool(folder, tool_name, arguments)
+                        else await self._execute_checked(brain, folder, tool_name, arguments)
                     )
                     result_text = _local_agent_json_result(result, DEFAULT_LOCAL_AGENT_TOOL_OUTPUT_CHARS)
                     transcript.append(f"tool[{step}:{tool_name}]: {result_text}")
@@ -1607,6 +1670,8 @@ class WorkerManager:
             else:
                 final_text = f"Stopped after {max_steps} {brain} agent steps."
 
+            if is_free and free_models:
+                amodel = ", ".join(dict.fromkeys(free_models))  # which models did the work
             finished_at = _now_iso()
             duration = round(asyncio.get_running_loop().time() - started_mono, 3)
             report_text = "\n\n".join(transcript[-12:] + ([f"final: {final_text}"] if final_text else []))
@@ -1803,6 +1868,8 @@ class WorkerManager:
             brain = "local-agent"
         elif brain in _NVIDIA_BRAINS:
             brain = "nvidia"
+        elif brain in _FREE_BRAINS:
+            brain = "free"
         session = str(data.get("session") or "").strip() or None
         resume = bool(data.get("resume"))
         model = str(data.get("model") or "").strip() or None  # optional override
@@ -1824,7 +1891,7 @@ class WorkerManager:
             or data.get("codex_bypass_approvals_and_sandbox")
         )
 
-        target = _under_allowed_root(folder)
+        target = _under_allowed_root(folder, self.extra_roots)
         if target is None or not target.is_dir():
             self._emit_report(
                 self._base_report(
@@ -1864,7 +1931,7 @@ class WorkerManager:
             )
             self._send(self.owner, f"⏳ [{name}] already running; ignoring duplicate.")
             return
-        if brain not in ("claude", "codex", "local-agent", "nvidia", "openrouter"):
+        if brain not in ("claude", "codex", "local-agent", "nvidia", "openrouter", "free"):
             self._emit_report(
                 self._base_report(
                     name=name,
@@ -1877,12 +1944,12 @@ class WorkerManager:
             )
             self._send(
                 self.owner,
-                f"❌ [{name}] bad worker brain: {brain}. Use claude, codex, local-agent, nvidia, or openrouter.",
+                f"❌ [{name}] bad worker brain: {brain}. Use claude, codex, local-agent, nvidia, openrouter, or free.",
             )
             return
         files, files_error = (
             _worker_file_args(target, files_raw)
-            if brain in ("local-agent", "nvidia", "openrouter")
+            if brain in ("local-agent", "nvidia", "openrouter", "free")
             else ([], None)
         )
         if files_error:
@@ -2024,7 +2091,7 @@ class WorkerManager:
         sandbox: str | None = None,
         bypass_codex_sandbox: bool = False,
     ) -> None:
-        if brain in ("local-agent", "nvidia", "openrouter"):
+        if brain in ("local-agent", "nvidia", "openrouter", "free"):
             try:
                 await self._run_local_agent_worker(
                     name=name,

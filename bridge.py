@@ -76,7 +76,8 @@ from modules.conversation_history import (
 from modules.telegram_handler import TelegramHandler
 from modules.single_instance import AlreadyRunningError, SingleInstance
 from modules.windows_tray import WindowsTray
-from modules.workers import DEFAULT_AIDER_CONTEXT_TOKENS, WorkerManager
+from modules.free_work import FreeWork, normalize_mode
+from modules.workers import _ALLOWED_ROOTS, DEFAULT_AIDER_CONTEXT_TOKENS, WorkerManager
 
 logging.basicConfig(
     level=logging.INFO,
@@ -269,6 +270,13 @@ WORKER_REPORT_CLI_FEED_PATH = env_path(
 WORKER_REPORT_TERMINAL_INJECT = env_bool("WORKER_REPORT_TERMINAL_INJECT", False)
 WORKER_REPORT_TMUX_SESSION = os.environ.get("WORKER_REPORT_TMUX_SESSION", "").strip()
 
+# Free-model project work (/work): who is asked before a worker writes or runs
+# something, how long it waits out rate limits, and how many tool steps it gets.
+FREE_WORK_APPROVAL = normalize_mode(os.environ.get("OVERLORD_FREE_WORK_APPROVAL"))
+FREE_WORK_PATIENCE = max(0, env_int("OVERLORD_FREE_WORK_PATIENCE", 120))
+FREE_WORK_STEPS = max(4, env_int("OVERLORD_FREE_WORK_STEPS", 30))
+PROJECTS_ROOT = os.environ.get("OVERLORD_PROJECTS_ROOT", "").strip()
+
 if not TOKEN or not OWNER_RAW:
     startup_state.failed("Configuration", "TELEGRAM_BOT_TOKEN and OWNER_CHAT_ID must be set in .env")
     sys.exit("ERROR: TELEGRAM_BOT_TOKEN and OWNER_CHAT_ID must be set in .env")
@@ -278,6 +286,31 @@ OWNER = int(OWNER_RAW)
 # interchangeable, so each brain keeps its own pinned thread across brain
 # switches. Normalize unknown brains to "claude".
 _BRAIN_NAME = BRAIN if BRAIN in VALID_BRAINS else "claude"
+
+
+def project_roots() -> list[Path]:
+    """Folders whose children are projects: the configured root, the workspace
+    (unless that is the whole home directory) and the standard worker zones."""
+    candidates: list[Path] = []
+    if PROJECTS_ROOT:
+        candidates.append(Path(PROJECTS_ROOT).expanduser())
+    workspace = Path(CWD).expanduser()
+    try:
+        if workspace.resolve() != Path.home().resolve():
+            candidates.append(workspace)
+    except OSError:
+        pass
+    candidates.extend(_ALLOWED_ROOTS)
+    seen: list[Path] = []
+    for root in candidates:
+        if root.is_dir() and root not in seen:
+            seen.append(root)
+    return seen
+
+
+def worker_extra_roots() -> tuple[Path, ...]:
+    """Roots workers may use beyond ~/Projects and ~/Documents (e.g. source/repos)."""
+    return tuple(r for r in project_roots() if r not in _ALLOWED_ROOTS)
 
 
 def session_file_for(brain_name: str) -> Path:
@@ -445,6 +478,7 @@ class Bridge:
     # report "no active turn" rather than raising.
     _active_turn_task: asyncio.Task[None] | None = None
     _switcher_task: asyncio.Task[None] | None = None
+    _free_standby: Any = None  # a free-model pool kept for /work while another brain chats
 
     def __init__(self) -> None:
         self.prompt_router = PromptRouter.from_environment()
@@ -656,11 +690,20 @@ class Bridge:
             nvidia_api_key=env_first(
                 ("OVERLORD_WORKER_NVIDIA_API_KEY", "NVIDIA_API_KEY"), ""
             ),
+            free_completer=lambda messages, tools: self.free_work.complete(messages, tools),
+            tool_approver=lambda folder, tool, request: self.free_work.approve(folder, tool, request),
+            extra_roots=worker_extra_roots(),
+            free_max_steps=FREE_WORK_STEPS,
             report_dir=WORKER_REPORT_DIR,
             report_tail_chars=WORKER_REPORT_TAIL_CHARS,
             telegram_tail_chars=WORKER_TELEGRAM_TAIL_CHARS,
             report_events_max_bytes=WORKER_REPORT_EVENTS_MAX_BYTES,
             on_report=self._handle_worker_report,
+        )
+        self.free_work = FreeWork(
+            send=self.telegram.send, roots=project_roots, workers=self.workers,
+            gate=self.gate, pool=self._free_pool,
+            approval=FREE_WORK_APPROVAL, patience=FREE_WORK_PATIENCE,
         )
 
     # ---------------------------------------------------------------- main loop
@@ -767,6 +810,8 @@ class Bridge:
                 self._handle_permissions(chat_id, text)
             elif command == "/context":
                 self._handle_context(chat_id)
+            elif command == "/work":
+                await self.free_work.handle(chat_id, text)
             elif command == "/compact":
                 self._start_compaction(chat_id)
             else:
@@ -776,6 +821,17 @@ class Bridge:
         except Exception as exc:  # noqa: BLE001 - keep the bridge alive
             log.exception("Command %r failed", command)
             self.telegram.send(chat_id, f"⚠️ {command or 'Message'} failed: {exc}")
+
+    async def _free_pool(self):
+        """The free-model pool workers draw from: the active free brain, else a
+        standby one (it shares the persisted usage limits either way)."""
+        if self.brain.name == "free":
+            return self.brain
+        if self._free_standby is None:
+            standby = build_brain(self.gate, "free")
+            await standby.connect()
+            self._free_standby = standby
+        return self._free_standby
 
     def _inbound_get_with_shutdown(self) -> tuple[int | None, str | None]:
         if self._shutdown_event.is_set():
@@ -1116,6 +1172,7 @@ class Bridge:
         # Only what the file says is applied (a cleared key is written as an empty
         # value); settings that come from the process environment are left alone.
         os.environ.update(wanted)
+        self._free_standby = None  # rebuilt with the new keys on next use
         log.info("Reloaded %d API-key/free-model setting(s) from .env", len(wanted))
         if self.brain.name == "free" and not self._turn_is_active():
             candidate = build_brain(self.gate, "free")

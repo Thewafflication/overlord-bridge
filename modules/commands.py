@@ -27,6 +27,7 @@ HELP_TEXT = """Overlord commands
 /stop — stop the active AI turn
 /steer <message> — stop the active turn and replace it with new guidance
 /brain — show or switch the active brain
+/work <project> <task> — let free models work on a project (/work lists projects)
 /new — start a clean conversation"""
 
 VALID_BRAINS = ("claude", "codex", "free")
