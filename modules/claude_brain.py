@@ -52,6 +52,7 @@ from claude_agent_sdk import (
 
 from modules import shared_job
 from modules.brain import Brain, PermissionGate, collect_candidates
+from modules.commands import reset_has_passed
 from modules.token_meter import estimate_tokens
 
 log = logging.getLogger("overlord.claude")
@@ -129,6 +130,10 @@ TELEGRAM_TAG = "📱 [via Telegram]\n\n"
 EDIT_TOOLS = {"Edit", "MultiEdit", "Write", "NotebookEdit"}
 
 
+# Set when the last live usage call was rejected because the CLI login expired.
+usage_auth_expired = False
+
+
 def _claude_usage_window(data: Any) -> dict[str, Any] | None:
     if not isinstance(data, dict) or data.get("utilization") is None:
         return None
@@ -136,10 +141,16 @@ def _claude_usage_window(data: Any) -> dict[str, Any] | None:
         used = round(float(data["utilization"]), 1)
     except (TypeError, ValueError):
         return None
+    # A window whose reset time is behind us has rolled over, whatever the
+    # (possibly weeks-old) cached percentage says.
+    passed = reset_has_passed(data.get("resets_at"))
+    if passed:
+        used = 0.0
     return {
         "used": used,
         "gas": max(0, round(100 - used, 1)),
         "resets_at": data.get("resets_at"),
+        "reset_passed": passed,
     }
 
 
@@ -160,6 +171,7 @@ def _normalize_claude_usage(data: Any) -> dict[str, Any] | None:
 
 async def _claude_usage_payload(max_cache_age: int = 120) -> tuple[dict[str, Any] | None, bool]:
     """Return Claude cap data and whether it came from a stale cache."""
+    global usage_auth_expired
     cached: dict[str, Any] | None = None
     try:
         raw = json.loads(CLAUDE_USAGE_CACHE.read_text(encoding="utf-8"))
@@ -184,7 +196,9 @@ async def _claude_usage_payload(max_cache_age: int = 120) -> tuple[dict[str, Any
         async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
             async with session.get(CLAUDE_USAGE_API) as response:
                 if response.status != 200:
+                    usage_auth_expired = response.status == 401
                     return cached, cached is not None
+                usage_auth_expired = False
                 data = await response.json()
         if not isinstance(data, dict):
             return cached, cached is not None
@@ -524,6 +538,11 @@ class ClaudeBrain(Brain):
         )
         usage = _normalize_claude_usage(payload)
         note = "Usage is from the last cached update." if stale else None
+        if usage_auth_expired:
+            note = (
+                "Claude login expired, so live usage is unavailable; run `claude` "
+                "once to refresh it. Showing the last cached reading."
+            )
         return {
             "brain": self.name,
             "model": self._active_model or self.model,

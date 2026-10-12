@@ -51,6 +51,7 @@ from modules.commands import (
     format_quote,
     format_status,
     format_status_all,
+    reset_has_passed,
     set_env_value,
 )
 from modules.version import display_version
@@ -1133,10 +1134,15 @@ class Bridge:
                 used = round(float(source["utilization"]), 1)
             except (KeyError, TypeError, ValueError):
                 return None
+            resets_at = source.get("resets_at")
+            passed = reset_has_passed(resets_at)
+            if passed:
+                used = 0.0  # rolled over since the cache was written
             return {
                 "used": used,
                 "gas": max(0, round(100 - used, 1)),
-                "resets_at": source.get("resets_at"),
+                "resets_at": resets_at,
+                "reset_passed": passed,
             }
 
         session = window("five_hour")

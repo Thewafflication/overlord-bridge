@@ -32,9 +32,21 @@ HELP_TEXT = """Overlord commands
 VALID_BRAINS = ("claude", "codex")
 
 
+def _decode_dotenv(data: bytes) -> str:
+    """Decode like the loaders do: UTF-8 (BOM tolerated), else ANSI.
+
+    A BOM left on the first key would stop it matching, so an update would
+    append a duplicate that the loader (first assignment wins) then ignores.
+    """
+    try:
+        return data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return data.decode("cp1252", errors="replace")
+
+
 def set_env_value(path: Any, key: str, value: str) -> None:
     """Update one dotenv setting while preserving unrelated configuration."""
-    text = path.read_bytes().decode("utf-8") if path.exists() else ""
+    text = _decode_dotenv(path.read_bytes()) if path.exists() else ""
     newline = "\r\n" if "\r\n" in text else "\n"
     lines = text.splitlines()
     replaced = False
@@ -50,6 +62,18 @@ def set_env_value(path: Any, key: str, value: str) -> None:
         lines.append(f"{key}={value}")
     rendered = newline.join(lines) + newline
     path.write_bytes(rendered.encode("utf-8"))
+
+
+def reset_has_passed(value: Any, now: datetime.datetime | None = None) -> bool:
+    if not isinstance(value, str) or not value.strip():
+        return False
+    try:
+        when = datetime.datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=datetime.timezone.utc)
+    return when <= (now or datetime.datetime.now(datetime.timezone.utc))
 
 
 def _friendly_local_time(
@@ -110,6 +134,8 @@ def _format_window(label: str, window: Any) -> str:
         text = f"{label}: {used:g}% used"
     else:
         return f"{label}: unavailable"
+    if window.get("reset_passed"):
+        return f"{text} · window has reset"
     reset = _format_reset(window.get("resets_at"))
     return f"{text} · resets {reset}" if reset else text
 

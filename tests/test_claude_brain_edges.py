@@ -411,7 +411,7 @@ def test_usage_windows_are_normalized_and_clamped():
     assert normalize({"five_hour": {"utilization": None}}) is None
     usage = normalize({"five_hour": {"utilization": "12.34", "resets_at": "t"},
                        "seven_day": {"utilization": 130}})
-    assert usage["session"] == {"used": 12.3, "gas": 87.7, "resets_at": "t"}
+    assert usage["session"] == {"used": 12.3, "gas": 87.7, "resets_at": "t", "reset_passed": False}
     assert usage["weekly"]["gas"] == 0  # over 100% never reports negative gas
 
 
@@ -437,3 +437,55 @@ def test_old_usage_cache_is_served_stale_when_there_is_no_token(tmp_path, monkey
     assert stale is True
     cache.write_text("not json", encoding="utf-8")
     assert asyncio.run(claude_brain._claude_usage_payload()) == (None, False)
+
+
+# ------------------------------------------------- stale usage after a long gap
+def test_a_window_whose_reset_has_passed_reads_as_rolled_over():
+    usage = claude_brain._normalize_claude_usage({
+        "five_hour": {"utilization": 100.0, "resets_at": "2026-09-02T20:00:00+00:00"},
+        "seven_day": {"utilization": 13.0, "resets_at": "2999-01-01T00:00:00Z"},
+    })
+    assert usage["session"]["used"] == 0.0 and usage["session"]["gas"] == 100
+    assert usage["session"]["reset_passed"] is True
+    assert usage["weekly"]["used"] == 13.0 and usage["weekly"]["reset_passed"] is False
+
+
+def test_expired_login_is_named_instead_of_silently_serving_old_numbers(tmp_path, monkeypatch):
+    cache = tmp_path / "usage.json"
+    cache.write_text(json.dumps({"five_hour": {"utilization": 100, "resets_at": "2026-09-02T20:00:00Z"}}),
+                     encoding="utf-8")
+    old = time.time() - 40 * 86400
+    os.utime(cache, (old, old))
+    creds = tmp_path / "creds.json"
+    creds.write_text(json.dumps({"claudeAiOauth": {"accessToken": "expired"}}), encoding="utf-8")
+    monkeypatch.setattr(claude_brain, "CLAUDE_USAGE_CACHE", cache)
+    monkeypatch.setattr(claude_brain, "CLAUDE_CREDENTIALS", creds)
+
+    class Response:
+        status = 401
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+    class Session:
+        def __init__(self, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        def get(self, url):
+            return Response()
+
+    monkeypatch.setattr(claude_brain.aiohttp, "ClientSession", Session)
+    brain = make_brain(tmp_path)
+    status = asyncio.run(brain.status(force_refresh=True))
+    assert "login expired" in status["usage_note"] and "`claude`" in status["usage_note"]
+    assert status["usage"]["session"]["used"] == 0.0  # the September window is over
+    monkeypatch.setattr(claude_brain, "usage_auth_expired", False)

@@ -216,3 +216,33 @@ def test_help_text_and_valid_brains_agree():
     for command in ("/help", "/status", "/stop", "/steer", "/brain", "/new", "/context",
                     "/compact", "/model", "/effort", "/tokens", "/quote", "/permissions"):
         assert command in commands.HELP_TEXT
+
+
+def test_env_value_update_works_on_a_bom_prefixed_file(tmp_path):
+    path = tmp_path / ".env"
+    path.write_bytes(b"\xef\xbb\xbfOVERLORD_BRAIN=claude\r\nX=1\r\n")
+    set_env_value(path, "OVERLORD_BRAIN", "codex")
+    assert path.read_bytes() == b"OVERLORD_BRAIN=codex\r\nX=1\r\n"  # no duplicate key
+
+
+def test_env_value_update_tolerates_an_ansi_saved_file(tmp_path):
+    path = tmp_path / ".env"
+    path.write_bytes(b"NAME=caf\xe9\n")
+    set_env_value(path, "A", "1")
+    assert path.read_bytes().decode("utf-8") == "NAME=café\nA=1\n"
+
+
+def test_a_rolled_over_window_says_so_instead_of_quoting_an_old_reset():
+    text = _format_window("5-hour", {"used": 0.0, "gas": 100.0,
+                                     "resets_at": "2026-09-02T20:00:00Z", "reset_passed": True})
+    assert text == "5-hour: 0% used, 100% left · window has reset"
+
+
+def test_reset_has_passed_handles_odd_input():
+    from modules.commands import reset_has_passed
+
+    assert reset_has_passed("2000-01-01T00:00:00Z") is True
+    assert reset_has_passed("2999-01-01T00:00:00Z") is False
+    assert reset_has_passed("2000-01-01T00:00:00") is True  # naive means UTC
+    for odd in (None, "", "soon", 5):
+        assert reset_has_passed(odd) is False

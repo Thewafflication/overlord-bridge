@@ -208,7 +208,7 @@ def test_claude_cached_usage_is_read_from_the_hook_cache(tmp_path, monkeypatch):
         "seven_day": {"utilization": 99.99},
     }), encoding="utf-8")
     usage = bridge.Bridge._read_cached_usage("claude")
-    assert usage["session"] == {"used": 33.3, "gas": 66.7, "resets_at": "soon"}
+    assert usage["session"] == {"used": 33.3, "gas": 66.7, "resets_at": "soon", "reset_passed": False}
     assert usage["weekly"]["gas"] == 0.0 and usage["source"] == "cache"
 
 
@@ -499,3 +499,17 @@ def test_shared_instructions_survive_an_ansi_saved_file_and_a_bom(tmp_path, monk
     assert bridge.load_shared_instructions() == "Café rules"
     path.write_bytes("\ufeffUTF-8 rules — fine".encode("utf-8"))
     assert bridge.load_shared_instructions() == "UTF-8 rules — fine"
+
+
+def test_cached_claude_windows_that_already_reset_are_not_reported_as_full(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    cache = tmp_path / ".cache" / "near-limit-handoff" / "usage.json"
+    cache.parent.mkdir(parents=True)
+    cache.write_text(json.dumps({
+        "five_hour": {"utilization": 100.0, "resets_at": "2026-09-02T20:00:00+00:00"},
+        "seven_day": {"utilization": 13.0, "resets_at": "2026-09-08T16:00:00+00:00"},
+    }), encoding="utf-8")
+    usage = bridge.Bridge._read_cached_usage("claude")
+    assert usage["session"]["used"] == 0.0 and usage["session"]["reset_passed"] is True
+    assert usage["weekly"]["gas"] == 100.0
