@@ -148,6 +148,47 @@ async def ask(brain, text="hi"):
     return [chunk async for chunk in brain.query(text)]
 
 
+def test_catalog_outage_recovers_without_restarting_the_pool(tmp_path, monkeypatch):
+    catalogs = [OSError("temporary catalog outage"),
+                {"data": [{"id": OR.model, "pricing": {"prompt": "0", "completion": "0"}}]}]
+
+    async def fake_get(*args, **kwargs):
+        result = catalogs.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    monkeypatch.setattr(free_brain, "_http_get_json", fake_get)
+    brain = make(tmp_path, monkeypatch, [reply("Recovered")], models=(OR,), openrouter_enabled=True)
+    assert "temporary catalog outage" in run(ask(brain))[0]
+    assert brain.calls == []
+    assert run(ask(brain)) == ["Recovered"]
+
+
+def test_price_admission_expires_and_blocks_newly_paid_model(tmp_path, monkeypatch):
+    clock = Clock()
+    catalogs = [
+        {"data": [{"id": OR.model, "pricing": {"prompt": "0", "completion": "0"}}]},
+        {"data": [{"id": OR.model, "pricing": {"prompt": "0.1", "completion": "0"}}]},
+        {"data": [{"id": OR.model, "pricing": {"prompt": "0", "completion": "0"}}]},
+    ]
+
+    async def fake_get(*args, **kwargs):
+        return catalogs.pop(0)
+
+    monkeypatch.setattr(free_brain, "_http_get_json", fake_get)
+    brain = make(tmp_path, monkeypatch, [reply("First"), reply("Cached"), reply("Free again")],
+                 models=(OR,), openrouter_enabled=True, clock=clock)
+    assert run(ask(brain)) == ["First"]
+    clock.now += free_brain.ADMISSION_TTL - 1
+    assert run(ask(brain)) == ["Cached"]
+    assert len(catalogs) == 2
+    clock.now += 1
+    assert "zero input and output prices" in run(ask(brain))[0]
+    assert len(brain.calls) == 2
+    assert run(ask(brain)) == ["Free again"]
+
+
 def test_model_access_denial_does_not_block_healthy_openrouter_fallback(tmp_path, monkeypatch):
     sibling = ModelSpec("openrouter", "other/model:free")
     catalog = {"data": [{"id": spec.model, "pricing": {"prompt": "0", "completion": "0"}}

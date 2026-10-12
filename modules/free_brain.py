@@ -47,6 +47,7 @@ PROVIDERS = ("nvidia", "openrouter")
 DEFAULT_MODELS = "openrouter:free,nvidia:gpt-oss,nvidia:nemotron,nvidia:nemotron-lightning"
 DISCOVER = "free"
 DISCOVER_LIMIT = 3
+ADMISSION_TTL = 300.0
 # Used only when the catalog cannot be fetched at start-up.
 FALLBACK_OPENROUTER = (
     "nvidia/nemotron-3-super-120b-a12b:free",
@@ -370,7 +371,7 @@ class FreeBrain(Brain):
         self.timeout = timeout
         self.max_wait = max_wait
         self._sleep = sleep
-        self._admitted: dict[str, str | None] = {}  # openrouter model -> None ok | reason
+        self._admitted: dict[tuple[str, bool], float] = {}  # last successful price check
         self.unavailable: list[str] = []
         self.models: list[ModelSpec] = []
         self._discover_at: int | None = None
@@ -553,17 +554,20 @@ class FreeBrain(Brain):
         if spec.provider != "openrouter":
             return None
         cache_key = (spec.model, tools)
-        if cache_key not in self._admitted:
+        checked_at = self._admitted.get(cache_key)
+        now = self.limiter.clock()
+        if checked_at is None or not 0 <= now - checked_at < ADMISSION_TTL:
             try:
                 catalog = await _http_get_json(
                     self.bases["openrouter"].rstrip("/") + "/models",
                     timeout=30, api_key=self.keys["openrouter"],
                 )
                 validate_free_model(catalog, spec.model, require_tools=tools)
-                self._admitted[cache_key] = None
+                self._admitted[cache_key] = self.limiter.clock()
             except Exception as exc:  # noqa: BLE001 - fail closed on any doubt
-                self._admitted[cache_key] = f"not admitted as free: {exc}"
-        return self._admitted[cache_key]
+                self._admitted.pop(cache_key, None)
+                return f"not admitted as free: {exc}"
+        return None
 
     def _payload(self, spec: ModelSpec, messages: list[dict[str, Any]],
                  tools: list[dict[str, Any]] | None = None) -> dict[str, Any]:
