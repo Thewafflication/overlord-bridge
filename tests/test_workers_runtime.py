@@ -482,7 +482,7 @@ def test_agent_loop_executes_tool_calls_then_reports_the_final_answer(isolated, 
     assert "Patched fix.txt and verified." in sent[-1]
     second_turn = seen[1]["messages"]
     assert second_turn[-1]["role"] == "tool" and second_turn[-1]["tool_call_id"] == "c1"
-    assert seen[0]["tools"] and seen[0]["model"] == "openai/gpt-oss-120b"
+    assert seen[0]["tools"] and seen[0]["model"] == "openai/gpt-oss-20b"
 
 
 def test_agent_accepts_json_tool_calls_written_in_prose(isolated, tmp_path, monkeypatch):

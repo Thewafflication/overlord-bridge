@@ -169,6 +169,12 @@ workflow lands.
   Like local-agent, these are one-shot workers, not resumable sessions;
   `model` and `files` hints work the same way.
 - **NVIDIA model selection — which model for which worker task.** If unsure,
+  **2026-10-11 update:** the default and `gpt-oss` alias now use
+  `openai/gpt-oss-20b`; the 120B endpoint has retired. The free pool uses
+  GPT-OSS 20B, Nemotron 3 Super and Nemotron 3.5 Lightning; all three passed
+  live chat and tool-call checks with the installed key. The July rankings
+  below are historical; Mistral Small 4 and Llama 3.3 also returned HTTP 410.
+  For the original July qualification,
   omit `model` entirely: the default is `gpt-oss`
   (`openai/gpt-oss-120b`). In the 2026-07-16 same-prompt smoke matrix it was the
   fastest practical coding answer (7.2s) and the only quick NVIDIA model whose

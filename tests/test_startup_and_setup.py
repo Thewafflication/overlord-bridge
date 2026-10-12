@@ -298,7 +298,7 @@ def test_reload_rebuilds_the_active_free_brain_with_the_new_keys(tmp_path, monke
                                    encoding="utf-8")
     old = instance.brain
     asyncio.run(instance._reload_env())
-    assert instance.brain is not old and [m.model for m in instance.brain.models] == ["openai/gpt-oss-120b"]
+    assert instance.brain is not old and [m.model for m in instance.brain.models] == ["openai/gpt-oss-20b"]
     assert "Keys: nvidia ✓" in "\n".join(instance._status_by_brain["free"]["usage_summary"])
     os.environ.pop("OVERLORD_WORKER_NVIDIA_API_KEY", None)
 

@@ -196,7 +196,7 @@ def _is_answer_only_worker_task(task: str, files: list[str] | None) -> bool:
 # contexts, no local VRAM cost. Aliases map friendly names to live NIM ids
 # (verified against /v1/models 2026-07-02).
 DEFAULT_NVIDIA_API_BASE = "https://integrate.api.nvidia.com/v1"
-DEFAULT_NVIDIA_MODEL = "openai/gpt-oss-120b"
+DEFAULT_NVIDIA_MODEL = "openai/gpt-oss-20b"
 DEFAULT_NVIDIA_MAX_TOKENS = 16384
 DEFAULT_NVIDIA_MAX_STEPS = 40
 _NVIDIA_MODEL_ALIASES = {
@@ -216,7 +216,7 @@ _NVIDIA_MODEL_ALIASES = {
     "qwen3.5": "qwen/qwen3.5-122b-a10b",
     "qwen3.5-122b": "qwen/qwen3.5-122b-a10b",
     "qwen3.5-397b": "qwen/qwen3.5-397b-a17b",
-    "gpt-oss": "openai/gpt-oss-120b",
+    "gpt-oss": "openai/gpt-oss-20b",
     "gpt-oss-120b": "openai/gpt-oss-120b",
     "gpt-oss-20b": "openai/gpt-oss-20b",
     "mistral": "mistralai/mistral-small-4-119b-2603",
@@ -229,6 +229,7 @@ _NVIDIA_MODEL_ALIASES = {
     "llama-4-maverick": "meta/llama-4-maverick-17b-128e-instruct",
     "nemotron": "nvidia/nemotron-3-super-120b-a12b",
     "nemotron-super": "nvidia/nemotron-3-super-120b-a12b",
+    "nemotron-lightning": "nvidia/nemotron-3.5-lightning-30b-a3b",
     "nemotron-ultra": "nvidia/nemotron-3-ultra-550b-a55b",
     "nemotron-nano": "nvidia/nemotron-3-nano-30b-a3b",
     "llama-nemotron-super": "nvidia/llama-3.3-nemotron-super-49b-v1.5",
@@ -239,6 +240,10 @@ _NVIDIA_MODEL_ALIASES = {
 # are merged into the worker payload after defaults so the published sampling and
 # template knobs win.
 _NVIDIA_MODEL_PAYLOAD_OVERRIDES: dict[str, dict[str, Any]] = {
+    "nvidia/nemotron-3.5-lightning-30b-a3b": {
+        "temperature": 1.0, "top_p": 0.95, "max_tokens": 4096,
+        "chat_template_kwargs": {"enable_thinking": False},
+    },
     "deepseek-ai/deepseek-v4-pro": {
         "temperature": 1.0,
         "top_p": 0.95,

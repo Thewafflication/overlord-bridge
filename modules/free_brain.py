@@ -44,7 +44,7 @@ log = logging.getLogger("overlord.free")
 PROVIDERS = ("nvidia", "openrouter")
 # "openrouter:free" means: discover the best zero-priced chat models from the live
 # catalog (fixed IDs go stale quickly). OpenRouter leads, NVIDIA follows.
-DEFAULT_MODELS = "openrouter:free,nvidia:gpt-oss,nvidia:mistral,nvidia:llama"
+DEFAULT_MODELS = "openrouter:free,nvidia:gpt-oss,nvidia:nemotron,nvidia:nemotron-lightning"
 DISCOVER = "free"
 DISCOVER_LIMIT = 3
 # Used only when the catalog cannot be fetched at start-up.
@@ -579,6 +579,11 @@ class FreeBrain(Brain):
             override = dict(_NVIDIA_MODEL_PAYLOAD_OVERRIDES.get(spec.model.lower(), {}))
             override["max_tokens"] = min(int(override.get("max_tokens", self.max_tokens)), self.max_tokens)
             payload.update(override)
+            if spec.model == "nvidia/nemotron-3-super-120b-a12b":
+                # The free pool's short output budget must leave room for a
+                # visible answer or tool call, rather than hidden thinking.
+                payload["chat_template_kwargs"] = {"enable_thinking": False}
+                payload.pop("reasoning_budget", None)
         else:
             payload["provider"] = free_provider_policy()
         return payload
@@ -628,6 +633,8 @@ class FreeBrain(Brain):
             return None, f"rate limited, retry in {format_wait(seconds)}"
         error = body.get("error") if isinstance(body, dict) else None
         detail = error.get("message") if isinstance(error, dict) else None
+        if not detail and isinstance(body, dict):
+            detail = body.get("detail") or body.get("title")  # NVIDIA problem+json
         suffix = f": {str(detail)[:240]}" if detail else ""
         if status == 401:
             self.limiter.cool_down(spec.provider, 3600)

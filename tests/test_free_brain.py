@@ -17,7 +17,7 @@ from modules.free_brain import (
     parse_models,
 )
 
-NV = ModelSpec("nvidia", "openai/gpt-oss-120b")
+NV = ModelSpec("nvidia", "openai/gpt-oss-20b")
 NV2 = ModelSpec("nvidia", "meta/llama-3.3-70b-instruct")
 OR = ModelSpec("openrouter", "vendor/model:free")
 
@@ -192,6 +192,31 @@ def test_upgrade_clears_legacy_openrouter_lockout_but_preserves_new_key_failures
     assert restored.availability(OR)[0] == 3600
 
 
+def test_nvidia_retirement_details_survive_and_fallback_still_answers(tmp_path, monkeypatch):
+    brain = make(tmp_path, monkeypatch, [
+        (410, {}, {"title": "Gone", "detail": "This model has reached its end of life"}),
+        reply("Available model"),
+    ])
+    answer = run(ask(brain))[0]
+    assert answer.startswith("Available model") and "end of life" in answer
+
+
+def test_default_nvidia_pool_uses_current_models_and_leaves_room_for_answers(tmp_path, monkeypatch):
+    specs = parse_models(free_brain.DEFAULT_MODELS)
+    nvidia = [s for s in specs if s.provider == "nvidia"]
+    assert [s.model for s in nvidia] == [
+        "openai/gpt-oss-20b", "nvidia/nemotron-3-super-120b-a12b",
+        "nvidia/nemotron-3.5-lightning-30b-a3b",
+    ]
+    assert parse_models("gpt-oss-120b")[0].model == "openai/gpt-oss-120b"
+    brain = make(tmp_path, monkeypatch, [], models=nvidia)
+    for spec in nvidia[1:]:
+        payload = brain._payload(spec, [{"role": "user", "content": "Hello"}])
+        assert payload["chat_template_kwargs"] == {"enable_thinking": False}
+        assert "reasoning_budget" not in payload
+        assert payload["max_tokens"] == brain.max_tokens
+
+
 def test_a_chat_turn_sends_history_and_records_usage(tmp_path, monkeypatch):
     brain = make(tmp_path, monkeypatch, [reply("Hello!", {"prompt_tokens": 9, "completion_tokens": 3}),
                                          reply("Second")])
@@ -335,7 +360,7 @@ def test_models_are_switched_by_number_name_alias_or_fragment(tmp_path, monkeypa
     brain = make(tmp_path, monkeypatch, [], models=(NV, NV2), model="llama")
     assert brain.model == NV2.key
     for value, expected in (("1", NV.key), ("meta/llama-3.3-70b-instruct", NV2.key),
-                            ("gpt-oss", NV.key), ("nvidia:openai/gpt-oss-120b", NV.key),
+                            ("gpt-oss", NV.key), ("nvidia:openai/gpt-oss-20b", NV.key),
                             ("LLAMA-3.3", NV2.key)):
         assert run(brain.set_model(value)) is None and brain.model == expected, value
     for bad in ("9", "mistral", "", "nvidia"):
@@ -405,7 +430,7 @@ def test_model_command_lists_the_choices_and_switches(tmp_path, monkeypatch):
 
     async def scenario():
         await instance._handle_model(42, "/model")
-        assert "1. nvidia:openai/gpt-oss-120b" in instance.telegram.messages[-1][1]
+        assert "1. nvidia:openai/gpt-oss-20b" in instance.telegram.messages[-1][1]
         await instance._handle_model(42, "/model 2")
         assert brain.model == NV2.key
         assert "→ nvidia:meta/llama-3.3-70b-instruct" in instance.telegram.messages[-1][1]
@@ -536,4 +561,4 @@ def test_a_standby_free_brain_still_reports_status(monkeypatch):
     status = instance._basic_status_for("free")
     text = format_status(status)
     assert "Keys: nvidia ✓" in text and "Usage: unavailable" not in text
-    assert "nvidia:openai/gpt-oss-120b" in text
+    assert "nvidia:openai/gpt-oss-20b" in text

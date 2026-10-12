@@ -18,7 +18,7 @@ from modules.free_work import (
 )
 from modules.workers import WorkerManager
 
-NV = ModelSpec("nvidia", "openai/gpt-oss-120b")
+NV = ModelSpec("nvidia", "openai/gpt-oss-20b")
 NV2 = ModelSpec("nvidia", "meta/llama-3.3-70b-instruct")
 OR = ModelSpec("openrouter", "vendor/model:free")
 
