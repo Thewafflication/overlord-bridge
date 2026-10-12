@@ -148,6 +148,50 @@ async def ask(brain, text="hi"):
     return [chunk async for chunk in brain.query(text)]
 
 
+def test_model_access_denial_does_not_block_healthy_openrouter_fallback(tmp_path, monkeypatch):
+    sibling = ModelSpec("openrouter", "other/model:free")
+    catalog = {"data": [{"id": spec.model, "pricing": {"prompt": "0", "completion": "0"}}
+                        for spec in (OR, sibling)]}
+
+    async def fake_get(*args, **kwargs):
+        return catalog
+
+    monkeypatch.setattr(free_brain, "_http_get_json", fake_get)
+    brain = make(tmp_path, monkeypatch, [
+        (403, {}, {"error": {"message": "Only available on agentic harnesses"}}),
+        reply("Working fallback"), reply("Still working"),
+    ], models=(OR, sibling), openrouter_enabled=True)
+    answer = run(ask(brain))[0]
+    assert answer.startswith("Working fallback") and "agentic harnesses" in answer
+    assert brain.limiter.availability(OR)[0] == 3600
+    assert brain.limiter.availability(sibling)[0] == 0
+    assert run(ask(brain))[0].startswith("Still working")
+    assert len(brain.calls) == 3
+
+
+def test_invalid_key_still_blocks_the_provider(tmp_path, monkeypatch):
+    brain = make(tmp_path, monkeypatch, [
+        (401, {}, {"error": {"message": "Invalid API key"}}),
+    ])
+    answer = run(ask(brain))[0]
+    assert "Invalid API key" in answer and "rejected the API key" in answer
+    assert brain.limiter.availability(NV2)[0] == 3600
+    assert len(brain.calls) == 1
+
+
+def test_upgrade_clears_legacy_openrouter_lockout_but_preserves_new_key_failures(tmp_path):
+    clock = Clock()
+    path = tmp_path / "usage.json"
+    path.write_text(json.dumps({"cooldown": {"openrouter": clock() + 3600,
+                                            NV.key: clock() + 600}}), encoding="utf-8")
+    limiter = UsageLimiter(path, {}, clock)
+    assert limiter.availability(OR)[0] == 0
+    assert limiter.availability(NV)[0] == 600
+    limiter.cool_down("openrouter", 3600)
+    restored = UsageLimiter(path, {}, clock)
+    assert restored.availability(OR)[0] == 3600
+
+
 def test_a_chat_turn_sends_history_and_records_usage(tmp_path, monkeypatch):
     brain = make(tmp_path, monkeypatch, [reply("Hello!", {"prompt_tokens": 9, "completion_tokens": 3}),
                                          reply("Second")])

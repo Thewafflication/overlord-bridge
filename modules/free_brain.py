@@ -282,6 +282,11 @@ class UsageLimiter:
                     and type(entry.get("count")) is int and entry["count"] >= 0):
                 self._daily[provider] = {"day": entry["day"], "count": entry["count"]}
         for key, until in (data.get("cooldown") or {}).items():
+            # Older releases persisted OpenRouter's model-specific 403 as a
+            # provider-wide lockout. Discard that legacy lockout on upgrade;
+            # versioned state still preserves genuine 401 key failures.
+            if key == "openrouter" and data.get("cooldown_version") != 2:
+                continue
             if isinstance(until, (int, float)) and not isinstance(until, bool) and until > now:
                 self._cooldown[key] = float(until)
 
@@ -290,6 +295,7 @@ class UsageLimiter:
             return
         now = self.clock()
         payload = {
+            "cooldown_version": 2,
             "recent": {p: self._prune(p, now) for p in list(self._recent)},
             "daily": self._daily,
             "cooldown": {k: v for k, v in self._cooldown.items() if v > now},
@@ -620,17 +626,23 @@ class FreeBrain(Brain):
             seconds = _parse_duration(headers.get("retry-after")) or 60.0
             self.limiter.cool_down(spec.key, min(seconds, 86_400.0))
             return None, f"rate limited, retry in {format_wait(seconds)}"
-        if status in (401, 403):
+        error = body.get("error") if isinstance(body, dict) else None
+        detail = error.get("message") if isinstance(error, dict) else None
+        suffix = f": {str(detail)[:240]}" if detail else ""
+        if status == 401:
             self.limiter.cool_down(spec.provider, 3600)
-            return None, f"{spec.provider} rejected the API key (HTTP {status})"
+            return None, f"{spec.provider} rejected the API key (HTTP {status})" + suffix
+        if status == 403:
+            # Permission can be model-specific (e.g. OpenRouter's agent-harness
+            # gate). Do not disable healthy sibling models using the same key.
+            self.limiter.cool_down(spec.key, 3600)
+            return None, "access denied (HTTP 403)" + suffix
         if status >= 500:
             self.limiter.cool_down(spec.key, 30)
             return None, f"provider error (HTTP {status})"
         if status != 200:
             self.limiter.cool_down(spec.key, 600)
-            message = body.get("error", {}).get("message") if isinstance(body, dict) and \
-                isinstance(body.get("error"), dict) else None
-            return None, f"HTTP {status}" + (f": {str(message)[:120]}" if message else "")
+            return None, f"HTTP {status}" + suffix
         self._note_rate_headers(spec, headers)
         try:
             message = dict(body["choices"][0]["message"])
