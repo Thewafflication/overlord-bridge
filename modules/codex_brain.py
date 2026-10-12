@@ -1128,6 +1128,19 @@ class CodexBrain(Brain):
                 cursors.add(cursor)
         raise ValueError("Native model catalog exceeds page budget")
 
+    async def model_options(self) -> list[tuple[str, str]]:
+        try:
+            names = sorted(await self.routing_model_ids())
+        except Exception as exc:  # noqa: BLE001 - fall back to the configured model
+            log.info("Codex model catalog unavailable for /model: %s", exc)
+            names = []
+        if self.model and self.model not in names:
+            names.append(self.model)
+        return [(name, "") for name in names]
+
+    async def effort_options(self) -> list[tuple[str, str]]:
+        return [("default", "engine default")] + [(level, "") for level in EFFORT_LEVELS]
+
     async def reset(self) -> None:
         self._cancel_server_requests()
         self.session_file.unlink(missing_ok=True)

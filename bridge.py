@@ -436,6 +436,7 @@ class Bridge:
     # Class-level default so partially built instances (tests, early failures)
     # report "no active turn" rather than raising.
     _active_turn_task: asyncio.Task[None] | None = None
+    _switcher_task: asyncio.Task[None] | None = None
 
     def __init__(self) -> None:
         self.prompt_router = PromptRouter.from_environment()
@@ -1364,13 +1365,24 @@ class Bridge:
                 last = router.last.get(self.brain.name)
                 if last:
                     routing += f"\nLast route: {last['status']} — {last['reason']}"
+            if kind == "effort" and not getattr(self.brain, "supports_effort", False):
+                self.telegram.send(
+                    chat_id, f"{self.brain.name} has no reasoning-effort setting."
+                )
+                return
+            other = ""
+            if getattr(self.brain, "supports_effort", False):
+                other_kind = "effort" if kind == "model" else "model"
+                other = (f"\n{other_kind.capitalize()}: "
+                         f"{getattr(self.brain, other_kind, None) or 'default'}")
             self.telegram.send(
                 chat_id,
-                f"{kind.capitalize()} [{self.brain.name}]: {current or 'default'}\n"
-                f"Change it with /{kind} <value>.{routing}"
+                f"{kind.capitalize()} [{self.brain.name}]: {current or 'default'}{other}\n"
+                f"Change it with /{kind} <value>, or pick below.{routing}"
                 + (f"\n{self.brain.model_help}"
                    if kind == "model" and getattr(self.brain, "model_help", None) else ""),
             )
+            self._start_switcher(chat_id, kind)
             return
         if kind == "effort" and not getattr(self.brain, "supports_effort", False):
             self.telegram.send(
@@ -1435,6 +1447,58 @@ class Bridge:
             f"✅ {kind.capitalize()} [{self.brain.name}] → {applied}. "
             f"Takes effect on your next message.{note}",
         )
+
+    def _start_switcher(self, chat_id: int, kind: str) -> None:
+        """Offer the available models/efforts as Telegram buttons (in the background,
+        so waiting for a tap never blocks the main loop or /stop)."""
+        if not hasattr(getattr(self, "gate", None), "choose"):
+            return
+        previous = self._switcher_task
+        if previous is not None and not previous.done():
+            previous.cancel()
+        self._switcher_task = asyncio.create_task(self._run_switcher(chat_id, kind))
+        self._switcher_task.add_done_callback(self._log_switcher_error)
+
+    @staticmethod
+    def _log_switcher_error(task: asyncio.Task) -> None:
+        if not task.cancelled() and task.exception() is not None:
+            log.warning("Model switcher failed: %s", task.exception())
+
+    async def _run_switcher(self, chat_id: int, kind: str) -> None:
+        brain = self.brain
+        getter = getattr(brain, "model_options" if kind == "model" else "effort_options", None)
+        try:
+            options = list(await asyncio.wait_for(getter(), 8)) if getter else []
+        except Exception as exc:  # noqa: BLE001 - the typed command still works
+            log.info("Could not list %s options for %s: %s", kind, brain.name, exc)
+            options = []
+        current = getattr(brain, kind, None) or "default"
+        if not options:
+            return
+        # Telegram prompts hold few buttons: keep the current value visible and
+        # leave the rest to the "type another answer" button.
+        options.sort(key=lambda item: item[0] != current)
+        entries = [
+            (value, ("● current" + (f" — {note}" if note else "")) if value == current else note)
+            for value, note in options[:7]
+        ]
+        other_kind = "effort" if kind == "model" else "model"
+        switch_label = None
+        if getattr(brain, "supports_effort", False):
+            switch_label = f"⚙ Change {other_kind}…"
+            entries.append((switch_label, f"now {getattr(brain, other_kind, None) or 'default'}"))
+        choice = await self.gate.choose(
+            f"Switch {kind} for {brain.name} (now {current}):", entries
+        )
+        if not choice:
+            return
+        if choice == switch_label:
+            await self._run_switcher(chat_id, other_kind)
+            return
+        if choice == current:
+            self.telegram.send(chat_id, f"Already using {current}.")
+            return
+        await self._handle_engine_setting(chat_id, f"/{kind} {choice}", kind=kind)
 
     @staticmethod
     def _env_key_for(kind: str, brain_name: str) -> str:

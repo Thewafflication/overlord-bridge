@@ -585,6 +585,16 @@ class ClaudeBrain(Brain):
             )
         return None
 
+    async def model_options(self) -> list[tuple[str, str]]:
+        options = [("opus", "most capable"), ("sonnet", "balanced"), ("haiku", "fastest, lightest")]
+        if self.model and self.model not in {name for name, _ in options}:
+            options.append((self.model, "configured"))
+        return options
+
+    async def effort_options(self) -> list[tuple[str, str]]:
+        notes = {"low": "fastest", "max": "deepest reasoning"}
+        return [("default", "engine default")] + [(l, notes.get(l, "")) for l in EFFORT_LEVELS]
+
     async def count_input_tokens(self, text: str) -> tuple[int | None, str]:
         """Ask Anthropic exactly what *text* costs as input; estimate if it can't.
 

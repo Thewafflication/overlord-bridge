@@ -487,6 +487,14 @@ class Brain(abc.ABC):
         """Switch the reasoning-effort level, same contract as :meth:`set_model`."""
         return f"{self.name} does not expose a reasoning-effort setting."
 
+    async def model_options(self) -> list[tuple[str, str]]:
+        """Models the operator can pick, as ``(value, note)`` pairs for /model buttons."""
+        return []
+
+    async def effort_options(self) -> list[tuple[str, str]]:
+        """Effort levels the operator can pick (empty when unsupported)."""
+        return []
+
     async def count_input_tokens(self, text: str) -> tuple[int | None, str]:
         """Count the input tokens *text* would cost, without spending a turn.
 

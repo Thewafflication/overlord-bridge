@@ -363,6 +363,13 @@ class FreeBrain(Brain):
                  for n, s in enumerate(self.models, 1)]
         return "Available:\n" + "\n".join(lines)
 
+    async def model_options(self) -> list[tuple[str, str]]:
+        options = []
+        for spec in self.models:
+            wait, reason = self.limiter.availability(spec)
+            options.append((spec.key, f"{reason}, back in {format_wait(wait)}" if wait > 0 else "ready"))
+        return options
+
     async def set_model(self, model: str) -> str | None:
         spec = self._resolve(model)
         if spec is None:
