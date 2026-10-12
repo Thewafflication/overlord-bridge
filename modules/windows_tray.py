@@ -68,6 +68,7 @@ class WindowsTray:
             ),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(self._console_menu_label, self._toggle_console_clicked),
+            pystray.MenuItem("API keys…", self._setup_clicked),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Stop Overlord", self._stop_clicked),
         )
@@ -114,6 +115,26 @@ class WindowsTray:
             log.info("Hid Overlord console")
         elif self._launch_console_viewer():
             self._signal_console("show")
+
+    def _setup_clicked(self, icon, item) -> None:
+        self.launch_setup()
+
+    def launch_setup(self) -> bool:
+        """Open the API-key setup window (separate process, like the console)."""
+        root = Path(__file__).resolve().parent.parent
+        pythonw = Path(sys.executable).with_name("pythonw.exe")
+        if not pythonw.exists():
+            pythonw = Path(sys.executable)
+        arguments = [str(pythonw), str(root / "tools" / "overlord_setup.py"),
+                     "--env", str(root / ".env")]
+        if self.command_path is not None:
+            arguments.extend(("--command", str(self.command_path)))
+        try:
+            subprocess.Popen(arguments, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except OSError as exc:
+            log.warning("Could not open the setup window: %s", exc)
+            return False
+        return True
 
     def _signal_console(self, action: str) -> None:
         if self._console_signal is None:

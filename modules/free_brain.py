@@ -42,7 +42,17 @@ from modules.workers import (
 log = logging.getLogger("overlord.free")
 
 PROVIDERS = ("nvidia", "openrouter")
-DEFAULT_MODELS = "nvidia:gpt-oss,nvidia:mistral,nvidia:llama"
+# "openrouter:free" means: discover the best zero-priced chat models from the live
+# catalog (fixed IDs go stale quickly). OpenRouter leads, NVIDIA follows.
+DEFAULT_MODELS = "openrouter:free,nvidia:gpt-oss,nvidia:mistral,nvidia:llama"
+DISCOVER = "free"
+DISCOVER_LIMIT = 3
+# Used only when the catalog cannot be fetched at start-up.
+FALLBACK_OPENROUTER = (
+    "nvidia/nemotron-3-super-120b-a12b:free",
+    "google/gemma-4-31b-it:free",
+)
+_NOT_CHAT = ("safety", "guard", "embed", "moderation", "rerank")
 # Conservative published-tier defaults: OpenRouter's free tier is about 20/min
 # and 50/day without credits; NIM is rate limited per minute only.
 DEFAULT_LIMITS = {"nvidia": (20, 0), "openrouter": (15, 45)}
@@ -84,6 +94,35 @@ def parse_models(raw: str) -> list[ModelSpec]:
         if spec not in specs:
             specs.append(spec)
     return specs
+
+
+def discover_free_models(catalog: Any, limit: int = DISCOVER_LIMIT) -> list[str]:
+    """Best zero-priced OpenRouter chat models: largest context, one per vendor."""
+    if not isinstance(catalog, dict) or not isinstance(catalog.get("data"), list):
+        return []
+    candidates = []
+    for entry in catalog["data"]:
+        if not isinstance(entry, dict) or not isinstance(entry.get("id"), str):
+            continue
+        model = entry["id"]
+        if not model.endswith(":free") or any(word in model.lower() for word in _NOT_CHAT):
+            continue
+        try:
+            validate_free_model(catalog, model, require_tools=False)
+        except ValueError:
+            continue
+        context = entry.get("context_length")
+        candidates.append((-(context if isinstance(context, int) else 0), model))
+    chosen, vendors = [], set()
+    for _, model in sorted(candidates):
+        vendor = model.split("/", 1)[0]
+        if vendor in vendors:
+            continue
+        vendors.add(vendor)
+        chosen.append(model)
+        if len(chosen) >= limit:
+            break
+    return chosen
 
 
 def format_wait(seconds: float) -> str:
@@ -318,7 +357,17 @@ class FreeBrain(Brain):
         self._admitted: dict[str, str | None] = {}  # openrouter model -> None ok | reason
         self.unavailable: list[str] = []
         self.models: list[ModelSpec] = []
+        self._discover_at: int | None = None
+        self._preferred = model
         for spec in models:
+            if spec.provider == "openrouter" and spec.model == DISCOVER:
+                if not self.keys.get("openrouter"):
+                    self.unavailable.append("openrouter:free: no openrouter API key configured")
+                elif not openrouter_enabled:
+                    self.unavailable.append("openrouter:free: disabled (OVERLORD_FREE_OPENROUTER_ENABLED=0)")
+                else:
+                    self._discover_at = len(self.models)
+                continue
             if not self.keys.get(spec.provider):
                 self.unavailable.append(f"{spec.key}: no {spec.provider} API key configured")
             elif spec.provider == "openrouter" and not openrouter_enabled:
@@ -383,7 +432,31 @@ class FreeBrain(Brain):
         return ([chosen] if chosen else []) + rest
 
     # ------------------------------------------------------------- lifecycle
+    async def _expand_discovery(self) -> None:
+        """Replace the ``openrouter:free`` placeholder with live-catalog models."""
+        if self._discover_at is None:
+            return
+        try:
+            catalog = await _http_get_json(
+                self.bases["openrouter"].rstrip("/") + "/models", timeout=20,
+                api_key=self.keys["openrouter"],
+            )
+            found = discover_free_models(catalog)
+        except Exception as exc:  # noqa: BLE001 - fall back to the known list
+            log.warning("OpenRouter free-model discovery failed (%s); using fallbacks.", exc)
+            found = []
+        if not found:
+            found = list(FALLBACK_OPENROUTER)
+        specs = [ModelSpec("openrouter", m) for m in found]
+        specs = [s for s in specs if s not in self.models]
+        self.models[self._discover_at:self._discover_at] = specs
+        self._discover_at = None
+        chosen = self._resolve(self._preferred) if self._preferred else None
+        default = chosen or (self.models[0] if self.models else None)
+        self.model = default.key if default else None
+
     async def connect(self, resume: str | None = None) -> None:
+        await self._expand_discovery()
         self._history = self._load_history()
         log.info("FreeBrain ready (models=%s, selected=%s, history=%d messages)",
                  [s.key for s in self.models], self.model, len(self._history))
@@ -429,7 +502,17 @@ class FreeBrain(Brain):
 
     # ----------------------------------------------------------------- status
     async def status(self, *, force_refresh: bool = False) -> dict[str, Any]:
+        return self.status_snapshot()
+
+    def status_snapshot(self) -> dict[str, Any]:
+        """Synchronous status: key state, per-model availability and budgets."""
         lines = []
+        keys = ", ".join(f"{p} {'✓' if self.keys.get(p) else '✗ no key'}" for p in PROVIDERS)
+        lines.append(f"Keys: {keys}")
+        for spec in self.models:
+            wait, reason = self.limiter.availability(spec)
+            state = f"{reason}, back in {format_wait(wait)}" if wait > 0 else "ready"
+            lines.append(f"{'●' if spec.key == self.model else '○'} {spec.key}: {state}")
         for provider in PROVIDERS:
             if not any(s.provider == provider for s in self.models):
                 continue
@@ -439,10 +522,8 @@ class FreeBrain(Brain):
             day = f"{snap['day_used']}/{snap['day_cap']} today" if snap["day_cap"] else \
                 f"{snap['day_used']} today (no daily cap set)"
             lines.append(f"{provider}: {minute} · {day}")
-        for spec in self.models:
-            cooling = self.limiter.cooling(spec)
-            if cooling > 0:
-                lines.append(f"{spec.key}: cooling down {format_wait(cooling)}")
+        if self._discover_at is not None:
+            lines.append("openrouter:free: models are discovered when the brain starts")
         lines.extend(f"unavailable — {reason}" for reason in self.unavailable)
         return {
             "brain": self.name, "model": self.model or "none", "session_id": self.session_id,
@@ -460,7 +541,7 @@ class FreeBrain(Brain):
                     self.bases["openrouter"].rstrip("/") + "/models",
                     timeout=30, api_key=self.keys["openrouter"],
                 )
-                validate_free_model(catalog, spec.model)
+                validate_free_model(catalog, spec.model, require_tools=False)
                 self._admitted[spec.model] = None
             except Exception as exc:  # noqa: BLE001 - fail closed on any doubt
                 self._admitted[spec.model] = f"not admitted as free: {exc}"

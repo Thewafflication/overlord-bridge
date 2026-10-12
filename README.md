@@ -598,8 +598,18 @@ in `run/free_usage.json` so restarts cannot reset them), plus cooldowns taken fr
 `Retry-After` and rate-limit headers after a 429. A model that is cooling down or
 out of budget is skipped for the next configured one, the reply says which model
 answered, and when every model is spent you are told when the first returns.
-`/status` shows each provider's budget. OpenRouter is opt-in
-(`OVERLORD_FREE_OPENROUTER_ENABLED=1`), only accepts `:free` IDs, and is admitted
-only while the live catalog prices the model at zero. Chat history is kept in
+`/status` lists keys, every model's state and each provider's budget. OpenRouter
+leads the default list (`openrouter:free` discovers the best zero-priced chat models
+from the live catalog at start-up) and is on once a key is set
+(`OVERLORD_FREE_OPENROUTER_ENABLED=0` opts out); it only accepts `:free` IDs and
+admits a model only while the live catalog prices it at zero.
+
+**API keys window:** tray icon → *API keys…* (or `run-windows.ps1 -Setup`) opens a
+window to paste and test the NVIDIA and OpenRouter keys. It saves them to `.env` and
+a running Overlord reloads them without a restart.
+
+**Start-up splash (Windows):** a small window shows the start-up stage and a live log
+tail until Overlord is online, and stays up with the error if start-up fails.
+`OVERLORD_SPLASH=0` disables it. Chat history is kept in
 `.session.free`; `/new` clears it. Defaults are conservative published free-tier
 numbers, not live-verified; no provider calls were made in offline tests.

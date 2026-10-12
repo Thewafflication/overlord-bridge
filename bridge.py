@@ -40,6 +40,12 @@ from pathlib import Path
 from queue import Queue
 from typing import Any
 
+from modules import startup_state
+
+if __name__ == "__main__":
+    # Before the slow imports below, so the splash window appears immediately.
+    startup_state.begin(Path(__file__).resolve().parent)
+
 from modules import cli_notify
 from modules.brain import Brain, PermissionGate
 from modules.prompt_router import PromptRouter
@@ -264,6 +270,7 @@ WORKER_REPORT_TERMINAL_INJECT = env_bool("WORKER_REPORT_TERMINAL_INJECT", False)
 WORKER_REPORT_TMUX_SESSION = os.environ.get("WORKER_REPORT_TMUX_SESSION", "").strip()
 
 if not TOKEN or not OWNER_RAW:
+    startup_state.failed("Configuration", "TELEGRAM_BOT_TOKEN and OWNER_CHAT_ID must be set in .env")
     sys.exit("ERROR: TELEGRAM_BOT_TOKEN and OWNER_CHAT_ID must be set in .env")
 OWNER = int(OWNER_RAW)
 
@@ -392,7 +399,8 @@ def build_brain(gate: PermissionGate, brain_name: str | None = None) -> Brain:
                                          "OVERLORD_WORKER_OPENROUTER_API_KEY")),
             },
             bases={"nvidia": nvidia_base} if nvidia_base else None,
-            openrouter_enabled=env_bool("OVERLORD_FREE_OPENROUTER_ENABLED", False),
+            # A configured OpenRouter key is the consent; set the flag to 0 to opt out.
+            openrouter_enabled=env_bool("OVERLORD_FREE_OPENROUTER_ENABLED", True),
             limiter=UsageLimiter(BASE_DIR / "run" / "free_usage.json", limits),
             max_tokens=env_int("OVERLORD_FREE_MAX_TOKENS", 2048),
             history_chars=env_int("OVERLORD_FREE_HISTORY_CHARS", 24_000),
@@ -657,17 +665,21 @@ class Bridge:
 
     # ---------------------------------------------------------------- main loop
     async def run(self) -> None:
+        startup_state.report("Connecting to Telegram")
         self.telegram.start()
         if not self.telegram.wait_ready(30):
             log.error("Telegram handler failed to start within 30s")
+            startup_state.failed("Telegram", "Telegram did not connect within 30s. Check the bot token and network.")
             return
 
         resumed = session_file_for(self.brain_name).exists()
+        startup_state.report(f"Starting the {self.brain.name} brain")
         try:
             await self.brain.connect()
         except Exception as exc:
             log.exception("Brain failed to start")
             self.telegram.send(OWNER, f"⚠️ Failed to start {self.brain.name}: {exc}")
+            startup_state.failed(f"{self.brain.name} brain", f"Failed to start {self.brain.name}: {exc}")
             return
 
         asyncio.create_task(self._refresh_status(self.brain))
@@ -700,6 +712,7 @@ class Bridge:
             )
             + approve_note,
         )
+        startup_state.ready()
         # Start the brain-agnostic worker dispatch watcher (background).
         asyncio.create_task(self.workers.watch())
         if STATUS_REFRESH_SECS:
@@ -1074,6 +1087,49 @@ class Bridge:
             except Exception as exc:  # noqa: BLE001 - a button must not kill the loop
                 log.warning("Console action %r failed: %s", action, exc)
 
+    # Settings the setup window may change while the bridge is running.
+    _RELOADABLE_ENV = (
+        "OVERLORD_FREE_", "OVERLORD_WORKER_NVIDIA_", "OVERLORD_WORKER_OPENROUTER_",
+        "NVIDIA_API_KEY",
+    )
+
+    async def _reload_env(self) -> None:
+        """Pick up API-key/free-model edits from .env without a restart."""
+        env_file = BASE_DIR / ".env"
+        try:
+            data = env_file.read_bytes()
+        except OSError:
+            return
+        try:
+            text = data.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            text = data.decode("cp1252", errors="replace")
+        wanted: dict[str, str] = {}
+        for raw in text.splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            if key.startswith(self._RELOADABLE_ENV):
+                wanted[key] = value.strip().strip('"').strip("'")
+        # Only what the file says is applied (a cleared key is written as an empty
+        # value); settings that come from the process environment are left alone.
+        os.environ.update(wanted)
+        log.info("Reloaded %d API-key/free-model setting(s) from .env", len(wanted))
+        if self.brain.name == "free" and not self._turn_is_active():
+            candidate = build_brain(self.gate, "free")
+            async with self._brain_lock:
+                await candidate.connect()
+                previous, self.brain = self.brain, candidate
+                await previous.disconnect()
+            self._status_by_brain["free"] = self._basic_status_for("free")
+            self._status_cache = dict(self._status_by_brain["free"])
+        else:
+            self._status_by_brain["free"] = self._basic_status_for("free")
+        self._write_console_status()
+        self.telegram.send(OWNER, "🔑 Settings reloaded from the setup window.")
+
     async def _run_console_action(self, action: str) -> None:
         if action == "refresh_status":
             await self._refresh_status(self.brain, force=True)
@@ -1089,6 +1145,8 @@ class Bridge:
                 self._status_by_brain[name] = self._basic_status_for(name)
             self._write_console_status()
             log.info("Refreshed all brain status cards from the console")
+        elif action == "reload_env":
+            await self._reload_env()
         elif action == "send_status":
             await self._handle_status(OWNER, "/status")
             log.info("Sent /status to Telegram from the console")
@@ -1130,13 +1188,23 @@ class Bridge:
                 model = MODEL if brain_name == "claude" else (CODEX_MODEL or "default")
                 effort = EFFORT if brain_name == "claude" else CODEX_EFFORT
             session_id = "saved" if session_file_for(brain_name).exists() else None
-        return {
+        status = {
             "brain": brain_name,
             "model": model,
             "effort": effort or None,
             "session_id": session_id,
             "usage": self._read_cached_usage(brain_name),
         }
+        if brain_name == "free":
+            # The free brain has no plan window: describe keys, models and budgets.
+            holder = self.brain if brain_name == getattr(self.brain, "name", None) else None
+            try:
+                holder = holder or build_brain(None, "free")
+                status.update(holder.status_snapshot())
+                status["session_id"] = session_id
+            except Exception as exc:  # noqa: BLE001 - status is best effort
+                log.debug("Could not describe the free brain: %s", exc)
+        return status
 
     @staticmethod
     def _read_cached_usage(brain_name: str) -> dict[str, Any] | None:
@@ -1734,6 +1802,7 @@ class Bridge:
 
 
 async def _run_bridge() -> None:
+    startup_state.report("Initializing")
     bridge = Bridge()
     loop = asyncio.get_running_loop()
     for sig_name in ("SIGTERM", "SIGINT"):
@@ -1755,6 +1824,7 @@ def main() -> None:
     try:
         singleton.acquire()
     except AlreadyRunningError:
+        startup_state.failed("Already running", "Overlord is already running on this machine.")
         log.error(
             "Overlord is already running on this machine. Use the notification-"
             "area icon to stop it before starting another instance."
@@ -1764,6 +1834,9 @@ def main() -> None:
         asyncio.run(_run_bridge())
     except (KeyboardInterrupt, SystemExit):
         log.info("Shutting down Overlord bridge")
+    except Exception as exc:
+        startup_state.failed("Crashed", f"{type(exc).__name__}: {exc}")
+        raise
     finally:
         singleton.release()
 

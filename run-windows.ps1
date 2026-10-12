@@ -3,6 +3,7 @@ param(
     [switch]$Install,
     [switch]$Check,
     [switch]$Help,
+    [switch]$Setup,
     [string]$WorkingDirectory,
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$RemainingArguments
@@ -26,7 +27,13 @@ if ($Help -or $RemainingArguments -contains '/?') {
     Write-Host ""
     Write-Host "  -Install                Create/update .venv dependencies before starting."
     Write-Host "  -Check                  Validate and show configuration without starting."
+    Write-Host "  -Setup                  Open the API-key setup window (NVIDIA / OpenRouter)."
     Write-Host "  -WorkingDirectory PATH  Agent workspace (default: the launch directory)."
+    return
+}
+if ($Setup) {
+    # Opens the API-key window without starting the bridge.
+    & (Join-Path $ProjectRoot ".venv\Scripts\pythonw.exe") (Join-Path $ProjectRoot "tools\overlord_setup.py")
     return
 }
 if ($RemainingArguments.Count -gt 0) {

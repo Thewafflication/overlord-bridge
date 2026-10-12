@@ -315,7 +315,7 @@ def test_status_reports_budgets_cooldowns_and_unavailable_models(tmp_path, monke
     status = run(brain.status())
     summary = "\n".join(status["usage_summary"])
     assert "nvidia: 1/20 per min · 1 today (no daily cap set)" in summary
-    assert "cooling down 2m" in summary and "unavailable — openrouter:" in summary
+    assert "cooling down, back in 2m" in summary and "unavailable — openrouter:" in summary
     text = format_status(status)
     assert "Usage: unavailable" not in text and "nvidia: 1/20 per min" in text
     assert "Session: active" in text
@@ -338,10 +338,10 @@ def test_build_brain_reads_models_keys_and_limits_from_the_environment(monkeypat
         "OVERLORD_FREE_OPENROUTER_API_KEY": "or",
     }.items():
         monkeypatch.setenv(name, value)
-    monkeypatch.delenv("OVERLORD_FREE_OPENROUTER_ENABLED", raising=False)
+    monkeypatch.setenv("OVERLORD_FREE_OPENROUTER_ENABLED", "0")  # explicit opt-out
     brain = bridge.build_brain(object(), "free")
     assert brain.name == "free" and brain.model == NV.key
-    assert [s.key for s in brain.models] == [NV.key]  # openrouter lacks consent
+    assert [s.key for s in brain.models] == [NV.key]  # openrouter is opted out
     assert brain.limiter.limits["nvidia"] == (7, 0)
     assert brain.limiter.limits["openrouter"] == free_brain.DEFAULT_LIMITS["openrouter"]
 
@@ -371,3 +371,125 @@ def test_model_command_lists_the_choices_and_switches(tmp_path, monkeypatch):
 
     run(scenario())
     bridge.os.environ.pop("OVERLORD_FREE_MODEL", None)
+
+
+# ------------------------------------------------- OpenRouter as the default
+CATALOG = {"data": [
+    {"id": "big/model-a:free", "context_length": 1_000_000, "pricing": {"prompt": "0", "completion": "0"}},
+    {"id": "big/model-b:free", "context_length": 900_000, "pricing": {"prompt": "0", "completion": "0"}},
+    {"id": "other/model-c:free", "context_length": 200_000, "pricing": {"prompt": "0", "completion": "0"}},
+    {"id": "other/content-safety:free", "context_length": 999_999, "pricing": {"prompt": "0", "completion": "0"}},
+    {"id": "paid/model:free", "context_length": 999_999, "pricing": {"prompt": "0.1", "completion": "0"}},
+    {"id": "third/model-d:free", "context_length": 100_000, "pricing": {"prompt": "0", "completion": "0"}},
+    {"id": "fourth/model-e:free", "context_length": 50_000, "pricing": {"prompt": "0", "completion": "0"}},
+    {"id": "vendor/not-free", "context_length": 5_000_000, "pricing": {"prompt": "0", "completion": "0"}},
+    "junk", {"id": 5},
+]}
+
+
+def test_discovery_picks_priced_at_zero_chat_models_one_per_vendor():
+    assert free_brain.discover_free_models(CATALOG) == [
+        "big/model-a:free", "other/model-c:free", "third/model-d:free"]
+    assert free_brain.discover_free_models(CATALOG, limit=1) == ["big/model-a:free"]
+    assert free_brain.discover_free_models({"data": "x"}) == []
+    assert free_brain.discover_free_models(None) == []
+
+
+def test_openrouter_leads_the_default_model_list():
+    specs = parse_models(free_brain.DEFAULT_MODELS)
+    assert specs[0] == ModelSpec("openrouter", "free")
+    assert {s.provider for s in specs} == {"openrouter", "nvidia"}
+
+
+def test_connect_expands_the_placeholder_from_the_live_catalog(tmp_path, monkeypatch):
+    async def fake_get(url, *, timeout, api_key):
+        return CATALOG
+
+    monkeypatch.setattr(free_brain, "_http_get_json", fake_get)
+    brain = make(tmp_path, monkeypatch, [], models=(ModelSpec("openrouter", "free"), NV),
+                 openrouter_enabled=True)
+    assert brain.models == [NV] and brain.model == NV.key
+    assert "discovered" in "\n".join(brain.status_snapshot()["usage_summary"])
+    run(brain.connect())
+    assert [s.key for s in brain.models] == [
+        "openrouter:big/model-a:free", "openrouter:other/model-c:free",
+        "openrouter:third/model-d:free", NV.key]
+    assert brain.model == "openrouter:big/model-a:free"  # OpenRouter leads
+
+
+def test_a_preferred_model_survives_discovery(tmp_path, monkeypatch):
+    async def fake_get(url, *, timeout, api_key):
+        return CATALOG
+
+    monkeypatch.setattr(free_brain, "_http_get_json", fake_get)
+    brain = make(tmp_path, monkeypatch, [], models=(ModelSpec("openrouter", "free"), NV),
+                 openrouter_enabled=True, model="other/model-c:free")
+    run(brain.connect())
+    assert brain.model == "openrouter:other/model-c:free"
+
+
+def test_discovery_falls_back_to_known_models_when_the_catalog_is_unreachable(tmp_path, monkeypatch):
+    async def broken(url, *, timeout, api_key):
+        raise OSError("offline")
+
+    monkeypatch.setattr(free_brain, "_http_get_json", broken)
+    brain = make(tmp_path, monkeypatch, [], models=(ModelSpec("openrouter", "free"),),
+                 openrouter_enabled=True)
+    run(brain.connect())
+    assert [s.model for s in brain.models] == list(free_brain.FALLBACK_OPENROUTER)
+
+
+def test_discovery_without_a_key_or_with_openrouter_disabled_says_why(tmp_path, monkeypatch):
+    keyless = make(tmp_path, monkeypatch, [], models=(ModelSpec("openrouter", "free"), NV),
+                   keys={"nvidia": "k", "openrouter": ""}, openrouter_enabled=True)
+    run(keyless.connect())
+    assert keyless.models == [NV] and "no openrouter API key" in keyless.unavailable[0]
+    optout = make(tmp_path, monkeypatch, [], models=(ModelSpec("openrouter", "free"), NV),
+                  openrouter_enabled=False)
+    run(optout.connect())
+    assert optout.models == [NV] and "disabled" in optout.unavailable[0]
+
+
+def test_openrouter_is_on_by_default_in_the_bridge(monkeypatch):
+    monkeypatch.delenv("OVERLORD_FREE_OPENROUTER_ENABLED", raising=False)
+    monkeypatch.delenv("OVERLORD_FREE_MODELS", raising=False)
+    monkeypatch.setenv("OVERLORD_FREE_OPENROUTER_API_KEY", "or-key")
+    monkeypatch.delenv("OVERLORD_FREE_MODEL", raising=False)
+    brain = bridge.build_brain(object(), "free")
+    assert brain._discover_at == 0  # the placeholder is active, not gated off
+
+
+def test_chat_models_are_admitted_without_tool_support(tmp_path, monkeypatch):
+    catalog = {"data": [{"id": OR.model, "pricing": {"prompt": "0", "completion": "0"}}]}
+
+    async def fake_get(url, *, timeout, api_key):
+        return catalog
+
+    monkeypatch.setattr(free_brain, "_http_get_json", fake_get)
+    brain = make(tmp_path, monkeypatch, [reply("hi")], models=(OR,), openrouter_enabled=True,
+                 limits={"openrouter": (10, 10)})
+    assert run(ask(brain)) == ["hi"]
+
+
+# ------------------------------------------------------------------- status
+def test_status_lists_every_model_with_its_state_and_marks_the_current_one(tmp_path, monkeypatch):
+    brain = make(tmp_path, monkeypatch, [], models=(NV, NV2))
+    brain.limiter.cool_down(NV2.key, 90)
+    lines = brain.status_snapshot()["usage_summary"]
+    assert lines[0] == "Keys: nvidia ✓, openrouter ✓"
+    assert f"● {NV.key}: ready" in lines
+    assert any(l.startswith(f"○ {NV2.key}: cooling down, back in") for l in lines)
+
+
+def test_a_standby_free_brain_still_reports_status(monkeypatch):
+    for name in ("OVERLORD_WORKER_NVIDIA_API_KEY", "OVERLORD_FREE_MODELS"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("OVERLORD_WORKER_NVIDIA_API_KEY", "nv")
+    monkeypatch.setenv("OVERLORD_FREE_OPENROUTER_ENABLED", "0")
+    instance = bridge.Bridge.__new__(bridge.Bridge)
+    instance.brain = type("Active", (), {"name": "claude", "model": "opus", "effort": None,
+                                         "session_id": None})()
+    status = instance._basic_status_for("free")
+    text = format_status(status)
+    assert "Keys: nvidia ✓" in text and "Usage: unavailable" not in text
+    assert "nvidia:openai/gpt-oss-120b" in text

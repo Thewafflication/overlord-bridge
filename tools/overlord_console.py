@@ -151,7 +151,7 @@ class OverlordConsole:
         status_frame = ttk.Frame(outer, style="Console.TFrame")
         status_frame.pack(fill="x", pady=(0, 8))
         self.brain_status = {}
-        for name in ("claude", "codex"):
+        for name in ("claude", "codex", "free"):
             value = tk.StringVar(value=format_brain_summary(name, {}, ""))
             self.brain_status[name] = value
             card = tk.Label(
@@ -165,7 +165,7 @@ class OverlordConsole:
                 pady=8,
                 font=("Segoe UI", 9),
             )
-            padding = (0, 4) if name == "claude" else (4, 0)
+            padding = (0, 4) if name == "claude" else (4, 0) if name == "free" else (4, 4)
             card.pack(side="left", fill="x", expand=True, padx=padding)
 
         text_frame = ttk.Frame(outer, style="Console.TFrame")

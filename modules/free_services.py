@@ -5,7 +5,7 @@ from decimal import Decimal, InvalidOperation
 OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 
 
-def validate_free_model(catalog: object, model: str) -> None:
+def validate_free_model(catalog: object, model: str, *, require_tools: bool = True) -> None:
     if not model.endswith(":free"):
         raise ValueError("OpenRouter worker requires an explicit :free model ID")
     if not isinstance(catalog, dict) or not isinstance(catalog.get("data"), list):
@@ -26,7 +26,7 @@ def validate_free_model(catalog: object, model: str) -> None:
             raise ValueError("Free model must have zero input and output prices")
     supported = entry.get("supported_parameters")
     # A bare string would make `"tools" in supported` a substring test.
-    if not isinstance(supported, list) or "tools" not in supported:
+    if require_tools and (not isinstance(supported, list) or "tools" not in supported):
         raise ValueError("Free worker model must advertise tool support")
 
 
