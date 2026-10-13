@@ -52,6 +52,7 @@ from claude_agent_sdk import (
 )
 
 from modules import shared_job
+from modules.host_context import host_instructions
 from modules.brain import Brain, PermissionGate, collect_candidates
 from modules.command_activity import log_command
 from modules.commands import reset_has_passed
@@ -789,7 +790,7 @@ class ClaudeBrain(Brain):
             # the brain loses a signal that used to be implicit in "this arrived
             # over the bridge". Ben offered to type a tag himself; he shouldn't
             # have to -- the bridge already knows which mic it came from.
-            tagged = TELEGRAM_TAG + text
+            tagged = TELEGRAM_TAG + host_instructions() + "\n\nOwner message:\n" + text
             reply = await asyncio.to_thread(shared_job.inject, job, tagged)
             if isinstance(reply, str) and reply:
                 # Idle session answered inside the sync window: inline, as before.

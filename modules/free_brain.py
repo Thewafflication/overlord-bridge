@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any, AsyncIterator, Awaitable, Callable
 
 from modules.brain import Brain
+from modules.host_context import host_instructions
 from modules.free_services import OPENROUTER_BASE, free_provider_policy, validate_free_model
 from modules.workers import (
     DEFAULT_NVIDIA_API_BASE,
@@ -714,7 +715,7 @@ class FreeBrain(Brain):
                   "file/line evidence without editing. Answer ordinary conversation directly. "
                   "Never claim a worker started without calling the tool."
                   if tools else SYSTEM_PROMPT)
-        messages = [{"role": "system", "content": prompt}, *self._history,
+        messages = [{"role": "system", "content": prompt + "\n\n" + host_instructions()}, *self._history,
                     {"role": "user", "content": text}]
         primary = self._order()[0]
         try:

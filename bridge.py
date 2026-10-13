@@ -48,6 +48,7 @@ if __name__ == "__main__":
 
 from modules import cli_notify
 from modules.brain import Brain, PermissionGate
+from modules.host_context import host_instructions
 from modules.prompt_router import PromptRouter
 from modules.permission_audit import PermissionAudit
 from modules.gui_settings import decode_paths, PROJECT_FOLDERS, PROJECT_ROOTS, SETTING_NAMES
@@ -420,7 +421,7 @@ def build_brain(gate: PermissionGate, brain_name: str | None = None) -> Brain:
     session_file = session_file_for(selected)
     shared_instructions = load_shared_instructions()
     developer_instructions = "\n\n".join(
-        part for part in (shared_instructions, TELEGRAM_CHOICE_INSTRUCTIONS) if part
+        part for part in (shared_instructions, TELEGRAM_CHOICE_INSTRUCTIONS, host_instructions()) if part
     )
     if selected == "free":
         from modules.free_brain import FreeBrain, UsageLimiter, DEFAULT_LIMITS, DEFAULT_MODELS, parse_models

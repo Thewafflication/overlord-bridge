@@ -6,6 +6,11 @@ workflow lands.
 
 ## Current Capabilities
 
+- Runtime host context: all bridge brains and project workers receive the actual
+  host platform. Windows owner instructions use PowerShell and Windows paths;
+  local/free worker shell commands account for their cmd.exe execution surface.
+  Linux documentation examples or old conversation cannot establish the host OS.
+
 - Timed full access: `/permissions full [minutes]` grants bridge approval access
   for a bounded window (default 10 minutes, range 1–1440), including free-worker
   writes and commands. Pending requests are released; every subsequent request

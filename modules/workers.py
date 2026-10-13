@@ -54,6 +54,7 @@ import uuid
 
 from modules import shared_job
 from modules.command_activity import log_command
+from modules.host_context import host_instructions
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -1434,7 +1435,7 @@ class WorkerManager:
                 "need project context, do not inspect files or run commands; return the final "
                 "answer directly. "
                 "Prefer the suggested starting files and any preloaded file contents before exploring further. "
-                "Prefer targeted rg/sed/git/python/npm commands. "
+                "Prefer targeted commands compatible with the host environment. "
                 "When editing files, read them first and then write complete updated text. "
                 "Do not touch generated/vendor artifacts unless the user explicitly asks. "
                 "Before final, run relevant validation and git status. "
@@ -1447,7 +1448,7 @@ class WorkerManager:
         messages: list[dict[str, Any]] = [
             {
                 "role": "system",
-                "content": system_prompt,
+                "content": system_prompt + "\n\n" + host_instructions(worker_shell=True),
             },
             {
                 "role": "user",
@@ -2119,7 +2120,7 @@ class WorkerManager:
 
         sid = session or str(uuid.uuid4())
         argv = self._build_worker_argv(
-            brain, task, sid, session, resume, model,
+            brain, host_instructions() + "\n\nTask:\n" + task, sid, session, resume, model,
             approval_policy, sandbox, bypass_codex_sandbox,
         )
         env = None
