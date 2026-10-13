@@ -49,6 +49,7 @@ if __name__ == "__main__":
 from modules import cli_notify
 from modules.brain import Brain, PermissionGate
 from modules.host_context import host_instructions
+from modules.output_text import OUTPUT_INSTRUCTIONS
 from modules.prompt_router import PromptRouter
 from modules.permission_audit import PermissionAudit
 from modules.gui_settings import decode_paths, PROJECT_FOLDERS, PROJECT_ROOTS, SETTING_NAMES, PERMISSION_LEVEL, permission_level
@@ -421,7 +422,7 @@ def build_brain(gate: PermissionGate, brain_name: str | None = None) -> Brain:
     session_file = session_file_for(selected)
     shared_instructions = load_shared_instructions()
     developer_instructions = "\n\n".join(
-        part for part in (shared_instructions, TELEGRAM_CHOICE_INSTRUCTIONS, host_instructions()) if part
+        part for part in (shared_instructions, TELEGRAM_CHOICE_INSTRUCTIONS, host_instructions(), OUTPUT_INSTRUCTIONS) if part
     )
     if selected == "free":
         from modules.free_brain import FreeBrain, UsageLimiter, DEFAULT_LIMITS, DEFAULT_MODELS, parse_models
@@ -1881,7 +1882,8 @@ class Bridge:
                 async for chunk in query:
                     if chunk and chunk.strip():
                         chunks.append(chunk.strip())
-                        self.telegram.send(chat_id, chunk)
+                if chunks:
+                    self.telegram.send(chat_id, "\n\n".join(chunks))
                 self._conversation_history.append_exchange(text, "\n\n".join(chunks))
                 self._conversation_history.mark_seen(self.brain.name)
                 self._pending_handoff = None
@@ -1898,6 +1900,8 @@ class Bridge:
             self.telegram.send(chat_id, f"⚠️ Error: {exc}")
         finally:
             if not history_recorded and outcome != "ok":
+                if chunks:
+                    self.telegram.send(chat_id, "\n\n".join(chunks))
                 self._conversation_history.append_exchange(
                     text, "\n\n".join(chunks) +
                     f"\n[Turn {outcome}; effects may have occurred. "

@@ -6,6 +6,13 @@ workflow lands.
 
 ## Current Capabilities
 
+- Clearer output and collapsible logs: the Windows console shows a short latest
+  activity summary and a collapsed detailed-log pane that keeps collecting while
+  hidden. Telegram renders explicitly labelled `log`/`output` fenced blocks as
+  expandable quotes. Findings and instructions stay visible; token counters and
+  fallback diagnostics have short summaries with expandable details. Brain turns
+  are delivered together on completion; partial text is preserved on interruption.
+
 - Permission levels: Settings → Permissions provides a persisted `ask`, `safe`
   (default), or `full` bridge level, stored in `OVERLORD_PERMISSION_LEVEL`.
   `ask` prompts for actions; `safe` auto-approves the routine command allowlist;

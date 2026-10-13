@@ -35,6 +35,7 @@ from telegram import (
     Update,
 )
 from telegram.constants import ChatAction
+from modules.output_text import telegram_blocks, expandable_html
 from telegram.error import BadRequest, Conflict, NetworkError, RetryAfter, TelegramError
 from telegram.ext import (
     Application,
@@ -385,13 +386,18 @@ class TelegramHandler(threading.Thread):
     send_response = send
 
     async def _send(self, chat_id: int, text: str) -> None:
-        for chunk in _chunks(text):
-            await self._telegram_call(
-                "send_message",
-                lambda chunk=chunk: self.bot.send_message(
-                    chat_id=chat_id, text=chunk
-                ),
-            )
+        for block, expandable in telegram_blocks(text):
+            for chunk in _chunks(block):
+                if not chunk.strip():
+                    continue
+                await self._telegram_call(
+                    "send_message",
+                    lambda chunk=chunk, expandable=expandable: self.bot.send_message(
+                        chat_id=chat_id,
+                        text=expandable_html(chunk) if expandable else chunk,
+                        **({"parse_mode": "HTML"} if expandable else {}),
+                    ),
+                )
 
     async def _telegram_call(
         self,
@@ -701,5 +707,13 @@ class TelegramHandler(threading.Thread):
 
 
 def _chunks(text: str) -> Iterator[str]:
-    for i in range(0, len(text), MAX_MESSAGE_LEN):
-        yield text[i : i + MAX_MESSAGE_LEN]
+    start = 0
+    units = 0
+    for index, character in enumerate(text):
+        width = 2 if ord(character) > 0xFFFF else 1
+        if units + width > MAX_MESSAGE_LEN:
+            yield text[start:index]
+            start, units = index, 0
+        units += width
+    if start < len(text):
+        yield text[start:]

@@ -14,6 +14,7 @@ from tkinter import ttk
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from modules.commands import format_brain_card  # noqa: E402
 from modules.version import display_version  # noqa: E402
+from modules.output_text import activity_summary  # noqa: E402
 
 POLL_MS = 300
 INITIAL_TAIL_BYTES = 160_000
@@ -67,6 +68,8 @@ class OverlordConsole:
         self.root.protocol("WM_DELETE_WINDOW", self.hide)
 
         self.autoscroll = tk.BooleanVar(value=True)
+        self.logs_visible = False
+        self.activity = tk.StringVar(value="Waiting for activity…")
         self.status = tk.StringVar(value=f"Live log: {self.log_path}")
         # Replaced by the running bridge's version as soon as it publishes one:
         # the console can be launched from a different checkout than the bridge
@@ -186,8 +189,12 @@ class OverlordConsole:
             padding = (0, 4) if name == "claude" else (4, 0) if name == "free" else (4, 4)
             card.pack(side="left", fill="x", expand=True, padx=padding)
 
-        text_frame = ttk.Frame(outer, style="Console.TFrame")
-        text_frame.pack(fill="both", expand=True)
+        ttk.Label(outer, text="Latest activity", style="Console.TLabel").pack(anchor="w")
+        ttk.Label(outer, textvariable=self.activity, style="Console.TLabel",
+                  wraplength=900, font=("Segoe UI", 11)).pack(fill="x", pady=(4, 12))
+        self.log_toggle = ttk.Button(outer, text="Show detailed logs ▸", command=self.toggle_logs)
+        self.log_toggle.pack(anchor="w", pady=(0, 6))
+        text_frame = self.log_frame = ttk.Frame(outer, style="Console.TFrame")
         scrollbar = ttk.Scrollbar(text_frame, orient="vertical")
         scrollbar.pack(side="right", fill="y")
         self.text = tk.Text(
@@ -210,6 +217,14 @@ class OverlordConsole:
             fill="x", pady=(7, 0)
         )
 
+    def toggle_logs(self) -> None:
+        self.logs_visible = not self.logs_visible
+        if self.logs_visible:
+            self.log_frame.pack(fill="both", expand=True, after=self.log_toggle)
+        else:
+            self.log_frame.pack_forget()
+        self.log_toggle.configure(text="Hide detailed logs ▾" if self.logs_visible else "Show detailed logs ▸")
+
     def _configure_tags(self) -> None:
         self.text.tag_configure("error", foreground="#fb7185")
         self.text.tag_configure("warning", foreground="#fbbf24")
@@ -231,6 +246,8 @@ class OverlordConsole:
         self.text.configure(state="normal")
         for line in content.splitlines(keepends=True):
             self.text.insert("end", line, level_for_line(line))
+            if line.strip():
+                self.activity.set(activity_summary(line))
         line_count = int(self.text.index("end-1c").split(".", 1)[0])
         if line_count > MAX_WIDGET_LINES:
             self.text.delete("1.0", f"{line_count - MAX_WIDGET_LINES}.0")
@@ -358,6 +375,7 @@ class OverlordConsole:
         self.text.configure(state="normal")
         self.text.delete("1.0", "end")
         self.text.configure(state="disabled")
+        self.activity.set("Log view cleared. Waiting for activity…")
 
     def copy_all(self) -> None:
         content = self.text.get("1.0", "end-1c")

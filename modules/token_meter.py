@@ -233,9 +233,9 @@ def _cost(value: float | None) -> str | None:
 def format_footer(usage: TurnUsage, totals: "LedgerTotals | None" = None) -> str:
     """One compact line to append after a reply."""
     bits = [
-        f"in {human(usage.billed_input)}",
-        f"out {human(usage.output_tokens)}",
-        f"total {human(usage.total_tokens)}",
+        f"Input: {human(usage.billed_input)} tokens",
+        f"Output: {human(usage.output_tokens)} tokens",
+        f"Total: {human(usage.total_tokens)} tokens",
     ]
     if usage.cache_read_tokens:
         bits.append(f"cached {human(usage.cache_read_tokens)}")
@@ -244,8 +244,6 @@ def format_footer(usage: TurnUsage, totals: "LedgerTotals | None" = None) -> str
         bits.append(cost)
     line = "🧮 " + " · ".join(bits)
     label = OUTCOME_LABELS.get(usage.outcome)
-    if label:
-        line += f"\n⚠️ {label}"
     if totals is not None and totals.prompts > 0:
         line += (
             f"\nSession: {human(totals.total_tokens)} over "
@@ -254,7 +252,10 @@ def format_footer(usage: TurnUsage, totals: "LedgerTotals | None" = None) -> str
         session_cost = _cost(totals.cost_usd)
         if session_cost:
             line += f" · {session_cost}"
-    return line
+    summary = f"🧮 Tokens used: {human(usage.total_tokens)}"
+    if label:
+        summary += f"\n⚠️ {label}"
+    return summary + "\n```log\n" + line + "\n```"
 
 
 def format_status_block(ledger: "TokenLedger") -> str | None:

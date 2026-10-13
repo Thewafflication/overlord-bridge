@@ -32,6 +32,7 @@ from typing import Any, AsyncIterator, Awaitable, Callable
 
 from modules.brain import Brain
 from modules.host_context import host_instructions
+from modules.output_text import OUTPUT_INSTRUCTIONS
 from modules.free_services import OPENROUTER_BASE, free_provider_policy, validate_free_model
 from modules.workers import (
     DEFAULT_NVIDIA_API_BASE,
@@ -715,7 +716,7 @@ class FreeBrain(Brain):
                   "file/line evidence without editing. Answer ordinary conversation directly. "
                   "Never claim a worker started without calling the tool."
                   if tools else SYSTEM_PROMPT)
-        messages = [{"role": "system", "content": prompt + "\n\n" + host_instructions()}, *self._history,
+        messages = [{"role": "system", "content": prompt + "\n\n" + host_instructions() + "\n\n" + OUTPUT_INSTRUCTIONS}, *self._history,
                     {"role": "user", "content": text}]
         primary = self._order()[0]
         try:
@@ -732,5 +733,5 @@ class FreeBrain(Brain):
         self._trim_history()
         self._save_history()
         if spec != primary:
-            reply += f"\n\n— answered by {spec.key}; {skipped[0]}"
+            reply += f"\n\nUsed an available fallback model.\n```log\nanswered by {spec.key}\n{skipped[0]}\n```"
         yield reply

@@ -127,9 +127,9 @@ def test_footer_reports_in_out_and_total():
     ledger = TokenLedger()
     ledger.record(usage)
     footer = format_footer(usage, ledger.totals)
-    assert "in 1,440" in footer
-    assert "out 830" in footer
-    assert "total 14.7k" in footer
+    assert "Input: 1,440 tokens" in footer
+    assert "Output: 830 tokens" in footer
+    assert "Total: 14.7k tokens" in footer
     assert "cached 12.4k" in footer
     assert "$0.0312" in footer
     assert "1 prompt" in footer

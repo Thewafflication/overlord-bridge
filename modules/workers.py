@@ -55,6 +55,7 @@ import uuid
 from modules import shared_job
 from modules.command_activity import log_command
 from modules.host_context import host_instructions
+from modules.output_text import OUTPUT_INSTRUCTIONS
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -1448,7 +1449,7 @@ class WorkerManager:
         messages: list[dict[str, Any]] = [
             {
                 "role": "system",
-                "content": system_prompt + "\n\n" + host_instructions(worker_shell=True),
+                "content": system_prompt + "\n\n" + host_instructions(worker_shell=True) + "\n\n" + OUTPUT_INSTRUCTIONS,
             },
             {
                 "role": "user",
@@ -2120,7 +2121,7 @@ class WorkerManager:
 
         sid = session or str(uuid.uuid4())
         argv = self._build_worker_argv(
-            brain, host_instructions() + "\n\nTask:\n" + task, sid, session, resume, model,
+            brain, host_instructions() + "\n\n" + OUTPUT_INSTRUCTIONS + "\n\nTask:\n" + task, sid, session, resume, model,
             approval_policy, sandbox, bypass_codex_sandbox,
         )
         env = None

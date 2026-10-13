@@ -111,3 +111,37 @@ def test_without_a_bridge_the_buttons_say_so_instead_of_failing(tmp_path):
 
 def test_the_console_knows_its_own_version():
     assert display_version().startswith("v")
+
+
+def test_collapsed_logs_keep_collecting_and_toggle_without_losing_text():
+    import pytest
+    try:
+        root = MODULE.tk.Tk()
+    except MODULE.tk.TclError:
+        pytest.skip("No graphical display")
+    root.withdraw()
+    try:
+        console = MODULE.OverlordConsole.__new__(MODULE.OverlordConsole)
+        console.root = root
+        console.logs_visible = False
+        console.activity = MODULE.tk.StringVar(root)
+        console.autoscroll = MODULE.tk.BooleanVar(root, value=True)
+        console.log_toggle = MODULE.ttk.Button(root)
+        console.log_toggle.pack()
+        console.log_frame = MODULE.ttk.Frame(root)
+        console.text = MODULE.tk.Text(console.log_frame)
+        console.text.pack()
+        console._configure_tags()
+        console._append("INFO COMMAND worker started | cwd=C:/repo | make test\n")
+        assert "Running: make test" in console.activity.get()
+        assert "make test" in console.text.get("1.0", "end")
+        assert console.log_frame.winfo_manager() == ""
+        console.toggle_logs()
+        assert console.log_frame.winfo_manager() == "pack"
+        console.toggle_logs()
+        console._append("INFO COMMAND worker completed | cwd=C:/repo | make test | exit=0\n")
+        assert "Finished" in console.activity.get()
+        assert "started" in console.text.get("1.0", "end")
+        assert "completed" in console.text.get("1.0", "end")
+    finally:
+        root.destroy()
