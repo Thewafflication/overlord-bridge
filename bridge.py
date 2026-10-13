@@ -1014,13 +1014,25 @@ class Bridge:
         parts = text.split()
         if len(parts) == 1:
             self.telegram.send(chat_id, self.gate.format_grants())
+        elif len(parts) in (2, 3) and parts[1].lower() == "full":
+            try:
+                minutes = int(parts[2].lower().removesuffix("m")) if len(parts) == 3 else 10
+                granted = self.gate.grant_full_access(minutes)
+            except ValueError:
+                self.telegram.send(chat_id, "Use /permissions full <minutes> (1–1440; default 10).")
+                return
+            if granted:
+                self.telegram.send(chat_id,
+                    f"Full access enabled for {minutes} minutes for bridge approval requests, "
+                    "including workers. It expires automatically; /permissions revoke all ends it early. "
+                    "Off-limits protections still apply. Already started commands may finish after expiry.")
         elif len(parts) == 3 and parts[1].lower() == "revoke":
             count = self.gate.revoke_grants(
                 None if parts[2].lower() == "all" else parts[2]
             )
             self.telegram.send(chat_id, f"Revoked {count} permission grants.")
         else:
-            self.telegram.send(chat_id, "Usage: /permissions [revoke <id|all>]")
+            self.telegram.send(chat_id, "Usage: /permissions [full [minutes] | revoke <id|all>]")
 
     def _handle_context(self, chat_id: int) -> None:
         text = self._conversation_history.status()

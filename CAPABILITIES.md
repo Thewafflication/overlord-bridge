@@ -6,6 +6,13 @@ workflow lands.
 
 ## Current Capabilities
 
+- Timed full access: `/permissions full [minutes]` grants bridge approval access
+  for a bounded window (default 10 minutes, range 1–1440), including free-worker
+  writes and commands. Pending requests are released; every subsequent request
+  checks a monotonic deadline. Off-limits rules and native sandbox limits remain.
+  `/permissions` shows remaining time; `/permissions revoke all`, `/new`, or a
+  process restart clears the grant. Expiry does not cancel commands already started.
+
 - Free-brain natural project requests: Telegram chat offers an LLM tool to
   dispatch the existing free-model worker in a configured local project. Friendly
   project descriptions are resolved against the listed folder names; ambiguous

@@ -24,6 +24,7 @@ import hashlib
 import json
 import logging
 import string
+import time
 import uuid
 from pathlib import Path
 from typing import Any, AsyncIterator
@@ -91,6 +92,7 @@ class PermissionGate:
         # must never extend to reading secrets, so the hard floor still applies.
         self.auto_approve = auto_approve
         self.grants: dict[str, dict[str, Any]] = {}
+        self._full_access_until = 0.0
         self._permission_scopes: dict[str, dict[str, Any]] = {}
         # request_id -> (loop, future); the Telegram thread resolves the future
         # created on this loop when a button is tapped.
@@ -115,6 +117,8 @@ class PermissionGate:
                 if decision is False
                 else decision
             )
+            if normalized in ("allow", "session") and self.full_access_remaining() > 0:
+                normalized = "timed"
             if normalized == "session":
                 scope = self._permission_scopes.get(request_id)
                 if scope is not None:
@@ -125,7 +129,7 @@ class PermissionGate:
             scope = self._permission_scopes.get(request_id)
             if scope is not None:
                 scope["decision"] = normalized
-            fut.set_result(normalized in ("allow", "session"))
+            fut.set_result(normalized in ("allow", "session", "timed"))
         if not loop.is_closed():
             loop.call_soon_threadsafe(resolve)
 
@@ -203,6 +207,9 @@ class PermissionGate:
             self._audit_decision(grant_id, False, "off_limits")
             return False
 
+        if self.full_access_remaining() > 0:
+            return self._audit_decision(grant_id, True, "timed_full_access")
+
         if self.auto_approve:
             log.info("Auto-approved %s (auto_approve on; not off-limits)", title)
             return self._audit_decision(grant_id, True, "configured_auto_approval")
@@ -232,8 +239,11 @@ class PermissionGate:
             self.telegram.ask_permission(self.owner, header, request_id)
             allowed = await asyncio.wait_for(fut, timeout=self.timeout)
             decision = self._permission_scopes[request_id].get("decision", "deny")
+            if decision == "timed" and not self.full_access_remaining():
+                allowed = False
             recorded = self._audit_decision(grant_id, bool(allowed),
                 "revoked_pending" if decision == "revoked" else
+                "timed_full_access" if decision == "timed" else
                 "operator_session" if decision == "session" else "operator_once")
             if allowed and not recorded:
                 self.grants.pop(grant_id, None)
@@ -267,6 +277,30 @@ class PermissionGate:
             self.telegram.send(self.owner, "Permission audit could not be saved; action denied.")
         return bool(recorded)
 
+    def full_access_remaining(self) -> float:
+        return max(0.0, self._full_access_until - time.monotonic())
+
+    def grant_full_access(self, minutes: int) -> bool:
+        """Owner-issued, in-memory lease; check the deadline for every action."""
+        if not isinstance(minutes, int) or isinstance(minutes, bool) or not 1 <= minutes <= 1440:
+            raise ValueError("Duration must be 1–1440 minutes.")
+        if not self._audit_decision(None, True, "grant_timed_full_access"):
+            return False
+        # Disable permanent auto approval so the timed grant really expires.
+        self.auto_approve = False
+        self._full_access_until = time.monotonic() + minutes * 60
+        for request_id, (loop, future) in list(self.pending.items()):
+            def allow_pending(request_id=request_id, future=future):
+                scope = self._permission_scopes.get(request_id)
+                if (scope is not None and self.pending.pop(request_id, None) is not None
+                        and not future.done()):
+                    allowed = self.full_access_remaining() > 0
+                    scope["decision"] = "timed" if allowed else "revoked"
+                    future.set_result(allowed)
+            if not loop.is_closed():
+                loop.call_soon_threadsafe(allow_pending)
+        return True
+
     def revoke_grants(self, grant_id: str | None = None) -> int:
         """Revoke one exact grant or all grants, including legacy auto mode."""
         self._audit_decision(grant_id, False, "revoke_one" if grant_id else "revoke_all")
@@ -289,13 +323,17 @@ class PermissionGate:
                 cancel(self.owner, request_id)
         if grant_id is not None:
             return int(self.grants.pop(grant_id, None) is not None)
-        count = len(self.grants) + int(self.auto_approve)
+        count = len(self.grants) + int(self.auto_approve) + int(self.full_access_remaining() > 0)
+        self._full_access_until = 0.0
         self.grants.clear()
         self.auto_approve = False
         return count
 
     def format_grants(self) -> str:
         lines = ["Permission grants (current session)"]
+        remaining = self.full_access_remaining()
+        if remaining:
+            lines.append(f"Timed full access active: {int(remaining + 0.999)} seconds remaining.")
         if self.audit is not None:
             state = "healthy" if self.audit_ok else "unavailable" if self.audit_ok is False else "not yet used"
             lines.append(f"Local decision audit: {state} (action hashes; no arguments).")
@@ -305,7 +343,7 @@ class PermissionGate:
             lines.append("No exact-action grants.")
         for grant_id, grant in self.grants.items():
             lines.append(f"{grant_id}\n{grant['title']}: {grant['detail'][:200]}")
-        lines.append("/permissions revoke <id|all>")
+        lines.append("/permissions full [minutes] · /permissions revoke <id|all>")
         return "\n\n".join(lines)
 
     async def choose(
