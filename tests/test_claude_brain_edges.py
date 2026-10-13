@@ -287,6 +287,7 @@ def test_operator_decisions_map_to_sdk_results(tmp_path):
     async def scenario(decision):
         telegram = Telegram()
         brain = make_brain(tmp_path, gate=PermissionGate(telegram, 42, 1))
+        brain.gate.safe_commands = False
         task = asyncio.create_task(
             brain.can_use_tool("Bash", {"command": "make"}, SimpleNamespace(title="Run make"))
         )

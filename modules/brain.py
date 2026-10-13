@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any, AsyncIterator
 
 from modules.telegram_handler import TelegramHandler
+from modules.safe_commands import is_safe_command
 
 log = logging.getLogger("overlord.brain")
 
@@ -92,6 +93,7 @@ class PermissionGate:
         # must never extend to reading secrets, so the hard floor still applies.
         self.auto_approve = auto_approve
         self.grants: dict[str, dict[str, Any]] = {}
+        self.safe_commands = True
         self._full_access_until = 0.0
         self._permission_scopes: dict[str, dict[str, Any]] = {}
         # request_id -> (loop, future); the Telegram thread resolves the future
@@ -209,6 +211,13 @@ class PermissionGate:
 
         if self.full_access_remaining() > 0:
             return self._audit_decision(grant_id, True, "timed_full_access")
+
+        if self.safe_commands and context and title in {"Bash", "Codex: run command", "Free worker: run command"}:
+            native = context.get("request") or context.get("input") or {}
+            if isinstance(native, dict) and is_safe_command(
+                native.get("command"), context.get("workspace", ""), native.get("cwd")
+            ):
+                return self._audit_decision(grant_id, True, "safe_command_policy")
 
         if self.auto_approve:
             log.info("Auto-approved %s (auto_approve on; not off-limits)", title)
@@ -331,6 +340,7 @@ class PermissionGate:
 
     def format_grants(self) -> str:
         lines = ["Permission grants (current session)"]
+        lines.append(f"Routine command auto-approval: {'on' if self.safe_commands else 'off'}.")
         remaining = self.full_access_remaining()
         if remaining:
             lines.append(f"Timed full access active: {int(remaining + 0.999)} seconds remaining.")
@@ -343,7 +353,7 @@ class PermissionGate:
             lines.append("No exact-action grants.")
         for grant_id, grant in self.grants.items():
             lines.append(f"{grant_id}\n{grant['title']}: {grant['detail'][:200]}")
-        lines.append("/permissions full [minutes] · /permissions revoke <id|all>")
+        lines.append("/permissions full [minutes] · /permissions safe <on|off> · /permissions revoke <id|all>")
         return "\n\n".join(lines)
 
     async def choose(

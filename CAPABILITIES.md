@@ -6,6 +6,16 @@ workflow lands.
 
 ## Current Capabilities
 
+- Routine command approval policy: enabled by default in the shared permission
+  gate for Claude, Codex and free-worker approval requests. It accepts a bounded
+  set of Git inspection commands and local Make/pytest/npm/CMake/CTest build and
+  test commands inside the supplied workspace. Build recipes are trusted project
+  code. Unknown invocations, publishing/install/destructive operations, shell
+  chaining, expansions, redirection and paths outside the workspace still prompt.
+  Decisions are audited and off-limits checks run first. `/permissions safe off`
+  disables the policy for the running bridge; `safe on` restores it. Timed access
+  and exact-action grants remain separate controls.
+
 - Runtime host context: all bridge brains and project workers receive the actual
   host platform. Windows owner instructions use PowerShell and Windows paths;
   local/free worker shell commands account for their cmd.exe execution surface.

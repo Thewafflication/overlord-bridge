@@ -154,6 +154,7 @@ def test_codex_command_argument_paths_are_screened(tmp_path):
 def test_codex_ephemeral_ids_do_not_invalidate_exact_grant(tmp_path):
     async def scenario():
         gate = PermissionGate(Telegram(), 42, 1)
+        gate.safe_commands = False
         brain = CodexBrain(
             gate=gate, cwd=str(tmp_path), model="test",
             session_file=tmp_path / "session",

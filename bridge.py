@@ -1015,6 +1015,9 @@ class Bridge:
         parts = text.split()
         if len(parts) == 1:
             self.telegram.send(chat_id, self.gate.format_grants())
+        elif len(parts) == 3 and parts[1].lower() == "safe" and parts[2].lower() in {"on", "off"}:
+            self.gate.safe_commands = parts[2].lower() == "on"
+            self.telegram.send(chat_id, f"Routine command auto-approval: {parts[2].lower()}.")
         elif len(parts) in (2, 3) and parts[1].lower() == "full":
             try:
                 minutes = int(parts[2].lower().removesuffix("m")) if len(parts) == 3 else 10
@@ -1033,7 +1036,7 @@ class Bridge:
             )
             self.telegram.send(chat_id, f"Revoked {count} permission grants.")
         else:
-            self.telegram.send(chat_id, "Usage: /permissions [full [minutes] | revoke <id|all>]")
+            self.telegram.send(chat_id, "Usage: /permissions [full [minutes] | safe <on|off> | revoke <id|all>]")
 
     def _handle_context(self, chat_id: int) -> None:
         text = self._conversation_history.status()
