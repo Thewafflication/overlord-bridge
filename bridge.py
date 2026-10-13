@@ -50,6 +50,7 @@ from modules import cli_notify
 from modules.brain import Brain, PermissionGate
 from modules.prompt_router import PromptRouter
 from modules.permission_audit import PermissionAudit
+from modules.gui_settings import decode_paths, PROJECT_FOLDERS, PROJECT_ROOTS, SETTING_NAMES
 from modules.codex_discovery import resolve_codex_binary
 from modules.commands import (
     HELP_TEXT,
@@ -292,6 +293,7 @@ def project_roots() -> list[Path]:
     """Folders whose children are projects: the configured root, the workspace
     (unless that is the whole home directory) and the standard worker zones."""
     candidates: list[Path] = []
+    candidates.extend(configured_paths(PROJECT_ROOTS))
     if PROJECTS_ROOT:
         candidates.append(Path(PROJECTS_ROOT).expanduser())
     workspace = Path(CWD).expanduser()
@@ -310,7 +312,16 @@ def project_roots() -> list[Path]:
 
 def worker_extra_roots() -> tuple[Path, ...]:
     """Roots workers may use beyond ~/Projects and ~/Documents (e.g. source/repos)."""
-    return tuple(r for r in project_roots() if r not in _ALLOWED_ROOTS)
+    return tuple(r for r in project_roots() + configured_paths(PROJECT_FOLDERS)
+                 if r not in _ALLOWED_ROOTS)
+
+
+def configured_paths(key: str) -> list[Path]:
+    try:
+        return decode_paths(os.environ.get(key, ""))
+    except (ValueError, OSError, RuntimeError) as exc:
+        log.warning("Ignoring invalid %s: %s", key, exc)
+        return []
 
 
 def session_file_for(brain_name: str) -> Path:
@@ -704,6 +715,7 @@ class Bridge:
             send=self.telegram.send, roots=project_roots, workers=self.workers,
             gate=self.gate, pool=self._free_pool,
             approval=FREE_WORK_APPROVAL, patience=FREE_WORK_PATIENCE,
+            projects=lambda: configured_paths(PROJECT_FOLDERS),
         )
 
     # ---------------------------------------------------------------- main loop
@@ -1150,7 +1162,7 @@ class Bridge:
     )
 
     async def _reload_env(self) -> None:
-        """Pick up API-key/free-model edits from .env without a restart."""
+        """Apply API-key, project, and approval edits without a restart."""
         env_file = BASE_DIR / ".env"
         try:
             data = env_file.read_bytes()
@@ -1167,13 +1179,26 @@ class Bridge:
                 continue
             key, value = line.split("=", 1)
             key = key.strip()
-            if key.startswith(self._RELOADABLE_ENV):
+            if key.startswith(self._RELOADABLE_ENV) or key in SETTING_NAMES:
                 wanted[key] = value.strip().strip('"').strip("'")
         # Only what the file says is applied (a cleared key is written as an empty
         # value); settings that come from the process environment are left alone.
         os.environ.update(wanted)
+        global PROJECTS_ROOT, AUTO_APPROVE, CLAUDE_AUTO_APPROVE_EDITS, FREE_WORK_APPROVAL
+        PROJECTS_ROOT = os.environ.get("OVERLORD_PROJECTS_ROOT", PROJECTS_ROOT).strip()
+        AUTO_APPROVE = env_bool("OVERLORD_AUTO_APPROVE", AUTO_APPROVE)
+        CLAUDE_AUTO_APPROVE_EDITS = env_bool("OVERLORD_CLAUDE_AUTO_APPROVE_EDITS", CLAUDE_AUTO_APPROVE_EDITS)
+        FREE_WORK_APPROVAL = normalize_mode(os.environ.get("OVERLORD_FREE_WORK_APPROVAL"))
+        if self.gate is not None:
+            self.gate.auto_approve = AUTO_APPROVE
+        if self.brain.name == "claude":
+            self.brain.auto_approve_edits = CLAUDE_AUTO_APPROVE_EDITS
+        if hasattr(self, "workers"):
+            self.workers.extra_roots = worker_extra_roots()
+        if hasattr(self, "free_work"):
+            self.free_work.approval = FREE_WORK_APPROVAL
         self._free_standby = None  # rebuilt with the new keys on next use
-        log.info("Reloaded %d API-key/free-model setting(s) from .env", len(wanted))
+        log.info("Reloaded %d setting(s) from .env", len(wanted))
         if self.brain.name == "free" and not self._turn_is_active():
             candidate = build_brain(self.gate, "free")
             async with self._brain_lock:

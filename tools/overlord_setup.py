@@ -1,4 +1,4 @@
-"""Overlord setup window: NVIDIA / OpenRouter API keys for the free-model brain.
+"""Overlord setup window: API keys, project folders, and approval settings.
 
 Keys are typed into this window by the user and written to the bridge's ``.env``;
 nothing is sent anywhere except to the provider, and only when "Test" is pressed.
@@ -16,12 +16,16 @@ import tkinter as tk
 import urllib.error
 import urllib.request
 from pathlib import Path
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 from typing import Callable
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from modules.commands import _decode_dotenv, set_env_value  # noqa: E402
 from modules.version import display_version  # noqa: E402
+from modules.gui_settings import (  # noqa: E402
+    PROJECT_FOLDERS, PROJECT_ROOTS, AUTO_APPROVE, AUTO_EDITS, WORK_APPROVAL,
+    SETTING_NAMES, decode_paths, encode_paths,
+)
 
 NVIDIA_KEY = "OVERLORD_WORKER_NVIDIA_API_KEY"
 OPENROUTER_KEY = "OVERLORD_FREE_OPENROUTER_API_KEY"
@@ -125,7 +129,7 @@ class SetupWindow:
     def __init__(self, env_path: Path, command_path: Path | None) -> None:
         self.env_path, self.command_path = env_path, command_path
         current = read_env(env_path, (NVIDIA_KEY, "NVIDIA_API_KEY", OPENROUTER_KEY,
-                                      "OVERLORD_WORKER_OPENROUTER_API_KEY", OPENROUTER_ENABLED))
+                                      "OVERLORD_WORKER_OPENROUTER_API_KEY", OPENROUTER_ENABLED) + SETTING_NAMES)
         self.saved_nvidia = current.get(NVIDIA_KEY) or current.get("NVIDIA_API_KEY", "")
         self.saved_openrouter = (current.get(OPENROUTER_KEY)
                                  or current.get("OVERLORD_WORKER_OPENROUTER_API_KEY", ""))
@@ -145,8 +149,41 @@ class SetupWindow:
             style.configure(name, background="#111827", foreground=fg)
         style.configure("Setup.TFrame", background="#111827")
 
-        outer = ttk.Frame(self.root, style="Setup.TFrame", padding=16)
-        outer.pack(fill="both", expand=True)
+        notebook = ttk.Notebook(self.root)
+        notebook.pack(fill="both", expand=True, padx=12, pady=12)
+        outer = ttk.Frame(notebook, style="Setup.TFrame", padding=16)
+        notebook.add(outer, text="API keys")
+        projects = ttk.Frame(notebook, style="Setup.TFrame", padding=16)
+        notebook.add(projects, text="Projects")
+        self.project_folders = self._folder_list(projects, "Individual project folders",
+                                                current.get(PROJECT_FOLDERS, ""))
+        self.project_roots = self._folder_list(projects, "Folders containing projects",
+                                              current.get(PROJECT_ROOTS, ""))
+        self.legacy_root = current.get("OVERLORD_PROJECTS_ROOT", "")
+        if self.legacy_root and self.legacy_root not in self.project_roots.get(0, "end"):
+            self.project_roots.insert("end", self.legacy_root)
+        ttk.Label(projects, style="Muted.TLabel", wraplength=520,
+                  text="Add a project itself, or a parent such as source/repos. These folders "
+                       "become available to /work and worker dispatch. The current workspace "
+                       "and standard Projects/Documents folders remain available.").pack(pady=8)
+
+        permissions = ttk.Frame(notebook, style="Setup.TFrame", padding=16)
+        notebook.add(permissions, text="Permissions")
+        truth = lambda key: current.get(key, "0").lower() in ("1", "true", "yes", "on")
+        self.auto_approve = tk.BooleanVar(value=truth(AUTO_APPROVE))
+        self.auto_edits = tk.BooleanVar(value=truth(AUTO_EDITS))
+        ttk.Checkbutton(permissions, text="Auto-approve actions through the bridge permission gate",
+                        variable=self.auto_approve, style="Setup.TCheckbutton").pack(anchor="w", pady=8)
+        ttk.Checkbutton(permissions, text="Auto-approve Claude edits inside its workspace",
+                        variable=self.auto_edits, style="Setup.TCheckbutton").pack(anchor="w", pady=8)
+        ttk.Label(permissions, text="Free-model project work: ask before", style="Setup.TLabel").pack(anchor="w", pady=8)
+        self.work_approval = ttk.Combobox(permissions, state="readonly", values=("all", "commands", "none"))
+        self.work_approval.set(current.get(WORK_APPROVAL, "all"))
+        self.work_approval.pack(anchor="w")
+        ttk.Label(permissions, style="Muted.TLabel", wraplength=520,
+                  text="all: writes and commands · commands: shell commands only · none: no prompts.\n"
+                       "Off-limits rules still apply. Native engine sandbox and permission rules "
+                       "also apply. Session grants can be inspected or revoked in Telegram with /permissions.").pack(anchor="w", pady=12)
         ttk.Label(outer, text="Free-model API keys", style="Setup.TLabel",
                   font=("Segoe UI Semibold", 13)).grid(row=0, column=0, columnspan=4, sticky="w")
         ttk.Label(outer, style="Muted.TLabel", wraplength=520, justify="left",
@@ -164,12 +201,42 @@ class SetupWindow:
                         style="Setup.TCheckbutton").grid(row=8, column=0, columnspan=4,
                                                          sticky="w", pady=(8, 0))
         self.status = tk.StringVar(value="Leave a key blank to keep the saved one.")
-        ttk.Label(outer, textvariable=self.status, style="Muted.TLabel", wraplength=520,
-                  justify="left").grid(row=9, column=0, columnspan=4, sticky="w", pady=(12, 0))
-        buttons = ttk.Frame(outer, style="Setup.TFrame")
-        buttons.grid(row=10, column=0, columnspan=4, sticky="e", pady=(12, 0))
+        ttk.Label(self.root, textvariable=self.status, style="Muted.TLabel", wraplength=520,
+                  justify="left").pack(fill="x", padx=16)
+        buttons = ttk.Frame(self.root, style="Setup.TFrame")
+        buttons.pack(fill="x", padx=16, pady=12)
         ttk.Button(buttons, text="Save", command=self.save).pack(side="right")
         ttk.Button(buttons, text="Close", command=self.root.destroy).pack(side="right", padx=8)
+
+    def _folder_list(self, parent, title: str, saved: str):
+        ttk.Label(parent, text=title, style="Setup.TLabel").pack(anchor="w", pady=(8, 2))
+        listing = tk.Listbox(parent, width=72, height=5, bg="#172033", fg="#e5e7eb",
+                             selectbackground="#1d4ed8", exportselection=False)
+        listing.pack(fill="x")
+        try:
+            paths = decode_paths(saved)
+        except (ValueError, OSError, RuntimeError):
+            # Preserve saved rows even if a drive is temporarily disconnected.
+            try:
+                paths = json.loads(saved) if saved else []
+            except ValueError:
+                paths = []
+        if isinstance(paths, list):
+            for path in paths:
+                if isinstance(path, (str, Path)):
+                    listing.insert("end", str(path))
+        buttons = ttk.Frame(parent, style="Setup.TFrame")
+        buttons.pack(anchor="w", pady=4)
+        def add():
+            path = filedialog.askdirectory(parent=self.root, title=title)
+            if path and path not in listing.get(0, "end"):
+                listing.insert("end", path)
+        def remove():
+            for index in reversed(listing.curselection()):
+                listing.delete(index)
+        ttk.Button(buttons, text="Add folder…", command=add).pack(side="left")
+        ttk.Button(buttons, text="Remove", command=remove).pack(side="left", padx=6)
+        return listing
 
     def _key_row(self, parent, row, label, saved, tester, page):
         ttk.Label(parent, text=label, style="Setup.TLabel").grid(row=row, column=0, sticky="w")
@@ -227,7 +294,18 @@ class SetupWindow:
             NVIDIA_KEY: nvidia or None,
             OPENROUTER_KEY: openrouter or None,
             OPENROUTER_ENABLED: "1" if self.use_openrouter.get() else "0",
+            AUTO_APPROVE: "1" if self.auto_approve.get() else "0",
+            AUTO_EDITS: "1" if self.auto_edits.get() else "0",
+            WORK_APPROVAL: self.work_approval.get(),
         }
+        try:
+            values[PROJECT_FOLDERS] = encode_paths(list(self.project_folders.get(0, "end")))
+            values[PROJECT_ROOTS] = encode_paths(list(self.project_roots.get(0, "end")))
+            # Migrated into the root list, so removing a legacy row really removes it.
+            values["OVERLORD_PROJECTS_ROOT"] = ""
+        except (ValueError, OSError, RuntimeError) as exc:
+            self.status.set(f"✗ {exc}")
+            return
         try:
             save_settings(self.env_path, values)
         except OSError as exc:
@@ -235,7 +313,7 @@ class SetupWindow:
             return
         reloaded = request_reload(self.command_path)
         self.status.set("✓ Saved. " + (
-            "A running Overlord will pick the keys up within a second or two."
+            "A running Overlord will pick the settings up within a second or two."
             if reloaded else "Restart Overlord to apply them."))
         for entry in (self.nvidia, self.openrouter):
             entry.delete(0, "end")

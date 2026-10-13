@@ -53,6 +53,7 @@ import time
 import uuid
 
 from modules import shared_job
+from modules.command_activity import log_command
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -1163,12 +1164,14 @@ class WorkerManager:
                 return {"ok": False, "error": "missing_command"}
             denial = _local_agent_command_denial(command, folder)
             if denial:
+                log_command("worker", "denied", command, folder)
                 return {"ok": False, "error": denial, "command": command}
             timeout = arguments.get("timeout_seconds", DEFAULT_LOCAL_AGENT_COMMAND_TIMEOUT)
             try:
                 timeout_i = max(1, min(int(timeout), DEFAULT_LOCAL_AGENT_COMMAND_TIMEOUT))
             except (TypeError, ValueError):
                 timeout_i = DEFAULT_LOCAL_AGENT_COMMAND_TIMEOUT
+            log_command("worker", "started", command, folder)
             proc = await asyncio.create_subprocess_shell(
                 command,
                 cwd=str(folder),
@@ -1183,6 +1186,8 @@ class WorkerManager:
                 proc.kill()
                 out, err = await proc.communicate()
                 timed_out = True
+            log_command("worker", "timed out" if timed_out else "completed", command, folder,
+                        exit_code=proc.returncode)
             stdout = (out or b"").decode(errors="replace")
             stderr = (err or b"").decode(errors="replace")
             stdout_tail, stdout_truncated = _bounded_tail(stdout, DEFAULT_LOCAL_AGENT_TOOL_OUTPUT_CHARS)

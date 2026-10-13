@@ -226,6 +226,23 @@ than silently doing nothing.
 
 The console has Claude and Codex status cards, colored log levels,
 live updates, Copy All, Clear, and Autoscroll controls over a rotating 2 MB log.
+Choose **Settings…** in the console or tray to configure API keys, individual
+project folders, folders containing projects, bridge auto-approval, Claude
+workspace edit approval, and free-worker approval (`all`, `commands`, `none`).
+Save applies the project list and bridge approval settings to the running
+bridge. Individual projects appear by folder name in `/work`; parent folders
+contribute their children. Explicit projects take precedence over discovered
+projects with the same name. The workspace and standard project roots remain
+available independently of this list. Native engine sandbox and permission
+rules still apply, and off-limits folders cannot be registered.
+
+Model shell activity is highlighted in green in the console: Codex command
+start/completion events, Claude SDK Bash hooks, shared Claude Telegram-turn
+transcript events, and free/local/NVIDIA worker
+shell execution. Entries show the command, working folder, and completion
+status (including exit code for Codex and worker executions). Loaded API keys
+and tokens are redacted, multiline commands stay in one entry, and the existing
+bounded rotating log retains the activity.
 During AI turns, Telegram continuously shows the typing indicator; transient
 Telegram send failures are retried automatically so replies, model questions,
 and permission prompts are not dropped after a single network hiccup.

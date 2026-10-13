@@ -22,6 +22,8 @@ MAX_WIDGET_LINES = 5_000
 
 def level_for_line(line: str) -> str:
     """Return the rich-text tag for one standard Overlord log line."""
+    if " COMMAND " in line:
+        return "command"
     for level in ("ERROR", "WARNING", "DEBUG", "INFO"):
         if f" {level} " in line:
             return level.lower()
@@ -121,6 +123,7 @@ class OverlordConsole:
             side="right", padx=6
         )
         ttk.Button(toolbar, text="Hide", command=self.hide).pack(side="right")
+        ttk.Button(toolbar, text="Settings…", command=self.open_settings).pack(side="right", padx=6)
         stop_button = ttk.Button(toolbar, text="Stop Overlord",
                                  command=lambda: self.send_command("shutdown"))
         stop_button.pack(side="right", padx=6)
@@ -213,6 +216,7 @@ class OverlordConsole:
         self.text.tag_configure("info", foreground="#bfdbfe")
         self.text.tag_configure("debug", foreground="#64748b")
         self.text.tag_configure("plain", foreground="#d1d5db")
+        self.text.tag_configure("command", foreground="#86efac")
 
     def _seek_initial_tail(self) -> None:
         try:
@@ -297,6 +301,10 @@ class OverlordConsole:
             return
         self.action_status.set(f"Sent: {action.replace('_', ' ')}")
         self.root.after(4000, lambda: self.action_status.set(""))
+
+    def open_settings(self) -> None:
+        from modules.windows_tray import WindowsTray
+        WindowsTray(lambda: None, command_path=self.command_path).launch_setup()
 
     def _read_brain_status(self) -> None:
         if self.status_path is None:

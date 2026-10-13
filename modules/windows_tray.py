@@ -68,7 +68,7 @@ class WindowsTray:
             ),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(self._console_menu_label, self._toggle_console_clicked),
-            pystray.MenuItem("API keys…", self._setup_clicked),
+            pystray.MenuItem("Settings…", self._setup_clicked),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Stop Overlord", self._stop_clicked),
         )

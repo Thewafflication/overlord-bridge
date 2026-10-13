@@ -34,9 +34,12 @@ def normalize_mode(value: str | None) -> str:
     return mode if mode in APPROVAL_MODES else "all"
 
 
-def list_projects(roots: list[Path]) -> list[tuple[str, Path, bool]]:
+def list_projects(roots: list[Path], projects: list[Path] | None = None) -> list[tuple[str, Path, bool]]:
     """(name, path, is_git_repo) for each project folder directly under the roots."""
     found: dict[str, tuple[str, Path, bool]] = {}
+    for path in projects or []:
+        if path.is_dir():
+            found.setdefault(path.name.lower(), (path.name, path, (path / ".git").exists()))
     for root in roots:
         try:
             children = sorted(p for p in root.iterdir() if p.is_dir() and not p.name.startswith("."))
@@ -47,7 +50,7 @@ def list_projects(roots: list[Path]) -> list[tuple[str, Path, bool]]:
     return sorted(found.values(), key=lambda item: item[0].lower())
 
 
-def resolve_project(name: str, roots: list[Path]) -> Path | None:
+def resolve_project(name: str, roots: list[Path], projects: list[Path] | None = None) -> Path | None:
     """A project by folder name (case-insensitive) under the roots, or an absolute path."""
     name = name.strip().strip('"').strip("'")
     if not name:
@@ -57,7 +60,7 @@ def resolve_project(name: str, roots: list[Path]) -> Path | None:
         return candidate if candidate.is_dir() else None
     if any(sep in name for sep in ("/", chr(92))) or name in (".", ".."):
         return None  # a bare project name only; no relative escapes
-    for _, path, _ in list_projects(roots):
+    for _, path, _ in list_projects(roots, projects):
         if path.name.lower() == name.lower():
             return path
     return None
@@ -74,11 +77,13 @@ class FreeWork:
         pool: Callable[[], Awaitable[Any]],
         approval: str = "all",
         patience: float = 120.0,
+        projects: Callable[[], list[Path]] | None = None,
     ) -> None:
         self._send, self._roots, self.workers, self.gate = send, roots, workers, gate
         self._pool = pool
         self.approval = normalize_mode(approval)
         self.patience = patience
+        self._projects = projects or (lambda: [])
 
     # ------------------------------------------------------------- commands
     async def handle(self, chat_id: int, text: str) -> None:
@@ -96,7 +101,7 @@ class FreeWork:
             self._start(chat_id, parts[1], parts[2].strip())
 
     def _project_list(self) -> str:
-        projects = list_projects(self._roots())
+        projects = list_projects(self._roots(), self._projects())
         if not projects:
             return "No project folders found.\n" + USAGE
         names = [("● " if git else "○ ") + name for name, _, git in projects[:MAX_LISTED]]
@@ -124,7 +129,7 @@ class FreeWork:
         return "Stopping: " + ", ".join(names) + " (it reports when it has stopped)."
 
     def _start(self, chat_id: int, project: str, task: str) -> None:
-        path = resolve_project(project, self._roots())
+        path = resolve_project(project, self._roots(), self._projects())
         if path is None:
             self._send(chat_id, f"Unknown project “{project}”. Send /work to list them.")
             return

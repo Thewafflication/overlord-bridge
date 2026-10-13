@@ -266,6 +266,8 @@ def _reply_status(transcript: Path, message: str) -> "tuple[str | None, bool]":
 
     chunks: list[str] = []
     done = False
+    shell_calls: dict[str, tuple[object, object]] = {}
+    from modules.command_activity import log_shared_shell
     for rec in recs[anchor + 1:]:
         typ = rec.get("type")
         if typ == "user":
@@ -278,8 +280,23 @@ def _reply_status(transcript: Path, message: str) -> "tuple[str | None, bool]":
             if not is_tool_result:
                 done = True
                 break
+            for block in content:
+                if isinstance(block, dict) and block.get("tool_use_id") in shell_calls:
+                    tool_id = block["tool_use_id"]
+                    command, cwd = shell_calls[tool_id]
+                    log_shared_shell(transcript, tool_id, "failed" if block.get("is_error") else "completed",
+                                     command, cwd)
             continue
         if typ == "assistant":
+            content = rec.get("message", {}).get("content")
+            for block in content if isinstance(content, list) else []:
+                if isinstance(block, dict) and block.get("type") == "tool_use" and block.get("name") == "Bash":
+                    tool_id = block.get("id")
+                    if isinstance(tool_id, str):
+                        command = (block.get("input") or {}).get("command", "")
+                        cwd = rec.get("cwd", "")
+                        shell_calls[tool_id] = (command, cwd)
+                        log_shared_shell(transcript, tool_id, "requested", command, cwd)
             t = _text_of(rec).strip()
             if t:
                 chunks.append(t)

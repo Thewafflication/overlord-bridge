@@ -42,6 +42,7 @@ from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
     ClaudeSDKClient,
+    HookMatcher,
     PermissionResultAllow,
     PermissionResultDeny,
     ResultMessage,
@@ -52,6 +53,7 @@ from claude_agent_sdk import (
 
 from modules import shared_job
 from modules.brain import Brain, PermissionGate, collect_candidates
+from modules.command_activity import log_command
 from modules.commands import reset_has_passed
 from modules.token_meter import estimate_tokens
 
@@ -405,6 +407,14 @@ class ClaudeBrain(Brain):
             return {}
         return {"effort": self.effort}
 
+    async def _log_shell_hook(self, data, tool_use_id, context) -> dict:
+        if data.get("tool_name") == "Bash":
+            phase = {"PreToolUse": "requested", "PostToolUse": "completed",
+                     "PostToolUseFailure": "failed"}.get(data.get("hook_event_name"), "requested")
+            log_command("claude", phase, data.get("tool_input", {}).get("command", ""),
+                        data.get("cwd", self.cwd))
+        return {}
+
     def _build_options(self, resume: str | None) -> ClaudeAgentOptions:
         return ClaudeAgentOptions(
             cwd=self.cwd,
@@ -417,6 +427,8 @@ class ClaudeBrain(Brain):
             setting_sources=["user", "project", "local"],
             permission_mode="default",
             can_use_tool=self.can_use_tool,
+            hooks={event: [HookMatcher(matcher="Bash", hooks=[self._log_shell_hook])]
+                   for event in ("PreToolUse", "PostToolUse", "PostToolUseFailure")},
             resume=resume,
             **self._effort_option(),
         )

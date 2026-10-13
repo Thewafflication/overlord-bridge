@@ -6,6 +6,15 @@ workflow lands.
 
 ## Current Capabilities
 
+- Windows GUI settings: the tray and console **Settings…** button opens tabs for
+  API keys, individual projects / project parent folders, and bridge / Claude-edit /
+  free-worker approval settings. Save reloads these into the running bridge.
+  Projects are stored as JSON arrays in `OVERLORD_PROJECT_FOLDERS` and
+  `OVERLORD_PROJECTS_ROOTS`. The live console highlights native Codex command
+  events, Claude SDK Bash hooks, shared Claude Telegram-turn transcripts, and
+  free/local/NVIDIA worker shell execution,
+  with command, working folder, completion status and available exit codes.
+
 - `voice_gateway`: place and manage phone calls, send DTMF, listen to real
   people with local Whisper STT, and speak responses through Azure TTS or
   ElevenLabs. Live as MCP tools (`hfp_status`, `lookup_contact`, `place_call`)

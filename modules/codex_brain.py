@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import Any, AsyncIterator
 
 from modules.brain import Brain, PermissionGate
+from modules.command_activity import log_command
 from modules.token_meter import estimate_tokens, subtract_usage
 
 log = logging.getLogger("overlord.codex")
@@ -684,6 +685,10 @@ class CodexBrain(Brain):
             return
         if method in {"item/started", N_ITEM_COMPLETED}:
             item = params.get("item") or {}
+            if item.get("type") == "commandExecution":
+                log_command("codex", "started" if method == "item/started" else item.get("status", "completed"),
+                            item.get("command", ""), item.get("cwd", self.cwd),
+                            exit_code=item.get("exitCode"))
             if item.get("type") == "contextCompaction":
                 self.compaction_status = (
                     "running" if method == "item/started" else "completed"
