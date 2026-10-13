@@ -1855,7 +1855,9 @@ class Bridge:
                     if self._pending_handoff is not None
                     else text
                 )
-                async for chunk in self.brain.query(query_text):
+                query = (self.brain.query(query_text, project_work=self.free_work, chat_id=chat_id)
+                         if self.brain.name == "free" else self.brain.query(query_text))
+                async for chunk in query:
                     if chunk and chunk.strip():
                         chunks.append(chunk.strip())
                         self.telegram.send(chat_id, chunk)

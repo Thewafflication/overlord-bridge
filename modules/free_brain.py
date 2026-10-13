@@ -1,8 +1,8 @@
 """FreeBrain: plain chat over free-tier models, paced by their usage limits.
 
-A text-only :class:`Brain`. It has no tools, reads no files and runs no commands,
-so it needs no permission gate; it is for conversation, not for operating the
-machine. Models come from two providers that publish free tiers:
+A chat :class:`Brain` with optional project-worker dispatch tools supplied by
+the bridge. Files and commands run in the existing worker harness and permission
+gate. Standalone chat remains text-only. Models come from two providers:
 
   * ``nvidia``     NVIDIA NIM (the same key the NVIDIA workers use)
   * ``openrouter`` OpenRouter models whose ID ends in ``:free``. Opt-in, because
@@ -696,7 +696,7 @@ class FreeBrain(Brain):
             waited += pause
             await self._sleep(pause)
 
-    async def query(self, text: str) -> AsyncIterator[str]:
+    async def query(self, text: str, *, project_work: Any = None, chat_id: int = 0) -> AsyncIterator[str]:
         self.last_turn_usage = None
         self.last_turn_cost_usd = None
         self.last_turn_outcome = "ok"
@@ -704,16 +704,29 @@ class FreeBrain(Brain):
             self.last_turn_outcome = "error"
             yield "⚠️ No free model is usable.\n" + "\n".join(self.unavailable)
             return
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}, *self._history,
+        tools = project_work.chat_tools() if project_work is not None else []
+        prompt = ("You are Overlord, reached through Telegram. You can dispatch tool-enabled "
+                  "workers for configured local projects with start_project_work. Use it when "
+                  "the user requests a project review, inspection or changes. Workers can read "
+                  "files and run commands. Interpret project names from context and the available "
+                  "folders; ask if ambiguous. Pass the user's requirements faithfully. A code "
+                  "review should inspect the local checkout and report actionable findings with "
+                  "file/line evidence without editing. Answer ordinary conversation directly. "
+                  "Never claim a worker started without calling the tool."
+                  if tools else SYSTEM_PROMPT)
+        messages = [{"role": "system", "content": prompt}, *self._history,
                     {"role": "user", "content": text}]
         primary = self._order()[0]
         try:
-            message, spec, skipped = await self.complete(messages)
+            message, spec, skipped = await self.complete(messages, tools or None)
         except FreeUnavailable as exc:
             self.last_turn_outcome = "error"
             yield "⚠️ " + str(exc)
             return
         reply = message["content"]
+        if tools and message.get("tool_calls"):
+            reply = "\n".join(project_work.execute_chat_tool(chat_id, call)
+                              for call in message["tool_calls"])
         self._history += [{"role": "user", "content": text}, {"role": "assistant", "content": reply}]
         self._trim_history()
         self._save_history()

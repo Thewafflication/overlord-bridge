@@ -148,6 +148,45 @@ def test_status_and_stop_only_touch_free_workers(tmp_path):
 
 
 # ------------------------------------------------------------- approval
+def test_natural_review_dispatches_the_listed_local_project(tmp_path, monkeypatch):
+    work, manager, messages, root = make_work(tmp_path)
+    project = root / "the_silver_searcher"
+    project.mkdir()
+    brain = FreeBrain(session_file=tmp_path / "pin", models=[NV], keys={"nvidia": "k"},
+                      limiter=UsageLimiter(None, {"nvidia": (20, 0)}))
+    calls = []
+
+    async def complete(history, tools):
+        calls.append((history, tools))
+        return {"content": "", "tool_calls": [{"function": {
+            "name": "start_project_work", "arguments": json.dumps({
+                "project": project.name,
+                "task": "Review the local checkout; report file/line findings without edits."})}}]}, NV, []
+
+    monkeypatch.setattr(brain, "complete", complete)
+
+    async def review():
+        return [chunk async for chunk in brain.query(
+            "Code review the silver searcher please", project_work=work, chat_id=42)]
+
+    result = run(review())
+    assert manager.accepted[0]["folder"] == str(project)
+    assert "without edits" in manager.accepted[0]["task"]
+    assert project.name in calls[0][1][0]["function"]["parameters"]["properties"]["project"]["enum"]
+    assert "text-only" not in calls[0][0][0]["content"]
+    assert "started" in result[0]
+    assert brain._history[-1]["content"] == result[0]
+
+
+def test_chat_dispatch_rejects_unlisted_paths_and_bad_arguments(tmp_path):
+    work, manager, _, _ = make_work(tmp_path)
+    for arguments in ('{}', 'null', '{', json.dumps({"project": str(tmp_path), "task": "review"})):
+        result = work.execute_chat_tool(42, {"function": {
+            "name": "start_project_work", "arguments": arguments}})
+        assert "Invalid" in result
+    assert manager.accepted == []
+
+
 class Gate:
     def __init__(self, allow=True):
         self.allow, self.requests = allow, []

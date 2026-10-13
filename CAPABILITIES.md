@@ -6,6 +6,12 @@ workflow lands.
 
 ## Current Capabilities
 
+- Free-brain natural project requests: Telegram chat offers an LLM tool to
+  dispatch the existing free-model worker in a configured local project. Friendly
+  project descriptions are resolved against the listed folder names; ambiguous
+  requests ask for clarification. Reviews request file/line findings without edits.
+  `/work` remains available for explicit dispatch and worker status/stop.
+
 - Windows GUI settings: the tray and console **Settings…** button opens tabs for
   API keys, individual projects / project parent folders, and bridge / Claude-edit /
   free-worker approval settings. Save reloads these into the running bridge.

@@ -1,6 +1,7 @@
 """Let free models work on projects: the ``/work`` command and its guard rails.
 
-The free brain itself is chat-only. Project work runs as a *worker*: the same tool
+The free brain can dispatch project work through chat tools or /work.
+Project work runs as a *worker*: the same tool
 loop (list/read/write files, run commands inside one project folder, with the
 built-in secret/path denial rules) that the local-agent and NVIDIA workers use, but
 fed by the free-model pool so it shares the chat's rate limits, cooldowns and
@@ -16,6 +17,7 @@ operator first by default (exact-action "allow for this session" grants apply).
 from __future__ import annotations
 
 import logging
+import json
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
@@ -86,6 +88,40 @@ class FreeWork:
         self._projects = projects or (lambda: [])
 
     # ------------------------------------------------------------- commands
+    def chat_tools(self) -> list[dict[str, Any]]:
+        projects = list_projects(self._roots(), self._projects())
+        if not projects:
+            return []
+        return [{"type": "function", "function": {
+            "name": "start_project_work",
+            "description": "Start a tool-enabled worker to inspect, review or change a local project. "
+                           "Resolve the user's project description to a listed folder. "
+                           "For code review, request findings with file/line evidence and no edits. "
+                           "Ask for clarification if the project is ambiguous.",
+            "parameters": {"type": "object", "properties": {
+                "project": {"type": "string", "enum": [name for name, _, _ in projects]},
+                "task": {"type": "string"}}, "required": ["project", "task"],
+                "additionalProperties": False}}}]
+
+    def execute_chat_tool(self, chat_id: int, call: dict[str, Any]) -> str:
+        function = call.get("function", {})
+        if function.get("name") != "start_project_work":
+            return "Unknown project tool."
+        try:
+            args = json.loads(function["arguments"])
+            project, task = args["project"], args["task"]
+            names = [name for name, _, _ in list_projects(self._roots(), self._projects())]
+            if project not in names or not isinstance(task, str) or not task.strip():
+                return "Invalid project or task; no worker started."
+        except (KeyError, TypeError, ValueError):
+            return "Invalid project tool arguments; no worker started."
+        name = f"Free-{project}"
+        if name in self.workers._running:
+            return f"{name} is already running."
+        self._start(chat_id, project, task.strip())
+        return (f"{name} started; results will arrive when the local project review or task finishes."
+                if name in self.workers._running else f"{name} could not start.")
+
     async def handle(self, chat_id: int, text: str) -> None:
         parts = text.strip().split(maxsplit=2)
         sub = parts[1].lower() if len(parts) > 1 else ""
