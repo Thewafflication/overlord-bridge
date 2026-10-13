@@ -277,7 +277,7 @@ WORKER_REPORT_TMUX_SESSION = os.environ.get("WORKER_REPORT_TMUX_SESSION", "").st
 # something, how long it waits out rate limits, and how many tool steps it gets.
 FREE_WORK_APPROVAL = normalize_mode(os.environ.get("OVERLORD_FREE_WORK_APPROVAL"))
 FREE_WORK_PATIENCE = max(0, env_int("OVERLORD_FREE_WORK_PATIENCE", 120))
-FREE_WORK_STEPS = max(4, env_int("OVERLORD_FREE_WORK_STEPS", 30))
+FREE_WORK_STEPS = max(0, env_int("OVERLORD_FREE_WORK_STEPS", 0))
 PROJECTS_ROOT = os.environ.get("OVERLORD_PROJECTS_ROOT", "").strip()
 
 if not TOKEN or not OWNER_RAW:

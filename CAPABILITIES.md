@@ -6,6 +6,12 @@ workflow lands.
 
 ## Current Capabilities
 
+- Free project workers continue until the model completes the task or the run is
+  cancelled, with no default agent-step cap. `OVERLORD_FREE_WORK_STEPS=0` disables
+  the cap; a positive value sets an optional limit. Explicit cap exhaustion is
+  reported as incomplete rather than successful completion. Provider usage limits,
+  request failures, tool approval rules and duplicate-call protections still apply.
+
 - Clearer output and collapsible logs: the Windows console shows a short latest
   activity summary and a collapsed detailed-log pane that keeps collecting while
   hidden. Telegram renders explicitly labelled `log`/`output` fenced blocks as

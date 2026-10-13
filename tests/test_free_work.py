@@ -271,6 +271,55 @@ def events(mgr):
     return [json.loads(l) for l in mgr.report_store.events_path.read_text(encoding="utf-8").splitlines()]
 
 
+def test_default_free_worker_continues_past_thirty_steps(isolated, tmp_path):
+    project = isolated / "long-task"
+    project.mkdir()
+    completer, seen = scripted_pool([
+        *[call("read_file", {"path": f"file-{step}.py"}, f"call-{step}") for step in range(35)],
+        {"content": "Task completed after checking all files."},
+    ])
+    mgr, sent, _ = manager(tmp_path, completer)
+    assert mgr.free_max_steps == 0
+    start(mgr, project)
+    assert len(seen) == 36
+    assert events(mgr)[-1]["status"] == "finished"
+    assert "Task completed" in sent[-1]
+
+
+def test_explicit_free_step_limit_is_reported_as_incomplete(isolated, tmp_path):
+    project = isolated / "limited-task"
+    project.mkdir()
+    completer, seen = scripted_pool([
+        call("read_file", {"path": f"file-{step}.py"}, f"call-{step}") for step in range(4)
+    ])
+    mgr, sent, _ = manager(tmp_path, completer, free_max_steps=4)
+    start(mgr, project)
+    assert len(seen) == 4
+    assert events(mgr)[-1]["status"] == "incomplete"
+    assert events(mgr)[-1]["exit_code"] != 0
+    assert "Stopped before completion" in sent[-1]
+
+
+def test_unlimited_free_worker_remains_cancellable(isolated, tmp_path):
+    project = isolated / "cancel-task"
+    project.mkdir()
+    calls = []
+    async def complete(messages, tools):
+        calls.append(1)
+        return call("read_file", {"path": f"file-{len(calls)}.py"}, f"call-{len(calls)}")
+    mgr, _, _ = manager(tmp_path, complete)
+    async def scenario():
+        mgr._accept({"name": "Free-app", "folder": str(project), "task": "review", "brain": "free"})
+        task = mgr._running["Free-app"]
+        while len(calls) < 35:
+            await asyncio.sleep(0)
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        assert task.cancelled()
+        assert "Free-app" not in mgr._running
+    run(scenario())
+
+
 def test_a_free_worker_edits_files_after_the_operator_approves(isolated, tmp_path):
     project = isolated / "app"
     project.mkdir()

@@ -113,7 +113,7 @@ def classify_worker_exit(returncode: int | None, shutting_down: bool) -> dict[st
 _LOCAL_AGENT_BRAINS = {"local-agent"}
 _NVIDIA_BRAINS = {"nvidia", "nim", "nvidia-nim"}
 _FREE_BRAINS = {"free", "free-model", "free-models"}
-DEFAULT_FREE_MAX_STEPS = 30
+DEFAULT_FREE_MAX_STEPS = 0  # zero means continue until completion or cancellation
 QWEN3_CODER_NEXT_MODEL = "openai/Qwen3-Coder-Next"
 _AIDER_MODEL_ALIASES = {
     "qwen3-coder-next": QWEN3_CODER_NEXT_MODEL,
@@ -1031,7 +1031,7 @@ class WorkerManager:
         self.free_completer = free_completer
         self.tool_approver = tool_approver
         self.extra_roots = tuple(extra_roots)
-        self.free_max_steps = max(4, int(free_max_steps))
+        self.free_max_steps = max(0, int(free_max_steps))
         self._running: dict[str, asyncio.Task] = {}
         self.report_tail_chars = report_tail_chars
         self.telegram_tail_chars = telegram_tail_chars
@@ -1554,7 +1554,13 @@ class WorkerManager:
                 )
 
             final_text = ""
-            for step in range(1, max_steps + 1):
+            step_limited = False
+            step = 0
+            while max_steps == 0 or step < max_steps:
+                step += 1
+                # Yield even when a test/local completer returns synchronously,
+                # so an unlimited run stays responsive to cancellation.
+                await asyncio.sleep(0)
                 payload: dict[str, Any] = {
                     # NIM ids keep their org prefix; local aliases strip it.
                     "model": amodel if (is_nvidia or is_openrouter) else _local_agent_model_name(amodel),
@@ -1681,13 +1687,13 @@ class WorkerManager:
                 break
             else:
                 final_text = f"Stopped after {max_steps} {brain} agent steps."
+                step_limited = is_free
 
             if is_free and free_models:
                 amodel = ", ".join(dict.fromkeys(free_models))  # which models did the work
             finished_at = _now_iso()
             duration = round(asyncio.get_running_loop().time() - started_mono, 3)
             report_text = "\n\n".join(transcript[-12:] + ([f"final: {final_text}"] if final_text else []))
-            telegram_detail, _ = _bounded_tail(report_text or "(no output)", self.telegram_tail_chars)
             report_tail, report_truncated = _bounded_tail(
                 report_text or "(no output)",
                 self.report_tail_chars,
@@ -1698,11 +1704,11 @@ class WorkerManager:
                     folder=folder,
                     brain=brain,
                     session=sid,
-                    status="finished",
+                    status="incomplete" if step_limited else "finished",
                     started_at=started_at,
                     finished_at=finished_at,
                     duration_seconds=duration,
-                    exit_code=0,
+                    exit_code=1 if step_limited else 0,
                     model=model,
                     result_tail=report_tail,
                     result_truncated=report_truncated,
@@ -1712,7 +1718,13 @@ class WorkerManager:
                     local_agent_context_hard_cap_tokens=hard_cap,
                 )
             )
-            self._send(self.owner, f"✅ [{name}] finished in {folder.name}:\n\n{telegram_detail}\n\n(session: {sid})")
+            label = "⚠️ Stopped before completion" if step_limited else "✅ Finished"
+            diagnostics = "\n\n".join(entry for entry in transcript[-12:]
+                                       if entry.startswith(("tool[", "coach[")))
+            diagnostics, _ = _bounded_tail(diagnostics, self.telegram_tail_chars)
+            self._send(self.owner,
+                       f"{label}: [{name}] in {folder.name}:\n\n{final_text}\n\n"
+                       f"```log\nAgent steps: {step}\nSession: {sid}\n{diagnostics}\n```")
         except Exception as exc:  # noqa: BLE001
             log.exception("%s agent worker %s crashed", brain, name)
             finished_at = _now_iso()
