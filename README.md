@@ -1,5 +1,14 @@
 # Overlord Bridge
 
+Telegram's native command menu is registered for the owner chat on startup.
+Send `/menu` or `/start` to open a button panel with status, all-engine status,
+model and effort selection, brain options, permission grants, pending questions,
+work status, and Stop Turn. The Session page offers token usage, context,
+compaction, and a new session; the last two require a confirmation tap.
+Navigation edits the same panel, and actions use the existing command handlers.
+Menu setup failures are logged without preventing polling. Restart the bridge
+after upgrading to register the command menu.
+
 Drive a home-rooted **"Overlord"** from Telegram on your phone. The Overlord's
 **brain is swappable**: Claude (the Claude Agent SDK, the default) or OpenAI
 Codex (the `codex app-server`), selected with one env flag.

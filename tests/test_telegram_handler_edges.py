@@ -50,6 +50,74 @@ def run(coro):
     return asyncio.run(coro)
 
 
+def menu_query(data, chat_id=42):
+    message = SimpleNamespace(chat_id=chat_id, message_id=100, text="", reply_markup=None)
+    async def answer():
+        pass
+    async def edit_message_text(text, reply_markup=None):
+        message.text = text
+        message.reply_markup = reply_markup
+    return SimpleNamespace(data=data, message=message, answer=answer,
+                           edit_message_text=edit_message_text)
+
+
+def test_menu_is_owner_only_and_does_not_start_a_model_turn():
+    handler = make_handler()
+    run(handler._handle_command(update("/menu", chat_id=666), None))
+    assert handler.sent == []
+    run(handler._handle_command(update("/start"), None))
+    assert handler.sent[0]["reply_markup"].inline_keyboard
+    assert queued(handler) == []
+
+
+def test_menu_actions_are_allowlisted_and_owner_gated():
+    handler = make_handler()
+    for data, chat in [("menu:status", 666), ("menu:run:new", 42),
+                       ("menu:new", 42), ("menu:/arbitrary", 42), ("menu:status", 42)]:
+        run(handler._handle_callback(SimpleNamespace(callback_query=menu_query(data, chat)), None))
+    assert queued(handler) == [(42, "/status")]
+
+
+def test_session_button_requires_confirmation_and_cannot_be_replayed():
+    handler = make_handler()
+    query = menu_query("menu:confirm:new")
+    run(handler._handle_callback(SimpleNamespace(callback_query=query), None))
+    assert queued(handler) == []
+    query.data = "menu:run:new"
+    run(handler._handle_callback(SimpleNamespace(callback_query=query), None))
+    run(handler._handle_callback(SimpleNamespace(callback_query=query), None))
+    assert queued(handler) == [(42, "/new")]
+
+
+def test_cancel_session_confirmation_invalidates_old_button():
+    handler = make_handler()
+    query = menu_query("menu:confirm:compact")
+    for action in ("confirm:compact", "page:session", "run:compact"):
+        query.data = "menu:" + action
+        run(handler._handle_callback(SimpleNamespace(callback_query=query), None))
+    assert queued(handler) == []
+
+
+def test_native_command_menu_is_registered_only_for_owner():
+    handler = make_handler()
+    calls = []
+    async def commands(**kwargs):
+        calls.append(kwargs)
+    handler.bot.set_my_commands = commands
+    handler.bot.set_chat_menu_button = commands
+    run(handler._register_command_menu())
+    assert calls[0]["scope"].chat_id == 42
+    assert {c.command for c in calls[0]["commands"]} == set(telegram_handler.COMMANDS)
+    assert calls[1]["chat_id"] == 42
+
+
+def test_pending_question_button_does_not_become_conversation_input():
+    handler = make_handler()
+    run(handler._handle_callback(SimpleNamespace(callback_query=menu_query("menu:questions")), None))
+    assert handler.sent[0]["text"] == "No question is pending."
+    assert queued(handler) == []
+
+
 # ------------------------------------------------------------- owner gating
 def test_plain_messages_from_strangers_are_dropped_and_the_owner_is_queued():
     handler = make_handler()

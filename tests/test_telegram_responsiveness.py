@@ -198,6 +198,9 @@ def test_telegram_thread_initialization_retries_before_polling(monkeypatch):
             calls.append("start")
 
     handler.application = FakeApplication()
+    async def register_menu():
+        calls.append("menu")
+    monkeypatch.setattr(handler, "_register_command_menu", register_menu)
 
     async def successful_retry(label, operation, attempts=4, quiet=False):
         calls.append((label, attempts))

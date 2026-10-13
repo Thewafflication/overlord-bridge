@@ -27,6 +27,9 @@ from queue import Queue
 from typing import Awaitable, Callable, Iterator, Optional
 
 from telegram import (
+    BotCommand,
+    BotCommandScopeChat,
+    MenuButtonCommands,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     Update,
@@ -47,10 +50,51 @@ log = logging.getLogger("overlord.telegram")
 # Telegram hard limit on a single text message.
 MAX_MESSAGE_LEN = 4096
 COMMANDS = (
+    "start", "menu",
     "new", "help", "status", "stop", "steer", "brain", "tokens", "quote",
     "model", "effort", "questions", "reply", "cancelquestion", "permissions",
     "context", "compact", "work",
 )
+
+COMMAND_DESCRIPTIONS = {
+    "start": "Open Overlord controls", "menu": "Open buttons and controls",
+    "new": "Start a fresh session", "help": "Show command help",
+    "status": "Show engine status and limits", "stop": "Stop the active turn",
+    "steer": "Give the active turn new guidance", "brain": "Show or switch brains",
+    "tokens": "Show token usage", "quote": "Estimate a prompt's token cost",
+    "model": "Choose a model", "effort": "Choose reasoning effort",
+    "questions": "Show the pending question", "reply": "Answer a pending question",
+    "cancelquestion": "Cancel a pending question", "permissions": "Show permission grants",
+    "context": "Show retained conversation context", "compact": "Compact the conversation",
+    "work": "Manage autonomous project work",
+}
+
+# Fixed callback IDs route through the same owner-only command queue as typed commands.
+MENU_ACTIONS = {
+    "status": "/status", "all": "/status all", "tokens": "/tokens",
+    "context": "/context", "permissions": "/permissions", "questions": "/questions",
+    "model": "/model", "effort": "/effort", "brain": "/brain",
+    "work": "/work status", "stop": "/stop", "help": "/help",
+    "new": "/new", "compact": "/compact",
+}
+MENU_PAGES = {
+    "home": ("Overlord controls", [
+        [("📊 Status", "status"), ("📊 All engines", "all")],
+        [("⚙️ Settings", "page:settings"), ("💬 Session", "page:session")],
+        [("🛠 Work status", "work"), ("⏹ Stop turn", "stop")],
+        [("❓ Pending question", "questions"), ("Help", "help")],
+    ]),
+    "settings": ("Engine settings", [
+        [("Choose model", "model"), ("Reasoning effort", "effort")],
+        [("Brain options", "brain"), ("Permission grants", "permissions")],
+        [("‹ Back", "page:home")],
+    ]),
+    "session": ("Conversation controls", [
+        [("Token usage", "tokens"), ("Context", "context")],
+        [("Compact…", "confirm:compact"), ("New session…", "confirm:new")],
+        [("‹ Back", "page:home")],
+    ]),
+}
 
 
 class TelegramHandler(threading.Thread):
@@ -84,6 +128,7 @@ class TelegramHandler(threading.Thread):
         self._choice_messages: dict[str, int] = {}
         self._choice_prompts: dict[str, str] = {}
         self._permission_live: dict[str, int] = {}
+        self._menu_confirmations: dict[int, str] = {}
 
         self.application.add_handler(
             CommandHandler(
@@ -133,6 +178,9 @@ class TelegramHandler(threading.Thread):
         parts = (update.message.text or "").strip().split(maxsplit=1)
         command = parts[0].split("@", 1)[0].lower() if parts else ""
         if command.lstrip("/") not in COMMANDS:
+            return
+        if command in {"/start", "/menu"}:
+            await self._show_menu(chat_id)
             return
         if command in {"/questions", "/reply", "/cancelquestion"}:
             await self._handle_question_command(chat_id, command, parts[1:])
@@ -198,6 +246,9 @@ class TelegramHandler(threading.Thread):
         chat_id = query.message.chat_id if query.message else None
         if chat_id != self.owner_chat_id:
             return
+        if (query.data or "").startswith("menu:"):
+            await self._handle_menu_callback(query, chat_id)
+            return
         # callback_data: "perm:<id>:<decision>" or "choice:<id>:<index|other>".
         try:
             kind, request_id, decision = (query.data or "").split(":", 2)
@@ -257,6 +308,71 @@ class TelegramHandler(threading.Thread):
             await query.edit_message_text(f"{original}\n\n✅ Selected: {answer}")
         except Exception as exc:
             log.debug("Could not edit choice message: %s", exc)
+
+    async def _show_menu(self, chat_id: int, page: str = "home", query=None) -> None:
+        if page not in MENU_PAGES:
+            return
+        title, rows = MENU_PAGES[page]
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton(label, callback_data=f"menu:{action}")
+             for label, action in row] for row in rows
+        ])
+        if query is None:
+            await self._telegram_call("control menu", lambda: self.bot.send_message(
+                chat_id=chat_id, text=title, reply_markup=keyboard))
+        else:
+            # Re-tapping the current page is harmless; Telegram rejects unchanged edits.
+            if query.message.text == title and query.message.reply_markup == keyboard:
+                return
+            await self._telegram_call("control menu", lambda: query.edit_message_text(
+                text=title, reply_markup=keyboard))
+
+    async def _handle_menu_callback(self, query, chat_id: int) -> None:
+        if not hasattr(self, "_menu_confirmations"):
+            self._menu_confirmations = {}
+        message_id = query.message.message_id
+        action = query.data[len("menu:"):]
+        if action.startswith("page:"):
+            self._menu_confirmations.pop(message_id, None)
+            await self._show_menu(chat_id, action[5:], query)
+        elif action in {"confirm:new", "confirm:compact"}:
+            name = action.split(":")[1]
+            text = ("Start a fresh session? The current session will be reset."
+                    if name == "new" else "Compact the current conversation?")
+            shown = await self._telegram_call("confirm session action", lambda: query.edit_message_text(
+                text=text, reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("Confirm", callback_data=f"menu:run:{name}"),
+                    InlineKeyboardButton("Cancel", callback_data="menu:page:session"),
+                ]])))
+            if shown:
+                self._menu_confirmations[message_id] = name
+        elif action in {"run:new", "run:compact"}:
+            name = action.split(":")[1]
+            if self._menu_confirmations.get(message_id) != name:
+                return
+            expected = f"menu:run:{name}"
+            markup = getattr(query.message, "reply_markup", None)
+            if not markup or not any(button.callback_data == expected
+                                     for row in markup.inline_keyboard for button in row):
+                return
+            # Consume the confirmation before queueing, preventing duplicate taps.
+            consumed = await self._telegram_call("consume session confirmation", lambda:
+                query.edit_message_text(text="Session action requested."))
+            if consumed:
+                self._menu_confirmations.pop(message_id, None)
+                self.inbound_queue.put((chat_id, MENU_ACTIONS[name]))
+        elif action in MENU_ACTIONS and action not in {"new", "compact"}:
+            if action == "questions":
+                await self._handle_question_command(chat_id, "/questions", [])
+            else:
+                self.inbound_queue.put((chat_id, MENU_ACTIONS[action]))
+
+    async def _register_command_menu(self) -> None:
+        await self._telegram_call("register command menu", lambda: self.bot.set_my_commands(
+            commands=[BotCommand(name, COMMAND_DESCRIPTIONS[name]) for name in COMMANDS],
+            scope=BotCommandScopeChat(self.owner_chat_id)))
+        await self._telegram_call("set chat menu button", lambda: self.bot.set_chat_menu_button(
+            chat_id=self.owner_chat_id, menu_button=MenuButtonCommands()))
 
     # ------------------------------------------------------------------ outbound
     def send(self, chat_id: int, text: str) -> None:
@@ -527,6 +643,7 @@ class TelegramHandler(threading.Thread):
         if not initialized:
             log.error("Telegram initialization did not recover; handler stopped")
             return False
+        await self._register_command_menu()
         await self.application.start()
         await self.application.updater.start_polling(
             bootstrap_retries=5,
