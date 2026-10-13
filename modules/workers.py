@@ -53,9 +53,9 @@ import time
 import uuid
 
 from modules import shared_job
-from modules.command_activity import log_command
+from modules.command_activity import log_command, redact_text
 from modules.host_context import host_instructions
-from modules.output_text import OUTPUT_INSTRUCTIONS
+from modules.output_text import OUTPUT_INSTRUCTIONS, worker_action
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -1538,7 +1538,47 @@ class WorkerManager:
                 ),
             }
 
+        progress_pending: list[str] = []
+        last_progress = None
+
+        def progress(message: str, *, important: bool = False, emit: bool = True) -> None:
+            nonlocal last_progress
+            message = redact_text(message)[:600]
+            log.info("[%s] %s", name, " · ".join(message.splitlines()))
+            progress_pending.append(message)
+            if len(progress_pending) > 6:
+                del progress_pending[0]
+            if not emit:
+                return
+            now = asyncio.get_running_loop().time()
+            if important or last_progress is None or now - last_progress >= 8:
+                self._send(self.owner, f"🛠 [{name}] · {folder.name}\n" +
+                           "\n".join(f"• {line}" for line in progress_pending))
+                progress_pending.clear()
+                last_progress = now
+
+        async def execute_with_progress(tool_name, arguments, duplicate_result):
+            action = worker_action(tool_name, arguments)
+            important = tool_name in {"run_command", "run", "bash", "shell", "write_file", "write"}
+            progress(f"Step {step}: next action — {action}",
+                     important=important)
+            result = (duplicate_result if duplicate_result is not None
+                      else await self._execute_checked(brain, folder, tool_name, arguments))
+            if result.get("ok"):
+                detail = "Completed"
+                if tool_name == "list_files":
+                    detail = f"Found {len(result.get('files', []))} project files"
+                elif result.get("exit_code") is not None:
+                    detail = f"Command finished with exit code {result['exit_code']}"
+                progress(f"Step {step}: {detail} — {action}", important=important)
+            else:
+                error = result.get("error") or f"exit code {result.get('exit_code', 'unknown')}"
+                progress(f"Step {step}: could not complete {action} ({error})", important=important)
+            return result
+
         try:
+            if not answer_only:
+                progress(f"Working on: {task}\nWaiting for the model's next action.", important=True)
             if is_free:
                 pass  # the pool checks its own keys and budgets per request
             elif is_nvidia or is_openrouter:
@@ -1605,6 +1645,8 @@ class WorkerManager:
                     transcript.append(f"assistant[{step}]: {content}")
 
                 if tool_calls:
+                    if content:
+                        progress(f"Step {step}: worker note — {content}", emit=False)
                     messages.append(
                         {
                             "role": "assistant",
@@ -1621,11 +1663,7 @@ class WorkerManager:
                         except (TypeError, ValueError, json.JSONDecodeError):
                             arguments = {}
                         duplicate_result = repeated_tool_call_result(tool_name, arguments)
-                        result = (
-                            duplicate_result
-                            if duplicate_result is not None
-                            else await self._execute_checked(brain, folder, tool_name, arguments)
-                        )
+                        result = await execute_with_progress(tool_name, arguments, duplicate_result)
                         result_text = _local_agent_json_result(result, DEFAULT_LOCAL_AGENT_TOOL_OUTPUT_CHARS)
                         transcript.append(f"tool[{step}:{tool_name}]: {result_text}")
                         messages.append(
@@ -1663,11 +1701,7 @@ class WorkerManager:
                             if key not in {"tool", "name", "action"}
                         }
                     duplicate_result = repeated_tool_call_result(tool_name, arguments)
-                    result = (
-                        duplicate_result
-                        if duplicate_result is not None
-                        else await self._execute_checked(brain, folder, tool_name, arguments)
-                    )
+                    result = await execute_with_progress(tool_name, arguments, duplicate_result)
                     result_text = _local_agent_json_result(result, DEFAULT_LOCAL_AGENT_TOOL_OUTPUT_CHARS)
                     transcript.append(f"tool[{step}:{tool_name}]: {result_text}")
                     messages.append({"role": "assistant", "content": content})

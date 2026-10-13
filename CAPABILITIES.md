@@ -6,6 +6,12 @@ workflow lands.
 
 ## Current Capabilities
 
+- Worker progress: free/local-model tool loops show the task, concrete upcoming
+  file or command actions, model-authored progress notes, and actual tool results
+  in Telegram and the console log. Routine file activity is batched at roughly
+  eight-second intervals; writes and commands announce their next action
+  immediately. Updates are bounded and command-display secret redaction applies.
+
 - Free project workers continue until the model completes the task or the run is
   cancelled, with no default agent-step cap. `OVERLORD_FREE_WORK_STEPS=0` disables
   the cap; a positive value sets an optional limit. Explicit cap exhaustion is

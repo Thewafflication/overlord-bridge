@@ -11,12 +11,16 @@ _shared_seen: OrderedDict[tuple, None] = OrderedDict()
 _shared_lock = threading.Lock()
 
 
-def _display(value: object) -> str:
+def redact_text(value: object) -> str:
     text = str(value)
     for name, secret in os.environ.items():
         if len(secret) >= 8 and any(word in name.upper() for word in ("TOKEN", "KEY", "PASSWORD", "SECRET")):
             text = text.replace(secret, "[redacted]")
-    return text.replace("\r", "\\r").replace("\n", "\\n")[:8000]
+    return text
+
+
+def _display(value: object) -> str:
+    return redact_text(value).replace("\r", "\\r").replace("\n", "\\n")[:8000]
 
 
 def log_command(engine: str, phase: str, command: object, cwd: object = "", *, exit_code=None) -> None:

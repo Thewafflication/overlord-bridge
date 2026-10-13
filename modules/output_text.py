@@ -10,7 +10,9 @@ OUTPUT_INSTRUCTIONS = (
     "and next step. Put verbose command output and diagnostic logs in fenced blocks "
     "labelled log so Telegram can collapse them. Keep findings, decisions, instructions "
     "and requested code outside log blocks. Avoid raw tool envelopes or provider metadata "
-    "in the main answer."
+    "in the main answer. Before related tool calls, briefly explain what you are "
+    "investigating or changing and why, naming the relevant files or commands. "
+    "Keep these progress notes concise and distinguish plans from completed work."
 )
 
 
@@ -44,3 +46,17 @@ def activity_summary(line: str) -> str:
         return f"{labels[phase]}: {detail} · {engine}"[:300]
     message = re.split(r"\s(?:INFO|WARNING|ERROR|DEBUG)\s+", line, maxsplit=1)[-1]
     return message.strip()[:300]
+
+
+def worker_action(tool: str, arguments: dict) -> str:
+    tool = {"run": "run_command", "bash": "run_command", "shell": "run_command",
+            "write": "write_file"}.get(tool, tool)
+    if tool == "read_file":
+        return f"Read {arguments.get('path', '(unspecified file)')}"
+    if tool == "write_file":
+        return f"Write {arguments.get('path', '(unspecified file)')}"
+    if tool == "run_command":
+        return f"Run {arguments.get('command') or arguments.get('cmd') or '(unspecified command)'}"
+    if tool == "list_files":
+        return "List project files"
+    return f"Use tool {tool}"

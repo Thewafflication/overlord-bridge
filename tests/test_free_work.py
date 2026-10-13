@@ -320,6 +320,50 @@ def test_unlimited_free_worker_remains_cancellable(isolated, tmp_path):
     run(scenario())
 
 
+def test_worker_announces_specific_actions_before_executing(isolated, tmp_path, monkeypatch):
+    project = isolated / "visible-work"
+    project.mkdir()
+    monkeypatch.setenv("TEST_PROGRESS_SECRET_KEY", "private-progress-value")
+    command = call("run_command", {"command": "git status"})
+    command["content"] = "I will check the working tree before making changes. private-progress-value"
+    completer, _ = scripted_pool([
+        command,
+        call("write_file", {"path": "src/example.py", "content": "x = 1"}, "c2"),
+        {"content": "Implemented the change."},
+    ])
+    mgr, sent, _ = manager(tmp_path, completer)
+    executed = []
+    async def execute(folder, tool, arguments):
+        assert any(worker in message for message in sent
+                   for worker in ["Run git status" if tool == "run_command" else "Write src/example.py"])
+        executed.append(tool)
+        return {"ok": True, "exit_code": 0} if tool == "run_command" else {"ok": True}
+    monkeypatch.setattr(mgr, "_local_agent_execute_tool", execute)
+    start(mgr, project)
+    assert executed == ["run_command", "write_file"]
+    assert any("check the working tree" in message for message in sent)
+    assert any("exit code 0" in message for message in sent)
+    assert any("Working on:" in message for message in sent)
+    updates = [message for message in sent if message.startswith("🛠")]
+    assert any("[redacted]" in message for message in updates)
+    assert not any("private-progress-value" in message for message in updates)
+    assert "\\nWaiting" not in updates[0]
+
+
+def test_fast_read_activity_is_batched_instead_of_spamming(isolated, tmp_path):
+    project = isolated / "quick-reads"
+    project.mkdir()
+    completer, _ = scripted_pool([
+        *[call("read_file", {"path": f"file-{step}.py"}, f"call-{step}") for step in range(20)],
+        {"content": "Review complete."},
+    ])
+    mgr, sent, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    updates = [message for message in sent if message.startswith("🛠")]
+    assert len(updates) < 5
+    assert "Review complete" in sent[-1]
+
+
 def test_a_free_worker_edits_files_after_the_operator_approves(isolated, tmp_path):
     project = isolated / "app"
     project.mkdir()
