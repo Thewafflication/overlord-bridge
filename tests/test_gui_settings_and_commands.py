@@ -14,6 +14,8 @@ from modules.free_work import list_projects, resolve_project
 from modules.workers import _under_allowed_root
 from modules.codex_brain import CodexBrain
 from modules.claude_brain import ClaudeBrain
+from modules.brain import PermissionGate
+from modules.gui_settings import PERMISSION_LEVEL
 from tools.overlord_setup import read_env, save_settings
 
 
@@ -51,7 +53,7 @@ def test_saved_settings_apply_to_running_gate_workers_and_project_discovery(tmp_
     monkeypatch.setattr(bridge, "AUTO_APPROVE", False)
     monkeypatch.setattr(bridge, "CLAUDE_AUTO_APPROVE_EDITS", False)
     monkeypatch.setattr(bridge, "FREE_WORK_APPROVAL", "all")
-    for key in (PROJECT_FOLDERS, PROJECT_ROOTS, "OVERLORD_AUTO_APPROVE",
+    for key in (PROJECT_FOLDERS, PROJECT_ROOTS, PERMISSION_LEVEL, "OVERLORD_AUTO_APPROVE",
                 "OVERLORD_CLAUDE_AUTO_APPROVE_EDITS", "OVERLORD_FREE_WORK_APPROVAL"):
         monkeypatch.delenv(key, raising=False)
     save_settings(tmp_path / ".env", {
@@ -61,7 +63,7 @@ def test_saved_settings_apply_to_running_gate_workers_and_project_discovery(tmp_
     })
     instance = bridge.Bridge.__new__(bridge.Bridge)
     instance.brain = SimpleNamespace(name="claude")
-    instance.gate = SimpleNamespace(auto_approve=False)
+    instance.gate = PermissionGate(None, 42, 1)
     instance.workers = SimpleNamespace(extra_roots=())
     instance.free_work = SimpleNamespace(approval="all")
     instance._status_by_brain = {}
@@ -73,6 +75,12 @@ def test_saved_settings_apply_to_running_gate_workers_and_project_discovery(tmp_
     assert instance.brain.auto_approve_edits is True
     assert folder.resolve() in instance.workers.extra_roots
     assert instance.free_work.approval == "commands"
+    save_settings(tmp_path / ".env", {PERMISSION_LEVEL: "ask", "OVERLORD_AUTO_APPROVE": "1"})
+    asyncio.run(instance._reload_env())
+    assert instance.gate.permission_level == "ask" and not instance.gate.auto_approve
+    save_settings(tmp_path / ".env", {PERMISSION_LEVEL: "safe"})
+    asyncio.run(instance._reload_env())
+    assert instance.gate.permission_level == "safe" and instance.gate.safe_commands
     save_settings(tmp_path / ".env", {PROJECT_FOLDERS: "[]", "OVERLORD_AUTO_APPROVE": "0"})
     asyncio.run(instance._reload_env())
     assert folder.resolve() not in instance.workers.extra_roots
@@ -140,13 +148,14 @@ def test_setup_window_saves_projects_and_permissions_without_touching_saved_keys
         folder = tmp_path / "app"
         folder.mkdir()
         window.project_folders.insert("end", str(folder))
-        window.auto_approve.set(True)
+        window.permission_level.set("full")
         window.work_approval.set("commands")
         window.save()
-        values = read_env(env, (PROJECT_FOLDERS, "OVERLORD_AUTO_APPROVE", "OVERLORD_FREE_WORK_APPROVAL",
+        values = read_env(env, (PROJECT_FOLDERS, PERMISSION_LEVEL, "OVERLORD_AUTO_APPROVE", "OVERLORD_FREE_WORK_APPROVAL",
                                 "OVERLORD_WORKER_NVIDIA_API_KEY"))
         assert decode_paths(values[PROJECT_FOLDERS]) == [folder.resolve()]
         assert values["OVERLORD_AUTO_APPROVE"] == "1"
+        assert values[PERMISSION_LEVEL] == "full"
         assert values["OVERLORD_FREE_WORK_APPROVAL"] == "commands"
         assert values["OVERLORD_WORKER_NVIDIA_API_KEY"] == "nvapi-" + "x" * 30
         assert json.loads((tmp_path / "command.json").read_text())["action"] == "reload_env"

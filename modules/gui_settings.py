@@ -9,8 +9,17 @@ PROJECT_ROOTS = "OVERLORD_PROJECTS_ROOTS"
 AUTO_APPROVE = "OVERLORD_AUTO_APPROVE"
 AUTO_EDITS = "OVERLORD_CLAUDE_AUTO_APPROVE_EDITS"
 WORK_APPROVAL = "OVERLORD_FREE_WORK_APPROVAL"
+PERMISSION_LEVEL = "OVERLORD_PERMISSION_LEVEL"
+PERMISSION_LEVELS = ("ask", "safe", "full")
 SETTING_NAMES = (PROJECT_FOLDERS, PROJECT_ROOTS, "OVERLORD_PROJECTS_ROOT",
-                 AUTO_APPROVE, AUTO_EDITS, WORK_APPROVAL)
+                 AUTO_APPROVE, AUTO_EDITS, WORK_APPROVAL, PERMISSION_LEVEL)
+
+
+def permission_level(value: str | None, *, legacy_auto: bool = False) -> str:
+    if value is None:
+        return "full" if legacy_auto else "safe"
+    normalized = value.strip().lower()
+    return normalized if normalized in PERMISSION_LEVELS else "ask"
 
 
 def decode_paths(value: str) -> list[Path]:

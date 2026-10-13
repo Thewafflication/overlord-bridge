@@ -24,7 +24,7 @@ from modules.commands import _decode_dotenv, set_env_value  # noqa: E402
 from modules.version import display_version  # noqa: E402
 from modules.gui_settings import (  # noqa: E402
     PROJECT_FOLDERS, PROJECT_ROOTS, AUTO_APPROVE, AUTO_EDITS, WORK_APPROVAL,
-    SETTING_NAMES, decode_paths, encode_paths,
+    SETTING_NAMES, decode_paths, encode_paths, PERMISSION_LEVEL, PERMISSION_LEVELS, permission_level,
 )
 
 NVIDIA_KEY = "OVERLORD_WORKER_NVIDIA_API_KEY"
@@ -170,10 +170,15 @@ class SetupWindow:
         permissions = ttk.Frame(notebook, style="Setup.TFrame", padding=16)
         notebook.add(permissions, text="Permissions")
         truth = lambda key: current.get(key, "0").lower() in ("1", "true", "yes", "on")
-        self.auto_approve = tk.BooleanVar(value=truth(AUTO_APPROVE))
         self.auto_edits = tk.BooleanVar(value=truth(AUTO_EDITS))
-        ttk.Checkbutton(permissions, text="Auto-approve actions through the bridge permission gate",
-                        variable=self.auto_approve, style="Setup.TCheckbutton").pack(anchor="w", pady=8)
+        ttk.Label(permissions, text="Bridge permission level", style="Setup.TLabel").pack(anchor="w", pady=8)
+        self.permission_level = ttk.Combobox(permissions, state="readonly", values=PERMISSION_LEVELS)
+        self.permission_level.set(permission_level(current.get(PERMISSION_LEVEL), legacy_auto=truth(AUTO_APPROVE)))
+        self.permission_level.pack(anchor="w")
+        ttk.Label(permissions, style="Muted.TLabel", wraplength=520,
+                  text="ask: prompt for actions · safe: approve routine commands (default)\n"
+                       "full: approve bridge actions until changed. For timed full access, "
+                       "use /permissions full 10 in Telegram.").pack(anchor="w", pady=8)
         ttk.Checkbutton(permissions, text="Auto-approve Claude edits inside its workspace",
                         variable=self.auto_edits, style="Setup.TCheckbutton").pack(anchor="w", pady=8)
         ttk.Label(permissions, text="Free-model project work: ask before", style="Setup.TLabel").pack(anchor="w", pady=8)
@@ -294,7 +299,8 @@ class SetupWindow:
             NVIDIA_KEY: nvidia or None,
             OPENROUTER_KEY: openrouter or None,
             OPENROUTER_ENABLED: "1" if self.use_openrouter.get() else "0",
-            AUTO_APPROVE: "1" if self.auto_approve.get() else "0",
+            PERMISSION_LEVEL: self.permission_level.get(),
+            AUTO_APPROVE: "1" if self.permission_level.get() == "full" else "0",
             AUTO_EDITS: "1" if self.auto_edits.get() else "0",
             WORK_APPROVAL: self.work_approval.get(),
         }

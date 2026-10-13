@@ -51,7 +51,7 @@ from modules.brain import Brain, PermissionGate
 from modules.host_context import host_instructions
 from modules.prompt_router import PromptRouter
 from modules.permission_audit import PermissionAudit
-from modules.gui_settings import decode_paths, PROJECT_FOLDERS, PROJECT_ROOTS, SETTING_NAMES
+from modules.gui_settings import decode_paths, PROJECT_FOLDERS, PROJECT_ROOTS, SETTING_NAMES, PERMISSION_LEVEL, permission_level
 from modules.codex_discovery import resolve_codex_binary
 from modules.commands import (
     HELP_TEXT,
@@ -501,6 +501,7 @@ class Bridge:
             owner=OWNER,
             timeout=PERMISSION_TIMEOUT,
             auto_approve=AUTO_APPROVE,
+            permission_level=os.environ.get(PERMISSION_LEVEL),
             audit=PermissionAudit(BASE_DIR / "run/permissions.jsonl", root=BASE_DIR),
         )
         self.telegram = TelegramHandler(
@@ -741,19 +742,15 @@ class Bridge:
         asyncio.create_task(self._refresh_status(self.brain))
 
         log.info(
-            "Overlord %s online (brain=%s, cwd=%s, resumed=%s, auto_approve=%s)",
+            "Overlord %s online (brain=%s, cwd=%s, resumed=%s, permission_level=%s)",
             display_version(),
             self.brain.name,
             CWD,
             resumed,
-            AUTO_APPROVE,
+            self.gate.permission_level,
         )
         self.tray.start(self.brain.name)
-        approve_note = (
-            "\n⚡ Auto-approve ON — actions run without asking (secrets still blocked)."
-            if AUTO_APPROVE
-            else ""
-        )
+        approve_note = f"\nPermission level: {self.gate.permission_level}."
         if self._conversation_history.persistence_note:
             approve_note += "\n⚠️ " + self._conversation_history.persistence_note
         version = display_version()
@@ -1015,6 +1012,11 @@ class Bridge:
         parts = text.split()
         if len(parts) == 1:
             self.telegram.send(chat_id, self.gate.format_grants())
+        elif len(parts) == 3 and parts[1].lower() == "level" and parts[2].lower() in {"ask", "safe"}:
+            self.gate.revoke_grants()
+            self.gate.permission_level = parts[2].lower()
+            self.telegram.send(chat_id, f"Permission level: {self.gate.permission_level}. "
+                               "Previous grants and timed access cleared. Settings saves the startup level.")
         elif len(parts) == 3 and parts[1].lower() == "safe" and parts[2].lower() in {"on", "off"}:
             self.gate.safe_commands = parts[2].lower() == "on"
             self.telegram.send(chat_id, f"Routine command auto-approval: {parts[2].lower()}.")
@@ -1036,7 +1038,7 @@ class Bridge:
             )
             self.telegram.send(chat_id, f"Revoked {count} permission grants.")
         else:
-            self.telegram.send(chat_id, "Usage: /permissions [full [minutes] | safe <on|off> | revoke <id|all>]")
+            self.telegram.send(chat_id, "Usage: /permissions [level <ask|safe> | full [minutes] | safe <on|off> | revoke <id|all>]")
 
     def _handle_context(self, chat_id: int) -> None:
         text = self._conversation_history.status()
@@ -1206,7 +1208,10 @@ class Bridge:
         CLAUDE_AUTO_APPROVE_EDITS = env_bool("OVERLORD_CLAUDE_AUTO_APPROVE_EDITS", CLAUDE_AUTO_APPROVE_EDITS)
         FREE_WORK_APPROVAL = normalize_mode(os.environ.get("OVERLORD_FREE_WORK_APPROVAL"))
         if self.gate is not None:
-            self.gate.auto_approve = AUTO_APPROVE
+            selected_level = permission_level(os.environ.get(PERMISSION_LEVEL), legacy_auto=AUTO_APPROVE)
+            if selected_level != self.gate.permission_level:
+                self.gate.revoke_grants()
+            self.gate.permission_level = selected_level
         if self.brain.name == "claude":
             self.brain.auto_approve_edits = CLAUDE_AUTO_APPROVE_EDITS
         if hasattr(self, "workers"):

@@ -31,6 +31,7 @@ from typing import Any, AsyncIterator
 
 from modules.telegram_handler import TelegramHandler
 from modules.safe_commands import is_safe_command
+from modules.gui_settings import permission_level as normalize_permission_level
 
 log = logging.getLogger("overlord.brain")
 
@@ -66,7 +67,7 @@ def _starts_a_word(text: str, needle: str) -> bool:
 
 
 class PermissionGate:
-    """Shared approval logic with one-time and exact-action session grants.
+    """Shared ask/safe/full levels, timed access and exact-action grants.
 
     A brain calls :meth:`request` with a human-readable description of what the
     agent wants to do plus a list of strings to scan for off-limits fragments
@@ -82,6 +83,7 @@ class PermissionGate:
         timeout: int,
         auto_approve: bool = False,
         audit=None,
+        permission_level: str | None = None,
     ) -> None:
         self.telegram = telegram
         self.owner = owner
@@ -91,9 +93,8 @@ class PermissionGate:
         # When True, skip the Telegram permission round-trip and auto-allow —
         # BUT only after the off-limits pre-screen below. "Trust me, stop asking"
         # must never extend to reading secrets, so the hard floor still applies.
-        self.auto_approve = auto_approve
+        self.permission_level = normalize_permission_level(permission_level, legacy_auto=auto_approve)
         self.grants: dict[str, dict[str, Any]] = {}
-        self.safe_commands = True
         self._full_access_until = 0.0
         self._permission_scopes: dict[str, dict[str, Any]] = {}
         # request_id -> (loop, future); the Telegram thread resolves the future
@@ -102,6 +103,25 @@ class PermissionGate:
         self.choice_pending: dict[
             str, tuple[asyncio.AbstractEventLoop, asyncio.Future]
         ] = {}
+
+    @property
+    def auto_approve(self) -> bool:
+        return self.permission_level == "full"
+
+    @auto_approve.setter
+    def auto_approve(self, enabled: bool) -> None:
+        if enabled:
+            self.permission_level = "full"
+        elif self.permission_level == "full":
+            self.permission_level = "ask"
+
+    @property
+    def safe_commands(self) -> bool:
+        return self.permission_level == "safe"
+
+    @safe_commands.setter
+    def safe_commands(self, enabled: bool) -> None:
+        self.permission_level = "safe" if enabled else "ask"
 
     def on_permission_response(self, request_id: str, decision: str | bool) -> None:
         """Resolve a Telegram permission decision on the requesting event loop."""
@@ -339,8 +359,9 @@ class PermissionGate:
         return count
 
     def format_grants(self) -> str:
-        lines = ["Permission grants (current session)"]
-        lines.append(f"Routine command auto-approval: {'on' if self.safe_commands else 'off'}.")
+        lines = [f"Permission level: {self.permission_level}", "Permission grants (current session)"]
+        lines.append("Levels: ask — prompt for actions; safe — approve routine commands; "
+                     "full — approve bridge actions. Off-limits checks remain in force.")
         remaining = self.full_access_remaining()
         if remaining:
             lines.append(f"Timed full access active: {int(remaining + 0.999)} seconds remaining.")
@@ -348,12 +369,12 @@ class PermissionGate:
             state = "healthy" if self.audit_ok else "unavailable" if self.audit_ok is False else "not yet used"
             lines.append(f"Local decision audit: {state} (action hashes; no arguments).")
         if self.auto_approve:
-            lines.append("Legacy configured global auto-approval is active.")
+            lines.append("Configured full permission level is active until changed.")
         if not self.grants:
             lines.append("No exact-action grants.")
         for grant_id, grant in self.grants.items():
             lines.append(f"{grant_id}\n{grant['title']}: {grant['detail'][:200]}")
-        lines.append("/permissions full [minutes] · /permissions safe <on|off> · /permissions revoke <id|all>")
+        lines.append("/permissions level <ask|safe> · /permissions full [minutes] · /permissions revoke <id|all>")
         return "\n\n".join(lines)
 
     async def choose(

@@ -81,7 +81,7 @@ def test_owner_can_toggle_policy():
     bridge = SimpleNamespace(gate=gate, telegram=telegram)
     Bridge._handle_permissions(bridge, 42, "/permissions safe off")
     assert not gate.safe_commands
-    assert "off" in gate.format_grants()
+    assert "Permission level: ask" in gate.format_grants()
     Bridge._handle_permissions(bridge, 42, "/permissions safe on")
     assert gate.safe_commands
 

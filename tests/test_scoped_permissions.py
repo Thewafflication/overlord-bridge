@@ -134,7 +134,7 @@ def test_resolved_offlimits_target_is_denied_even_in_legacy_mode(
 
 def test_revoke_all_disables_legacy_mode():
     gate = PermissionGate(Telegram(), 42, 1, auto_approve=True)
-    assert "Legacy" in gate.format_grants()
+    assert "Permission level: full" in gate.format_grants()
     assert gate.revoke_grants() == 1
     assert not gate.auto_approve
 

@@ -393,8 +393,8 @@ def test_failed_reset_is_reported_and_leaves_state_alone(tmp_path):
         ("/permissions", "grants!"),
         ("/permissions revoke all", "Revoked 3 permission grants."),
         ("/permissions revoke abc123", "Revoked 3 permission grants."),
-        ("/permissions revoke", "Usage: /permissions [full [minutes] | safe <on|off> | revoke <id|all>]"),
-        ("/permissions nonsense x", "Usage: /permissions [full [minutes] | safe <on|off> | revoke <id|all>]"),
+        ("/permissions revoke", "Usage: /permissions [level <ask|safe> | full [minutes] | safe <on|off> | revoke <id|all>]"),
+        ("/permissions nonsense x", "Usage: /permissions [level <ask|safe> | full [minutes] | safe <on|off> | revoke <id|all>]"),
     ],
 )
 def test_permissions_command(tmp_path, text, expected):

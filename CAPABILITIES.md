@@ -6,6 +6,14 @@ workflow lands.
 
 ## Current Capabilities
 
+- Permission levels: Settings → Permissions provides a persisted `ask`, `safe`
+  (default), or `full` bridge level, stored in `OVERLORD_PERMISSION_LEVEL`.
+  `ask` prompts for actions; `safe` auto-approves the routine command allowlist;
+  configured `full` auto-approves bridge actions until changed. Off-limits and
+  native engine restrictions still apply. `/permissions level ask|safe` changes
+  the running level and clears grants; `/permissions full 10` gives a temporary
+  full-access window. Explicit levels override the legacy auto-approve setting.
+
 - Routine command approval policy: enabled by default in the shared permission
   gate for Claude, Codex and free-worker approval requests. It accepts a bounded
   set of Git inspection commands and local Make/pytest/npm/CMake/CTest build and
