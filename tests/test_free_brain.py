@@ -305,6 +305,37 @@ def test_worker_report_survives_restart_and_reaches_next_prompt(tmp_path, monkey
     assert any("not independently verified" in m["content"] for m in messages)
 
 
+def test_long_chat_reply_is_edited_without_tools_and_both_calls_are_booked(tmp_path, monkeypatch):
+    draft = ("The fix is unverified. " + "Repeated explanation. " * 50).strip()
+    brain = make(tmp_path, monkeypatch, [
+        reply(draft, {"prompt_tokens": 10, "completion_tokens": 100, "total_tokens": 110}),
+        reply("No. The proposed fix has not been verified.",
+              {"prompt_tokens": 120, "completion_tokens": 12, "total_tokens": 132}),
+    ])
+    assert run(ask(brain, "Is the fix verified?")) == ["No. The proposed fix has not been verified."]
+    payload = brain.calls[1][1]
+    assert "tools" not in payload
+    editing_input = json.loads(payload["messages"][-1]["content"])
+    assert editing_input["current_request"] == "Is the fix verified?"
+    assert editing_input["draft"] == draft
+    assert brain.last_turn_usage == {"prompt_tokens": 130, "completion_tokens": 112, "total_tokens": 242}
+    assert brain._history[-1]["content"] == "No. The proposed fix has not been verified."
+
+
+def test_editing_failure_delivers_original_reply(tmp_path, monkeypatch):
+    draft = ("Useful answer. " * 50).strip()
+    brain = make(tmp_path, monkeypatch, [reply(draft), (429, {}, {})], models=[NV])
+    assert run(ask(brain)) == [draft]
+    assert brain.last_turn_outcome == "ok"
+
+
+def test_requested_long_artifact_is_not_mechanically_truncated(tmp_path, monkeypatch):
+    detailed = ("Requested technical detail. " * 50).strip()
+    brain = make(tmp_path, monkeypatch, [reply(detailed), reply(detailed)])
+    assert run(ask(brain, "Give me a detailed walkthrough")) == [detailed]
+    assert "preserve the requested detail" in brain.calls[1][1]["messages"][0]["content"]
+
+
 def test_a_rate_limited_model_falls_through_to_the_next_and_cools_down(tmp_path, monkeypatch):
     brain = make(tmp_path, monkeypatch, [(429, {"retry-after": "90"}, {}), reply("from llama"),
                                          reply("second turn")])

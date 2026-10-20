@@ -13,6 +13,11 @@ workflow lands.
   reports enter persisted chat context, labelled as worker-reported claims rather
   than independently verified results. Reply guidance accompanies the latest
   prompt so older verbose conversation does not set the default response style.
+  Text replies longer than 80 words receive one tool-free model editing pass
+  to remove repetition and unsolicited offers while preserving requested detail.
+  Editing has a 30-second deadline, uses the same free-model admission/budgets,
+  and records both calls' token usage. If editing is unavailable, the original
+  answer is delivered. Short replies and tool results bypass editing.
 
 - Worker progress: free/local-model tool loops show the task, concrete upcoming
   file or command actions, model-authored progress notes, and actual tool results
