@@ -371,7 +371,7 @@ def format_worker_thread_report(report: dict[str, Any]) -> str:
 
 
 def load_shared_instructions() -> str:
-    """Load one canonical instruction file for both supported brains."""
+    """Load one canonical instruction file for all supported brains."""
     candidates = []
     if INSTRUCTIONS_FILE:
         candidates.append(Path(INSTRUCTIONS_FILE).expanduser())
@@ -437,6 +437,7 @@ def build_brain(gate: PermissionGate, brain_name: str | None = None) -> Brain:
         nvidia_base = env_first(("OVERLORD_WORKER_NVIDIA_API_BASE",))
         return FreeBrain(
             session_file=session_file,
+            developer_instructions=shared_instructions,
             models=parse_models(os.environ.get("OVERLORD_FREE_MODELS") or DEFAULT_MODELS),
             model=os.environ.get("OVERLORD_FREE_MODEL", "").strip() or None,
             keys={
@@ -534,6 +535,11 @@ class Bridge:
             HANDOFF_CONTEXT_CHARS, path=CONTEXT_CHECKPOINT_FILE,
             workspace=str(Path(CWD).resolve()),
         )
+        from modules.shared_memory import SharedMemory
+        memory_root = (Path(os.environ["LOCALAPPDATA"]) / "Overlord" / "state"
+                       if sys.platform == "win32" and os.environ.get("LOCALAPPDATA")
+                       else BASE_DIR / "run")
+        self.shared_memory = SharedMemory(env_path("OVERLORD_SHARED_MEMORY_FILE", memory_root / "shared-memory.json"))
         self._pending_handoff: Handoff | None = (
             self._conversation_history.handoff_for(self.brain_name)
         )
@@ -857,6 +863,12 @@ class Bridge:
         self.inbound.put((-1, ""))
 
     async def _handle_worker_report(self, report: dict[str, Any]) -> None:
+        memory = getattr(self, "shared_memory", None)
+        if memory is not None:
+            try:
+                memory.remember_worker(report)
+            except (ValueError, OSError) as exc:
+                log.warning("Could not save shared worker memory: %s", exc)
         if not any(
             (
                 WORKER_REPORT_TO_THREAD,
@@ -1877,7 +1889,12 @@ class Bridge:
                     if self._pending_handoff is not None
                     else text
                 )
-                query = (self.brain.query(query_text, project_work=self.free_work, chat_id=chat_id)
+                memory = getattr(self, "shared_memory", None)
+                if memory is not None and self.brain.name != "free":
+                    query_text = (memory.turn_context(native=self.brain.name != "free")
+                                  + "\n\nCurrent conversation and owner request:\n" + query_text)
+                query = (self.brain.query(query_text, project_work=self.free_work, chat_id=chat_id,
+                                          shared_memory=memory)
                          if self.brain.name == "free" else self.brain.query(query_text))
                 async for chunk in query:
                     if chunk and chunk.strip():

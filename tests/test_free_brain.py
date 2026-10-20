@@ -487,6 +487,7 @@ def test_free_is_a_selectable_brain_with_its_own_session_pin():
 
 
 def test_build_brain_reads_models_keys_and_limits_from_the_environment(monkeypatch):
+    monkeypatch.setattr(bridge, "load_shared_instructions", lambda: "Shared owner rules")
     for name, value in {
         "OVERLORD_FREE_MODELS": "nvidia:gpt-oss,openrouter:v/m:free",
         "OVERLORD_FREE_MODEL": "gpt-oss", "OVERLORD_WORKER_NVIDIA_API_KEY": "nv",
@@ -497,6 +498,7 @@ def test_build_brain_reads_models_keys_and_limits_from_the_environment(monkeypat
     monkeypatch.setenv("OVERLORD_FREE_OPENROUTER_ENABLED", "0")  # explicit opt-out
     brain = bridge.build_brain(object(), "free")
     assert brain.name == "free" and brain.model == NV.key
+    assert brain.developer_instructions == "Shared owner rules"
     assert [s.key for s in brain.models] == [NV.key]  # openrouter is opted out
     assert brain.limiter.limits["nvidia"] == (7, 0)
     assert brain.limiter.limits["openrouter"] == free_brain.DEFAULT_LIMITS["openrouter"]

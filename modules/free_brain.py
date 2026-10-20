@@ -395,8 +395,10 @@ class FreeBrain(Brain):
         timeout: float = 90.0,
         max_wait: float = 8.0,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        developer_instructions: str = "",
     ) -> None:
         self.session_file = session_file
+        self.developer_instructions = developer_instructions.strip()
         self.limiter = limiter
         self.keys = {k: (v or "").strip() for k, v in keys.items()}
         self.bases = {"nvidia": DEFAULT_NVIDIA_API_BASE, "openrouter": OPENROUTER_BASE, **(bases or {})}
@@ -740,7 +742,8 @@ class FreeBrain(Brain):
             waited += pause
             await self._sleep(pause)
 
-    async def query(self, text: str, *, project_work: Any = None, chat_id: int = 0) -> AsyncIterator[str]:
+    async def query(self, text: str, *, project_work: Any = None, chat_id: int = 0,
+                    shared_memory: Any = None) -> AsyncIterator[str]:
         self.last_turn_usage = None
         self.last_turn_cost_usd = None
         self.last_turn_outcome = "ok"
@@ -749,6 +752,9 @@ class FreeBrain(Brain):
             yield "⚠️ No free model is usable.\n" + "\n".join(self.unavailable)
             return
         tools = project_work.chat_tools() if project_work is not None else []
+        project_tools = bool(tools)
+        if shared_memory is not None:
+            tools += shared_memory.chat_tools()
         prompt = ("You are Overlord, reached through Telegram. You can dispatch tool-enabled "
                   "workers for configured local projects with start_project_work. Use it when "
                   "the user requests a project review, inspection or changes. Workers can read "
@@ -757,9 +763,17 @@ class FreeBrain(Brain):
                   "review should inspect the local checkout and report actionable findings with "
                   "file/line evidence without editing. Answer ordinary conversation directly. "
                   "Never claim a worker started without calling the tool."
-                  if tools else SYSTEM_PROMPT)
-        messages = [{"role": "system", "content": prompt + "\n\n" + host_instructions() + "\n\n" + OUTPUT_INSTRUCTIONS + "\n\n" + CHAT_STYLE}, *self._history,
-                    {"role": "user", "content": text + "\n\n[Bridge reply guidance: " + CHAT_STYLE + "]"}]
+                  if project_tools else SYSTEM_PROMPT)
+        if shared_memory is not None:
+            prompt += (" You have a shared_memory tool for inspecting and explicitly requested "
+                       "memory edits, even when no project tools are available.")
+        instructions = "\n\n".join(part for part in (
+            self.developer_instructions, prompt, host_instructions(), OUTPUT_INSTRUCTIONS, CHAT_STYLE,
+        ) if part)
+        current_request = (shared_memory.turn_context() + "\n\nCurrent owner request:\n" + text
+                           if shared_memory is not None else text)
+        messages = [{"role": "system", "content": instructions}, *self._history,
+                    {"role": "user", "content": current_request + "\n\n[Bridge reply guidance: " + CHAT_STYLE + "]"}]
         primary = self._order()[0]
         try:
             message, spec, skipped = await self.complete(messages, tools or None)
@@ -769,8 +783,15 @@ class FreeBrain(Brain):
             return
         reply = message["content"]
         if tools and message.get("tool_calls"):
-            reply = "\n".join(project_work.execute_chat_tool(chat_id, call)
-                              for call in message["tool_calls"])
+            results = []
+            for call in message["tool_calls"]:
+                if call.get("function", {}).get("name") == "shared_memory" and shared_memory is not None:
+                    results.append(shared_memory.execute_chat_tool(call))
+                elif project_work is not None:
+                    results.append(project_work.execute_chat_tool(chat_id, call))
+                else:
+                    results.append("Unknown tool; no action performed.")
+            reply = "\n".join(results)
         elif len(reply.split()) > 80:
             reply = await self._edit_reply(text, reply)
         self._history += [{"role": "user", "content": text}, {"role": "assistant", "content": reply}]

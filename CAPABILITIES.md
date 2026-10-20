@@ -6,6 +6,16 @@ workflow lands.
 
 ## Current Capabilities
 
+- Shared engine context: Claude, Codex and free mode receive the canonical
+  `AGENTS.md` selected by `OVERLORD_INSTRUCTIONS_FILE` (or the bridge copy).
+  Durable preferences, project notes and latest worker reports live locally in
+  `%LOCALAPPDATA%/Overlord/state/shared-memory.json` on Windows (outside the
+  replaceable install) or `run/shared-memory.json` elsewhere, and are supplied fresh on each owner
+  turn. Free chat has a `shared_memory` tool; native engines use the same store
+  through `modules/shared_memory.py`. Explicit owner requests save, update or
+  forget notes. `/new` clears conversation, not durable memory. Worker claims
+  remain labelled and bounded. See [shared context](docs/shared-context.md).
+
 - Free-mode Telegram chat defaults to brief, context-relevant answers. Successful
   model fallback is recorded in local logging without appending provider errors
   to the conversation; failures that prevent an answer remain visible. Free chat
