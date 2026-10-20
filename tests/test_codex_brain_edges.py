@@ -42,6 +42,7 @@ def test_turn_streams_final_text_and_books_the_last_block(tmp_path, monkeypatch)
 
         async def request(method, params):
             if method == "turn/start":
+                assert params["model"] == "gpt-x"  # override stale resumed-session defaults
                 for note in (
                     ("item/agentMessage/delta", {"itemId": "a", "delta": "Hel"}),
                     ("item/agentMessage/delta", {"itemId": "a", "delta": "lo"}),

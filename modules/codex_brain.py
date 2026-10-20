@@ -1296,6 +1296,7 @@ class CodexBrain(Brain):
                 {
                     "threadId": self._thread_id,
                     "input": [{"type": "text", "text": text}],
+                    **({"model": self.model} if self.model else {}),
                 },
             )
             self._set_active_turn_id_from_result(result)
@@ -1488,6 +1489,7 @@ class CodexBrain(Brain):
                     "clientUserMessageId": (
                         f"bridge-visible-worker-report-{safe_event_id}"
                     ),
+                    **({"model": self.model} if self.model else {}),
                     "input": [
                         {
                             "type": "text",
