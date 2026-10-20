@@ -1826,7 +1826,7 @@ class Bridge:
             if ledger is None:
                 return
             ledger.record(usage)
-            if TOKEN_FOOTER:
+            if TOKEN_FOOTER and self.brain.name != "free":
                 self.telegram.send(chat_id, format_footer(usage, ledger.totals))
         except Exception as exc:  # noqa: BLE001 - accounting is never load-bearing
             log.warning("Could not record token usage for this turn: %s", exc)

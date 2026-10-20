@@ -269,7 +269,9 @@ def test_a_chat_turn_sends_history_and_records_usage(tmp_path, monkeypatch):
     roles = [m["role"] for m in payload["messages"]]
     assert free_brain.CHAT_STYLE in payload["messages"][0]["content"]
     assert roles == ["system", "user", "assistant", "user"]
-    assert payload["messages"][-1]["content"] == "again" and payload["model"] == NV.model
+    assert payload["messages"][-1]["content"].startswith("again\n\n[Bridge reply guidance:")
+    assert payload["model"] == NV.model
+    assert brain._history[-2]["content"] == "again"
     assert brain.session_id == "chat"
     assert brain.limiter.snapshot("nvidia")["minute_used"] == 2
 
@@ -289,6 +291,18 @@ def test_history_is_persisted_trimmed_and_reset(tmp_path, monkeypatch):
                                             encoding="utf-8")
     run(restored.connect())
     assert restored._history == []
+
+
+def test_worker_report_survives_restart_and_reaches_next_prompt(tmp_path, monkeypatch):
+    brain = make(tmp_path, monkeypatch, [reply("Started")])
+    run(ask(brain, "Review the project"))
+    assert run(brain.record_event("Build failed: header conflict", metadata={"status": "completed"}))
+    restored = make(tmp_path, monkeypatch, [reply("A header conflict was reported")])
+    run(restored.connect())
+    run(ask(restored, "What did the worker find?"))
+    messages = restored.calls[0][1]["messages"]
+    assert any("Worker report (context only" in m["content"] and "header conflict" in m["content"] for m in messages)
+    assert any("not independently verified" in m["content"] for m in messages)
 
 
 def test_a_rate_limited_model_falls_through_to_the_next_and_cools_down(tmp_path, monkeypatch):

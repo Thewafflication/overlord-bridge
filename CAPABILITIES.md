@@ -8,7 +8,11 @@ workflow lands.
 
 - Free-mode Telegram chat defaults to brief, context-relevant answers. Successful
   model fallback is recorded in local logging without appending provider errors
-  to the conversation; failures that prevent an answer remain visible.
+  to the conversation; failures that prevent an answer remain visible. Free chat
+  records token usage for /tokens without an automatic per-reply footer. New worker
+  reports enter persisted chat context, labelled as worker-reported claims rather
+  than independently verified results. Reply guidance accompanies the latest
+  prompt so older verbose conversation does not set the default response style.
 
 - Worker progress: free/local-model tool loops show the task, concrete upcoming
   file or command actions, model-authored progress notes, and actual tool results

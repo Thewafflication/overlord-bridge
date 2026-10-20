@@ -264,6 +264,16 @@ def test_the_footer_can_be_switched_off_without_losing_the_accounting(monkeypatc
     asyncio.run(scenario())
 
 
+def test_free_chat_books_usage_without_conversation_noise(monkeypatch):
+    monkeypatch.setattr(bridge, "TOKEN_FOOTER", True)
+    brain = FakeBrain(usage={"input_tokens": 10, "output_tokens": 5})
+    brain.name = "free"
+    instance = make_bridge(brain)
+    instance._record_turn_tokens(42, "hello")
+    assert instance.tokens.totals.prompts == 1
+    assert instance.telegram.messages == []
+
+
 def test_a_turn_that_reports_no_usage_is_skipped_not_booked_as_zero():
     async def scenario():
         instance = make_bridge(FakeBrain(usage=None))
