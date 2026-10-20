@@ -22,8 +22,8 @@ HELP_TEXT = """Overlord commands
 /reply <id> <answer> — answer a specific pending question
 /cancelquestion <id> — cancel a specific pending question
 /permissions [level <ask|safe> | full [minutes] | revoke <id|all>] — choose a permission level, grant timed full access, inspect or revoke grants
-/context — show retained context and checkpoint recovery status
-/compact — compact the idle conversation with the provider's native mechanism
+/context — show context size snapshots, warning/compaction thresholds and checkpoint status
+/compact — compact the idle conversation (native for Claude/Codex; summary for free)
 /stop — stop the active AI turn
 /steer <message> — stop the active turn and replace it with new guidance
 /brain — show or switch the active brain

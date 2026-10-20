@@ -1,6 +1,7 @@
 """Bridge helpers: worker-report delivery, console status/commands, cached usage, resets."""
 
 import asyncio
+import datetime
 import json
 import os
 from types import SimpleNamespace
@@ -454,17 +455,17 @@ def test_context_reports_window_snapshot_and_compaction_state(tmp_path):
     instance._status_cache = {"tokens": {"modelContextWindow": 200_000}}
     instance.brain.context_snapshot = {
         "session_id": "sess", "model": "opus", "used": 50_000, "maximum": 200_000,
-        "percentage": 25.0, "observed_at": "2026-07-01T00:00:00+00:00",
+        "percentage": 25.0, "observed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     }
     instance.brain.compaction_status = "completed"
     instance._handle_context(42)
     text = instance.telegram.messages[-1][1]
     assert "Model context window: 200,000 tokens" in text
-    assert "Last native snapshot: 50,000/200,000 tokens (25.0%)" in text
-    assert "Native compaction: completed" in text
+    assert "Last context snapshot: 50,000/200,000 tokens (25.0%)" in text
+    assert "Compaction: completed" in text
     instance.brain.context_snapshot["session_id"] = "another"  # belongs to a different session
     instance._handle_context(42)
-    assert "Last native snapshot" not in instance.telegram.messages[-1][1]
+    assert "Last context snapshot" not in instance.telegram.messages[-1][1]
 
 
 # --------------------------------------------------------------- start-up

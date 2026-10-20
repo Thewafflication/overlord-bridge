@@ -540,6 +540,12 @@ class Bridge:
                        if sys.platform == "win32" and os.environ.get("LOCALAPPDATA")
                        else BASE_DIR / "run")
         self.shared_memory = SharedMemory(env_path("OVERLORD_SHARED_MEMORY_FILE", memory_root / "shared-memory.json"))
+        from modules.context_pressure import ContextPolicy
+        self.context_policy = ContextPolicy(
+            env_int("OVERLORD_CONTEXT_WARN_PERCENT", 75),
+            env_int("OVERLORD_CONTEXT_COMPACT_PERCENT", 85),
+            env_bool("OVERLORD_CONTEXT_AUTO_COMPACT", False),
+        )
         self._pending_handoff: Handoff | None = (
             self._conversation_history.handoff_for(self.brain_name)
         )
@@ -1054,22 +1060,44 @@ class Bridge:
             self.telegram.send(chat_id, "Usage: /permissions [level <ask|safe> | full [minutes] | safe <on|off> | revoke <id|all>]")
 
     def _handle_context(self, chat_id: int) -> None:
-        text = self._conversation_history.status()
+        text = f"Context [{self.brain.name}]"
         tokens = self._status_cache.get("tokens") or {}
         window = tokens.get("modelContextWindow")
-        text += (
-            f"\nModel context window: {window:,} tokens"
-            if isinstance(window, int) else "\nModel context window: unknown"
-        )
-        text += "\nLive context pressure: unknown"
-        snapshot = getattr(self.brain, "context_snapshot", None)
-        if (snapshot and snapshot.get("session_id") == self.brain.session_id
-                and snapshot.get("model") == self.brain.model):
-            text += (f"\nLast native snapshot: {snapshot['used']:,}/"
-                     f"{snapshot['maximum']:,} tokens ({snapshot['percentage']:.1f}%)"
-                     f"\nObserved: {snapshot['observed_at']}")
-        text += f"\nNative compaction: {getattr(self.brain, 'compaction_status', 'unknown')}"
+        from modules.context_pressure import snapshot_for, describe
+        snapshot = snapshot_for(self.brain)
+        if snapshot:
+            text += f"\nLast context snapshot: {describe(snapshot)}\nObserved: {snapshot['observed_at']}"
+        else:
+            text += "\nContext size: unknown (no fresh reading for this session/model)."
+        prompt_tokens = getattr(self.brain, "last_prompt_tokens", None)
+        if type(prompt_tokens) is int:
+            text += f"\nLast conversation request: {prompt_tokens:,} input tokens (before reply/editing)"
+        policy = getattr(self, "context_policy", None)
+        if policy:
+            text += (f"\nWarning: {policy.warn}% · Automatic compaction: "
+                     + (f"{policy.compact}%" if policy.automatic else "off"))
+        text += f"\nCompaction: {getattr(self.brain, 'compaction_status', 'unknown')}"
+        details = self._conversation_history.status()
+        details += (f"\nModel context window: {window:,} tokens" if isinstance(window, int)
+                    else "\nModel context window: unknown")
+        text += f"\n```log\n{details}\n```"
         self.telegram.send(chat_id, text)
+
+    async def _manage_context(self, chat_id: int) -> None:
+        from modules.context_pressure import snapshot_for, describe
+        policy = getattr(self, "context_policy", None)
+        if policy is None or self.gate.pending or self.gate.choice_pending:
+            return
+        snapshot = snapshot_for(self.brain)
+        if snapshot is None:
+            return
+        action = policy.action(self.brain, snapshot)
+        if action == "warn":
+            self.telegram.send(chat_id, f"⚠️ Context is growing: {describe(snapshot)}. "
+                               + (f"Automatic compaction at {policy.compact}%." if policy.automatic
+                                  else "Use /compact to reduce it."))
+        elif action == "compact":
+            await self._handle_compaction(chat_id, reason=f"Automatic threshold: {describe(snapshot)}")
 
     def _start_compaction(self, chat_id: int) -> None:
         if self._turn_is_active() or self.gate.pending or self.gate.choice_pending:
@@ -1077,15 +1105,19 @@ class Bridge:
             return
         self._active_turn_task = asyncio.create_task(self._handle_compaction(chat_id))
 
-    async def _handle_compaction(self, chat_id: int) -> None:
+    async def _handle_compaction(self, chat_id: int, *, reason: str = "") -> None:
         outcome = "ok"
         started = False
+        self.telegram.begin_typing(chat_id)
         try:
             async with self._brain_lock:
+                if self.gate.pending or self.gate.choice_pending:
+                    self.telegram.send(chat_id, "Compaction deferred while an approval or question is pending.")
+                    return
                 if not self._conversation_history.checkpoint():
                     self.telegram.send(chat_id, "Compaction not started: checkpoint save failed.")
                     return
-                self.telegram.send(chat_id, "Compacting the conversation…")
+                self.telegram.send(chat_id, "Compacting the conversation…" + (f"\n{reason}" if reason else ""))
                 started = True
                 error = await self.brain.compact()
                 if error:
@@ -1102,6 +1134,7 @@ class Bridge:
         finally:
             if started:
                 self._record_turn_tokens(chat_id, "/compact", outcome=outcome)
+            self.telegram.end_typing(chat_id)
 
     async def _handle_status(self, chat_id: int, text: str = "/status") -> None:
         """Answer /status with a reading taken NOW, not the previous one.
@@ -1928,6 +1961,14 @@ class Bridge:
             # a failure, a usage cap, and an interruption alike.
             self._record_turn_tokens(chat_id, text, outcome=outcome)
             self.telegram.end_typing(chat_id)
+
+        if outcome == "ok" and getattr(self.brain, "last_turn_outcome", "ok") == "ok":
+            try:
+                await self._manage_context(chat_id)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                log.warning("Context management unavailable: %s", exc)
 
 
 async def _run_bridge() -> None:

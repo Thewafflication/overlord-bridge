@@ -372,6 +372,7 @@ class CodexBrain(Brain):
         self._compaction_item_completed = False
         self._compaction_turn_completed = False
         self.compaction_status = "idle"
+        self.context_snapshot = None
 
     @property
     def session_id(self) -> str | None:
@@ -690,6 +691,7 @@ class CodexBrain(Brain):
                             item.get("command", ""), item.get("cwd", self.cwd),
                             exit_code=item.get("exitCode"))
             if item.get("type") == "contextCompaction":
+                self.context_snapshot = None
                 self.compaction_status = (
                     "running" if method == "item/started" else "completed"
                 )
@@ -717,6 +719,17 @@ class CodexBrain(Brain):
                         ),
                         "modelContextWindow": token_usage.get("modelContextWindow"),
                     }
+                    used = last.get("totalTokens") if isinstance(last, dict) else None
+                    maximum = token_usage.get("modelContextWindow")
+                    if type(used) is int and type(maximum) is int and 0 <= used <= maximum and maximum > 0:
+                        self.context_snapshot = {
+                            "used": used, "maximum": maximum, "percentage": used / maximum * 100,
+                            "session_id": self.session_id, "model": self.model,
+                            "observed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                            "source": "last native request usage", "unit": "tokens",
+                        }
+                    else:
+                        self.context_snapshot = None
             return
 
         if method == N_AGENT_DELTA:
@@ -1152,6 +1165,7 @@ class CodexBrain(Brain):
         self._thread_id = None
         self._compaction_active = False
         self.compaction_status = "idle"
+        self.context_snapshot = None
         await self._start_thread(None)
         self._record_mtime()
         log.info("Codex thread reset via /new (new thread=%s)", self._thread_id)
@@ -1240,6 +1254,7 @@ class CodexBrain(Brain):
             self.model = previous
             return error
         self._active_model = name
+        self.context_snapshot = None
         return None
 
     async def set_effort(self, effort: str) -> str | None:

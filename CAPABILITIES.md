@@ -6,6 +6,17 @@ workflow lands.
 
 ## Current Capabilities
 
+- Context monitoring: `/context` shows the latest fresh session/model-matched
+  observation and the warning/automatic-compaction settings. Configure
+  `OVERLORD_CONTEXT_WARN_PERCENT` (75), `OVERLORD_CONTEXT_COMPACT_PERCENT` (85)
+  and `OVERLORD_CONTEXT_AUTO_COMPACT` (off unless enabled). Warnings and attempts
+  are deduplicated; automatic compaction runs between turns after a checkpoint,
+  defers for approvals/questions, and leaves session IDs and grants intact.
+  Claude uses opted-in native snapshots; Codex uses last-request usage rather
+  than cumulative billing; free mode monitors its explicitly labelled local
+  history budget and compacts with a tool-free summary plus transcript backup.
+  See [context monitoring](docs/context-monitoring.md) for limits and validation.
+
 - Shared engine context: Claude, Codex and free mode receive the canonical
   `AGENTS.md` selected by `OVERLORD_INSTRUCTIONS_FILE` (or the bridge copy).
   Durable preferences, project notes and latest worker reports live locally in
