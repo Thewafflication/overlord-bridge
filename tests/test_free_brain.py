@@ -203,7 +203,7 @@ def test_model_access_denial_does_not_block_healthy_openrouter_fallback(tmp_path
         reply("Working fallback"), reply("Still working"),
     ], models=(OR, sibling), openrouter_enabled=True)
     answer = run(ask(brain))[0]
-    assert answer.startswith("Working fallback") and "agentic harnesses" in answer
+    assert answer == "Working fallback"
     assert brain.limiter.availability(OR)[0] == 3600
     assert brain.limiter.availability(sibling)[0] == 0
     assert run(ask(brain))[0].startswith("Still working")
@@ -233,13 +233,13 @@ def test_upgrade_clears_legacy_openrouter_lockout_but_preserves_new_key_failures
     assert restored.availability(OR)[0] == 3600
 
 
-def test_nvidia_retirement_details_survive_and_fallback_still_answers(tmp_path, monkeypatch):
+def test_nvidia_retirement_does_not_clutter_a_successful_answer(tmp_path, monkeypatch):
     brain = make(tmp_path, monkeypatch, [
         (410, {}, {"title": "Gone", "detail": "This model has reached its end of life"}),
         reply("Available model"),
     ])
     answer = run(ask(brain))[0]
-    assert answer.startswith("Available model") and "end of life" in answer
+    assert answer == "Available model"
 
 
 def test_default_nvidia_pool_uses_current_models_and_leaves_room_for_answers(tmp_path, monkeypatch):
@@ -267,6 +267,7 @@ def test_a_chat_turn_sends_history_and_records_usage(tmp_path, monkeypatch):
     url, payload, key = brain.calls[1]
     assert url == "https://integrate.api.nvidia.com/v1/chat/completions" and key == "nv-key"
     roles = [m["role"] for m in payload["messages"]]
+    assert free_brain.CHAT_STYLE in payload["messages"][0]["content"]
     assert roles == ["system", "user", "assistant", "user"]
     assert payload["messages"][-1]["content"] == "again" and payload["model"] == NV.model
     assert brain.session_id == "chat"
@@ -294,8 +295,7 @@ def test_a_rate_limited_model_falls_through_to_the_next_and_cools_down(tmp_path,
     brain = make(tmp_path, monkeypatch, [(429, {"retry-after": "90"}, {}), reply("from llama"),
                                          reply("second turn")])
     out = run(ask(brain))
-    assert out[0].startswith("from llama") and f"answered by {NV2.key}" in out[0]
-    assert "rate limited, retry in 1m" in out[0]
+    assert out == ["from llama"]
     assert brain.limiter.availability(NV)[0] > 85
     # The next turn skips the cooling model without spending a request on it.
     run(ask(brain))
@@ -329,14 +329,15 @@ def test_failures_move_on_and_are_named(tmp_path, monkeypatch, status, text):
     if status == 401:  # an auth failure poisons the whole provider
         assert out.startswith("⚠️ No free model") or "rescued" not in out
     else:
-        assert "rescued" in out
-    assert text in out
+        assert out == "rescued"
+    if status == 401:
+        assert text in out
 
 
 def test_network_errors_cool_the_model_and_try_the_next(tmp_path, monkeypatch):
     brain = make(tmp_path, monkeypatch, [OSError("connection reset"), reply("fine")])
     out = run(ask(brain))[0]
-    assert "fine" in out and "unreachable" in out and brain.limiter.cooling(NV) > 0
+    assert out == "fine" and brain.limiter.cooling(NV) > 0
 
 
 def test_provider_budget_headers_trigger_a_proactive_cooldown(tmp_path, monkeypatch):

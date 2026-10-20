@@ -65,6 +65,17 @@ SYSTEM_PROMPT = (
     "dispatch workers. Answer directly and concisely; if a request needs those "
     "abilities, say so and suggest switching to the claude or codex brain."
 )
+CHAT_STYLE = (
+    "Keep Telegram conversation focused on the user's current request and relevant "
+    "conversation context. Lead with the answer or concrete result. Default to one "
+    "short paragraph; use a short list only when it helps. Give more detail when "
+    "requested or needed for accuracy. Omit greetings, repeated summaries, generic "
+    "advice, unsolicited capability lists, internal reasoning and routine model or "
+    "provider status. Ask one focused question only if missing information prevents "
+    "a useful answer. Do not repeat old limitations or earlier answers unless relevant. "
+    "Describe only actions actually performed; if blocked, state the specific blocker "
+    "and useful next step briefly."
+)
 
 
 @dataclass(frozen=True)
@@ -716,7 +727,7 @@ class FreeBrain(Brain):
                   "file/line evidence without editing. Answer ordinary conversation directly. "
                   "Never claim a worker started without calling the tool."
                   if tools else SYSTEM_PROMPT)
-        messages = [{"role": "system", "content": prompt + "\n\n" + host_instructions() + "\n\n" + OUTPUT_INSTRUCTIONS}, *self._history,
+        messages = [{"role": "system", "content": prompt + "\n\n" + host_instructions() + "\n\n" + OUTPUT_INSTRUCTIONS + "\n\n" + CHAT_STYLE}, *self._history,
                     {"role": "user", "content": text}]
         primary = self._order()[0]
         try:
@@ -733,5 +744,5 @@ class FreeBrain(Brain):
         self._trim_history()
         self._save_history()
         if spec != primary:
-            reply += f"\n\nUsed an available fallback model.\n```log\nanswered by {spec.key}\n{skipped[0]}\n```"
+            log.info("Free chat answered by %s after fallback: %s", spec.key, skipped)
         yield reply

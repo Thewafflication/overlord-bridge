@@ -6,6 +6,10 @@ workflow lands.
 
 ## Current Capabilities
 
+- Free-mode Telegram chat defaults to brief, context-relevant answers. Successful
+  model fallback is recorded in local logging without appending provider errors
+  to the conversation; failures that prevent an answer remain visible.
+
 - Worker progress: free/local-model tool loops show the task, concrete upcoming
   file or command actions, model-authored progress notes, and actual tool results
   in Telegram and the console log. Routine file activity is batched at roughly
