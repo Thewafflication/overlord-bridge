@@ -752,6 +752,13 @@ def _extract_xmlish_tool_call(text: str) -> dict[str, Any] | None:
     return {"tool": tool, "arguments": args}
 
 
+def _worker_python(folder: Path) -> Path:
+    """Prefer the project's existing environment without activating a shell."""
+    relative = "Scripts/python.exe" if sys.platform == "win32" else "bin/python"
+    candidate = folder / ".venv" / relative
+    return candidate if candidate.is_file() else Path(sys.executable)
+
+
 def _local_agent_tools() -> list[dict[str, Any]]:
     return [
         {
@@ -774,11 +781,26 @@ def _local_agent_tools() -> list[dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "run_python",
-                "description": "Execute Python code using the bridge Python interpreter in the project folder. Pass multiline code directly; no shell quoting, heredocs, or python PATH lookup needed. Uses the same command restrictions as run_command.",
+                "description": "Execute Python code using the existing project .venv Python interpreter (bridge interpreter fallback) in the project folder. Pass multiline code directly; no shell quoting, heredocs, or python PATH lookup needed. Uses the same command restrictions as run_command.",
                 "parameters": {
                     "type": "object",
                     "properties": {"code": {"type": "string"}, "timeout_seconds": {"type": "integer"}},
                     "required": ["code"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "search_file",
+                "description": "Search a project text file for a literal string, case-insensitively. Returns matching 1-based line numbers and text, without shell quoting. Use list_files to find paths, then read_file ranges for context.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string"},
+                        "query": {"type": "string"},
+                    },
+                    "required": ["path", "query"],
                 },
             },
         },
@@ -1195,6 +1217,7 @@ class WorkerManager:
             "bash": "run_command",
             "shell": "run_command",
             "read": "read_file",
+            "search": "search_file",
             "write": "write_file",
             "list": "list_files",
         }
@@ -1219,10 +1242,13 @@ class WorkerManager:
             except (TypeError, ValueError):
                 timeout_i = DEFAULT_LOCAL_AGENT_COMMAND_TIMEOUT
             log_command("worker", "started", command, folder)
+            environment = os.environ.copy()
+            interpreter = _worker_python(folder)
+            environment["PATH"] = str(interpreter.parent) + os.pathsep + environment.get("PATH", "")
             options = dict(cwd=str(folder), stdout=asyncio.subprocess.PIPE,
-                           stderr=asyncio.subprocess.PIPE, env=os.environ.copy())
+                           stderr=asyncio.subprocess.PIPE, env=environment)
             if tool_name == "run_python":
-                proc = await asyncio.create_subprocess_exec(sys.executable, "-c", command, **options)
+                proc = await asyncio.create_subprocess_exec(str(interpreter), "-c", command, **options)
             elif shell == "powershell":
                 encoded = base64.b64encode(command.encode("utf-16-le")).decode("ascii")
                 proc = await asyncio.create_subprocess_exec(
@@ -1257,7 +1283,7 @@ class WorkerManager:
                 "stderr_truncated": stderr_truncated,
             }
 
-        if tool_name == "read_file":
+        if tool_name in {"read_file", "search_file"}:
             path, error = _resolve_worker_relative_path(folder, str(arguments.get("path") or ""))
             if error or path is None:
                 return {"ok": False, "error": error or "bad_path"}
@@ -1272,6 +1298,26 @@ class WorkerManager:
             except (TypeError, ValueError):
                 max_chars_i = DEFAULT_LOCAL_AGENT_TOOL_OUTPUT_CHARS
             text = path.read_text(encoding="utf-8", errors="replace")
+            if tool_name == "search_file":
+                query = arguments.get("query")
+                if not isinstance(query, str) or not query.strip():
+                    return {"ok": False, "error": "missing_search_query",
+                            "message": "Provide path and a non-empty literal query to search_file."}
+                matches = []
+                size = 0
+                truncated = False
+                for number, line in enumerate(text.splitlines(), 1):
+                    if query.casefold() not in line.casefold():
+                        continue
+                    if len(matches) >= 100 or size >= DEFAULT_LOCAL_AGENT_TOOL_OUTPUT_CHARS // 2:
+                        truncated = True
+                        break
+                    snippet = line[:1000]
+                    truncated = truncated or len(line) > 1000
+                    matches.append({"line": number, "text": snippet})
+                    size += len(snippet)
+                return {"ok": True, "tool": tool_name, "path": path.relative_to(folder).as_posix(),
+                        "matches": matches, "truncated": truncated}
             if "start_line" in arguments or "line_count" in arguments:
                 try:
                     start = max(1, int(arguments.get("start_line", 1)))
@@ -1337,7 +1383,9 @@ class WorkerManager:
                         return {"ok": True, "tool": tool_name, "files": files, "truncated": True}
             return {"ok": True, "tool": tool_name, "files": files, "truncated": False}
 
-        return {"ok": False, "error": f"unknown_tool:{tool_name}"}
+        return {"ok": False, "error": f"unknown_tool:{tool_name}",
+                "available_tools": [tool["function"]["name"] for tool in _local_agent_tools()],
+                "message": "Choose an available tool and follow its parameter schema."}
 
     async def _execute_checked(
         self, brain: str, folder: Path, tool_name: str, arguments: dict[str, Any]
@@ -1518,6 +1566,10 @@ class WorkerManager:
                 "role": "user",
                 "content": (
                     f"Worker folder: {folder}\n"
+                    f"Python interpreter: {_worker_python(folder)}\n"
+                    "Commands use this interpreter directory first on PATH. "
+                    "Use run_python for code, or run_command for python -m pytest or python tools/check.py. "
+                    "Use search_file for literal source search, then read_file line ranges for context.\n"
                     f"Suggested starting files: {', '.join(files or []) or '(none)'}\n\n"
                     f"Task:\n{task}"
                 ),
@@ -1658,6 +1710,7 @@ class WorkerManager:
 
             final_text = ""
             step_limited = False
+            empty_responses = 0
             step = 0
             while max_steps == 0 or step < max_steps:
                 step += 1
@@ -1704,6 +1757,21 @@ class WorkerManager:
                 message = choice.get("message") or {}
                 content = str(message.get("content") or "").strip()
                 tool_calls = message.get("tool_calls") or []
+                if not content and not tool_calls:
+                    empty_responses += 1
+                    if empty_responses <= 2:
+                        recovery = (
+                            "Your last response contained no answer or tool call. The task is still active. "
+                            "Continue with an available tool, or provide a final summary with actual changes, "
+                            "validation, commit, and any blockers. Do not treat a failed tool as completion."
+                        )
+                        transcript.append(f"coach[{step}:empty_response]: {recovery}")
+                        messages.append({"role": "user", "content": recovery})
+                        progress(f"Step {step}: empty model response; requesting continuation.", important=True)
+                        continue
+                    final_text = "Stopped before completion: model returned three empty responses. No completion was confirmed."
+                    step_limited = True
+                    break
                 if content:
                     transcript.append(f"assistant[{step}]: {content}")
 
@@ -1746,6 +1814,9 @@ class WorkerManager:
                 if fallback:
                     if "final" in fallback:
                         final_text = str(fallback.get("final") or "").strip()
+                        if not final_text:
+                            final_text = "Stopped before completion: model supplied an empty final answer."
+                            step_limited = True
                         break
                     if answer_only:
                         final_text = content or "(no final response)"
@@ -1815,6 +1886,9 @@ class WorkerManager:
                     local_agent_context_hard_cap_tokens=hard_cap,
                 )
             )
+            log.info("[%s] Worker outcome: %s | steps=%s | %s", name,
+                     "incomplete" if step_limited else "finished", step,
+                     redact_text(final_text)[:1200])
             label = "⚠️ Stopped before completion" if step_limited else "✅ Finished"
             diagnostics = "\n\n".join(entry for entry in transcript[-12:]
                                        if entry.startswith(("tool[", "coach[")))

@@ -699,3 +699,45 @@ def test_python_requires_free_command_approval(isolated):
     result = run(manager._execute_checked('free', folder, 'run_python', {'code': "print('hello')"}))
     assert result['error'] == 'denied_by_operator'
     assert requests[0][0] == 'run_command'
+
+
+def test_source_search_returns_lines_and_respects_read_restrictions(isolated):
+    folder = isolated / 'app'
+    folder.mkdir()
+    (folder / 'source.py').write_text('first\nPending request\nlast\npending again\n')
+    result = execute('search_file', {'path': 'source.py', 'query': 'PENDING'}, folder)
+    assert result['ok'] and [m['line'] for m in result['matches']] == [2, 4]
+    assert execute('search', {'path': 'source.py', 'query': 'missing'}, folder)['matches'] == []
+    for path in ('.env', '../outside.py'):
+        assert not execute('search_file', {'path': path, 'query': 'secret'}, folder)['ok']
+    assert not execute('search_file', {'path': 'source.py', 'query': ''}, folder)['ok']
+    (folder / 'long.txt').write_text(('match' * 1000 + '\n') * 150)
+    bounded = execute('search_file', {'path': 'long.txt', 'query': 'match'}, folder)
+    assert bounded['truncated'] and len(json.dumps(bounded)) < 24000
+
+
+def test_project_environment_is_selected_and_used_for_python(isolated, monkeypatch):
+    folder = isolated / 'app'
+    folder.mkdir()
+    assert workers._worker_python(folder) == Path(sys.executable)
+    relative = 'Scripts/python.exe' if sys.platform == 'win32' else 'bin/python'
+    interpreter = folder / '.venv' / relative
+    interpreter.parent.mkdir(parents=True)
+    interpreter.touch()
+    assert workers._worker_python(folder) == interpreter
+    original = workers.asyncio.create_subprocess_exec
+    calls = []
+    async def capture(executable, *args, **kwargs):
+        calls.append((executable, kwargs['env']['PATH']))
+        return await original(sys.executable, *args, **kwargs)
+    monkeypatch.setattr(workers.asyncio, 'create_subprocess_exec', capture)
+    result = execute('run_python', {'code': "print('project environment')"}, folder)
+    assert result['ok'] and 'project environment' in result['stdout']
+    assert calls[0][0] == str(interpreter)
+    assert calls[0][1].split(workers.os.pathsep)[0] == str(interpreter.parent)
+
+
+def test_unknown_tool_explains_available_tools(isolated):
+    result = execute('unavailable', {}, isolated)
+    assert result['error'] == 'unknown_tool:unavailable'
+    assert 'search_file' in result['available_tools']

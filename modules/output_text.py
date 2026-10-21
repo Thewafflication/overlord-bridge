@@ -51,6 +51,8 @@ def activity_summary(line: str) -> str:
 def worker_action(tool: str, arguments: dict) -> str:
     tool = {"run": "run_command", "bash": "run_command", "shell": "run_command",
             "write": "write_file"}.get(tool, tool)
+    if tool in {"search_file", "search"}:
+        return f"Search {arguments.get('path', '(unspecified file)')} for {arguments.get('query', '(unspecified query)')}"
     if tool == "read_file":
         return f"Read {arguments.get('path', '(unspecified file)')}"
     if tool == "write_file":

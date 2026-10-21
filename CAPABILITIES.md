@@ -470,3 +470,6 @@ Permission decisions are recorded locally in `run/permissions.jsonl`, with one r
 ### Free worker command and file tools
 
 Project workers expose `run_command` with an optional `shell: "powershell"` on Windows (default remains cmd.exe), plus `run_python` with a multiline `code` string using the bridge interpreter. Both execution tools use worker command restrictions and free-mode command approval. `read_file` accepts 1-based `start_line` and `line_count` for targeted source inspection without shell pipelines; omitted ranges retain the bounded tail behavior.
+
+
+Free workers now prefer an existing project `.venv` for Python execution and command PATH (bridge interpreter fallback); their startup context names it. `search_file` searches a named allowed text file for a case-insensitive literal `query`, returning bounded matches with line numbers. Unknown tool errors include supported tool names. Empty responses receive two continuation attempts, then produce an incomplete result; final outcomes are logged with bounded, redacted text.

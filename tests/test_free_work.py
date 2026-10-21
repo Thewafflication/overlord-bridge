@@ -636,6 +636,8 @@ def test_work_is_routed_from_the_main_loop():
 
 
 def test_project_roots_use_the_workspace_unless_it_is_the_whole_home(tmp_path, monkeypatch):
+    monkeypatch.setattr(bridge, "PROJECT_ROOTS", "")
+    monkeypatch.setattr(bridge, "PROJECT_FOLDERS", "")
     repos = tmp_path / "repos"
     repos.mkdir()
     zone = tmp_path / "zone"
@@ -656,3 +658,42 @@ def test_the_help_text_lists_work_and_the_telegram_layer_forwards_it():
     from modules import telegram_handler
 
     assert "/work" in bridge.HELP_TEXT and "work" in telegram_handler.COMMANDS
+
+
+def test_empty_worker_response_recovers_after_unknown_search(isolated, tmp_path):
+    project = isolated / 'recovery'
+    project.mkdir()
+    (project / 'source.py').write_text('pending request\n')
+    completer, seen = scripted_pool([
+        call('unavailable_search', {'query': 'pending'}),
+        {'content': ''},
+        call('search_file', {'path': 'source.py', 'query': 'pending'}),
+        {'content': 'Inspected the pending request on line 1; no changes required.'},
+    ])
+    mgr, sent, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert events(mgr)[-1]['status'] == 'finished'
+    assert len(seen) == 4
+    assert 'no changes required' in sent[-1]
+    assert any('task is still active' in str(m) for m in seen[2][0])
+
+
+def test_repeated_empty_worker_responses_are_incomplete(isolated, tmp_path):
+    project = isolated / 'empty'
+    project.mkdir()
+    completer, seen = scripted_pool([{'content': ''}] * 3)
+    mgr, sent, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert len(seen) == 3
+    assert events(mgr)[-1]['status'] == 'incomplete'
+    assert events(mgr)[-1]['exit_code'] == 1
+    assert 'Stopped before completion' in sent[-1] and '✅ Finished' not in sent[-1]
+
+
+def test_empty_json_final_is_not_success(isolated, tmp_path):
+    project = isolated / 'empty-final'
+    project.mkdir()
+    completer, _ = scripted_pool([{'content': '{"final": ""}'}])
+    mgr, sent, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert events(mgr)[-1]['status'] == 'incomplete'

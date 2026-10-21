@@ -23,7 +23,7 @@ def host_instructions(*, worker_shell: bool = False) -> str:
                 "Use cmd.exe-compatible commands there, or explicitly invoke "
                 "powershell.exe -NoProfile -Command for PowerShell commands. "
                 "Prefer shell=powershell to pass PowerShell code directly without nested quoting. "
-                "Use run_python for Python code: it uses the bridge interpreter, avoiding "
+                "Use run_python for Python code: it uses the project .venv when present (bridge interpreter fallback), avoiding "
                 "Windows Store aliases and missing PATH entries. Commands already start in "
                 "the project folder; no cd prefix is needed. Bash << heredocs, head, tail, "
                 "and grep are not available by default. Use read_file with start_line and "
