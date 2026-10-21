@@ -119,7 +119,7 @@ Telegram commands:
   persisted to `.env` under that brain's own key, so changing Claude's model
   never disturbs Codex's. Claude applies them without reconnecting; Codex
   re-opens the *same* thread so the conversation survives the change.
-- `/stop` interrupts the active AI turn.
+- `/stop` interrupts the active AI turn and all running project workers, cancels their pending approvals, and stops their running commands.
 - `/steer <message>` interrupts the active turn and starts the replacement
   guidance after the engine has cleaned up.
 - `/brain` shows the current brain; `/brain claude` and `/brain codex` switch

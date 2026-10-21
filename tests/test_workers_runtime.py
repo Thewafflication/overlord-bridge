@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import sys
 import urllib.error
 from email.message import Message
 from pathlib import Path
@@ -62,6 +63,34 @@ def statuses(manager):
 
 def run(coro):
     return asyncio.run(coro)
+
+
+def test_cancelled_tool_terminates_its_owned_process(tmp_path, monkeypatch):
+    async def scenario():
+        manager, _, _ = make_manager(tmp_path)
+        started = asyncio.Event()
+        real_shell = asyncio.create_subprocess_shell
+        processes = []
+
+        async def capture(*args, **kwargs):
+            proc = await real_shell(*args, **kwargs)
+            processes.append(proc)
+            started.set()
+            return proc
+
+        monkeypatch.setattr(workers.asyncio, "create_subprocess_shell", capture)
+        monkeypatch.setattr(workers, "_local_agent_command_denial", lambda *args: None)
+        command = f'"{sys.executable}" -c "import time; time.sleep(60)"'
+        task = asyncio.create_task(manager._local_agent_execute_tool(
+            tmp_path, "run_command", {"command": command},
+        ))
+        await asyncio.wait_for(started.wait(), timeout=5)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, timeout=15)
+        assert processes[0].returncode is not None
+
+    run(scenario())
 
 
 # ---------------------------------------------------------- allowed folders

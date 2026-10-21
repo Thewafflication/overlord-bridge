@@ -98,6 +98,35 @@ def test_stop_cancels_an_active_turn_without_waiting_for_the_inbound_loop():
     asyncio.run(scenario())
 
 
+def test_stop_cancels_background_workers_even_when_chat_turn_is_idle():
+    async def scenario():
+        from modules.brain import PermissionGate
+        from tests.test_permission_gate import FakeTelegram as GateTelegram
+
+        instance = make_bridge(BlockingBrain())
+        cleaned = asyncio.Event()
+        gate = PermissionGate(GateTelegram(), 42, 60)
+
+        async def worker():
+            try:
+                await gate.request("Write", "worker", ["app.py"])
+            finally:
+                cleaned.set()
+
+        task = asyncio.create_task(worker())
+        instance.workers = SimpleNamespace(_running={"Free-project": task})
+        await asyncio.sleep(0)
+        assert gate.pending
+        await instance._handle_stop(42)
+        assert cleaned.is_set()
+        assert not gate.pending
+        assert task.cancelled()
+        assert not instance.workers._running
+        assert instance.telegram.messages[-1] == (42, "Workers stopped.")
+
+    asyncio.run(scenario())
+
+
 def test_stalled_interrupt_and_cleanup_do_not_hang_or_start_replacement(monkeypatch):
     monkeypatch.setattr(bridge, "STOP_INTERRUPT_TIMEOUT", 0.01)
     monkeypatch.setattr(bridge, "STOP_CLEANUP_TIMEOUT", 0.01)

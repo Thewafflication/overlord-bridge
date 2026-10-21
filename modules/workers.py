@@ -1144,6 +1144,29 @@ class WorkerManager:
             proc.kill()
             await proc.wait()
 
+    @staticmethod
+    async def _terminate_worker_process(proc: asyncio.subprocess.Process) -> None:
+        """Stop an owned command, including its Windows child processes."""
+        if proc.returncode is not None:
+            return
+        if os.name == "nt":
+            try:
+                killer = await asyncio.create_subprocess_exec(
+                    "taskkill", "/PID", str(proc.pid), "/T", "/F",
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL,
+                    creationflags=0x08000000,
+                )
+                await asyncio.wait_for(killer.wait(), timeout=5)
+            except (OSError, asyncio.TimeoutError):
+                log.warning("Could not terminate worker process tree %s", proc.pid)
+        if proc.returncode is None:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+        await asyncio.wait_for(proc.wait(), timeout=5)
+
     async def _local_agent_execute_tool(
         self,
         folder: Path,
@@ -1184,6 +1207,9 @@ class WorkerManager:
             try:
                 out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout_i)
                 timed_out = False
+            except asyncio.CancelledError:
+                await self._terminate_worker_process(proc)
+                raise
             except asyncio.TimeoutError:
                 proc.kill()
                 out, err = await proc.communicate()
@@ -2161,6 +2187,13 @@ class WorkerManager:
                     files=files,
                     brain=brain,
                 )
+            except asyncio.CancelledError:
+                self._emit_report(self._base_report(
+                    name=name, folder=folder, brain=brain, session=session,
+                    status="interrupted", result_tail="Stopped by operator.",
+                ))
+                self._send(self.owner, f"⏹ [{name}] stopped.")
+                raise
             finally:
                 self._running.pop(name, None)
             return
@@ -2198,6 +2231,14 @@ class WorkerManager:
             )
             try:
                 out, err = await asyncio.wait_for(proc.communicate(), timeout=self.timeout)
+            except asyncio.CancelledError:
+                await self._terminate_worker_process(proc)
+                self._emit_report(self._base_report(
+                    name=name, folder=folder, brain=brain, session=sid,
+                    status="interrupted", result_tail="Stopped by operator.",
+                ))
+                self._send(self.owner, f"⏹ [{name}] stopped.")
+                raise
             except asyncio.TimeoutError:
                 proc.kill()
                 try:

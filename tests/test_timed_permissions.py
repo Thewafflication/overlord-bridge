@@ -10,6 +10,27 @@ from types import SimpleNamespace
 from bridge import Bridge
 
 
+def test_telegram_full_sixty_releases_pending_worker_permission():
+    from tests.test_telegram_handler_edges import make_handler, update
+
+    async def scenario():
+        telegram = FakeTelegram()
+        gate = PermissionGate(telegram, 42, 1)
+        waiting = asyncio.create_task(gate.request("Write", "worker", ["app.py"]))
+        await asyncio.sleep(0)
+        handler = make_handler()
+        await handler._handle_command(update("/permissions full 60"), None)
+        chat_id, text = handler.inbound_queue.get_nowait()
+        Bridge._handle_permissions(SimpleNamespace(gate=gate, telegram=telegram), chat_id, text)
+        assert await waiting
+        assert 3599 <= gate.full_access_remaining() <= 3600
+        assert "Full access enabled for 60 minutes" in telegram.messages[-1][1]
+        assert await gate.request("Write", "next-worker", ["next.py"])
+        assert not gate.pending
+
+    asyncio.run(scenario())
+
+
 def test_timed_access_expires_and_respects_offlimits(monkeypatch):
     now = [100.0]
     monkeypatch.setattr(brain.time, "monotonic", lambda: now[0])

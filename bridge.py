@@ -1487,13 +1487,34 @@ class Bridge:
         return not pending
 
     async def _handle_stop(self, chat_id: int) -> None:
-        if not self._turn_is_active():
+        running = getattr(getattr(self, "workers", None), "_running", {})
+        workers = {name: task for name, task in list(running.items()) if not task.done()}
+        active_turn = self._turn_is_active()
+        if not active_turn and not workers:
             self.telegram.send(chat_id, "Nothing is running.")
             return
-        self.telegram.send(chat_id, "⏹️ Stopping the active turn…")
-        await self._stop_active_turn()
-        if self._turn_is_active():
+        # Cancel workers first: one may be waiting on an approval that otherwise
+        # stays live after the foreground chat turn has already returned.
+        for task in workers.values():
+            task.cancel()
+        if workers:
+            self.telegram.send(chat_id, "⏹️ Stopping workers: " + ", ".join(workers))
+        if active_turn:
+            self.telegram.send(chat_id, "⏹️ Stopping the active turn…")
+            await self._stop_active_turn()
+        pending = set()
+        if workers:
+            done, pending = await asyncio.wait(set(workers.values()), timeout=STOP_CLEANUP_TIMEOUT)
+            for task in done:
+                if not task.cancelled():
+                    task.exception()
+            for name, task in workers.items():
+                if task.done() and running.get(name) is task:
+                    running.pop(name, None)
+        if self._turn_is_active() or pending:
             self.telegram.send(chat_id, "Cancellation requested; operation cleanup is still pending.")
+        elif workers:
+            self.telegram.send(chat_id, "Workers stopped.")
 
     async def _handle_steer(self, chat_id: int, text: str) -> None:
         parts = text.strip().split(maxsplit=1)
