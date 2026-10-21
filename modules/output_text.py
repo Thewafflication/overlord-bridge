@@ -55,6 +55,8 @@ def worker_action(tool: str, arguments: dict) -> str:
         return f"Read {arguments.get('path', '(unspecified file)')}"
     if tool == "write_file":
         return f"Write {arguments.get('path', '(unspecified file)')}"
+    if tool == "run_python":
+        return f"Run Python: {arguments.get('code', '(unspecified code)')}"
     if tool == "run_command":
         return f"Run {arguments.get('command') or arguments.get('cmd') or '(unspecified command)'}"
     if tool == "list_files":

@@ -42,6 +42,8 @@ etc.; aliases live in _NVIDIA_MODEL_ALIASES.
 from __future__ import annotations
 
 import asyncio
+import base64
+import sys
 from modules.free_services import OPENROUTER_BASE, validate_free_model, free_provider_policy
 import json
 import logging
@@ -756,11 +758,12 @@ def _local_agent_tools() -> list[dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "run_command",
-                "description": "Run a shell command in the worker project folder.",
+                "description": "Run a command in the project folder (already the working directory). Default shell is cmd.exe on Windows, /bin/sh elsewhere. Select shell=powershell on Windows for PowerShell syntax. Do not mix shell dialects or use Bash heredocs on Windows.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "command": {"type": "string"},
+                        "shell": {"type": "string", "enum": ["default", "powershell"]},
                         "timeout_seconds": {"type": "integer"},
                     },
                     "required": ["command"],
@@ -770,12 +773,26 @@ def _local_agent_tools() -> list[dict[str, Any]]:
         {
             "type": "function",
             "function": {
+                "name": "run_python",
+                "description": "Execute Python code using the bridge Python interpreter in the project folder. Pass multiline code directly; no shell quoting, heredocs, or python PATH lookup needed. Uses the same command restrictions as run_command.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"code": {"type": "string"}, "timeout_seconds": {"type": "integer"}},
+                    "required": ["code"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "read_file",
-                "description": "Read a UTF-8-ish text file under the worker project folder.",
+                "description": "Read project text directly without shell quoting. Use start_line and line_count to inspect large files; lines are 1-based. Without a range, oversized files return their tail.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "path": {"type": "string"},
+                        "start_line": {"type": "integer", "minimum": 1},
+                        "line_count": {"type": "integer", "minimum": 1},
                         "max_chars": {"type": "integer"},
                     },
                     "required": ["path"],
@@ -1183,10 +1200,15 @@ class WorkerManager:
         }
         tool_name = aliases.get(tool_name, tool_name)
 
-        if tool_name == "run_command":
+        if tool_name in {"run_command", "run_python"}:
             command = str(arguments.get("command") or arguments.get("cmd") or "").strip()
+            if tool_name == "run_python":
+                command = str(arguments.get("code") or "").strip()
             if not command:
                 return {"ok": False, "error": "missing_command"}
+            shell = arguments.get("shell", "default") if tool_name == "run_command" else "default"
+            if shell not in {"default", "powershell"} or (shell == "powershell" and sys.platform != "win32"):
+                return {"ok": False, "error": "unsupported_shell"}
             denial = _local_agent_command_denial(command, folder)
             if denial:
                 log_command("worker", "denied", command, folder)
@@ -1197,13 +1219,16 @@ class WorkerManager:
             except (TypeError, ValueError):
                 timeout_i = DEFAULT_LOCAL_AGENT_COMMAND_TIMEOUT
             log_command("worker", "started", command, folder)
-            proc = await asyncio.create_subprocess_shell(
-                command,
-                cwd=str(folder),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                env=os.environ.copy(),
-            )
+            options = dict(cwd=str(folder), stdout=asyncio.subprocess.PIPE,
+                           stderr=asyncio.subprocess.PIPE, env=os.environ.copy())
+            if tool_name == "run_python":
+                proc = await asyncio.create_subprocess_exec(sys.executable, "-c", command, **options)
+            elif shell == "powershell":
+                encoded = base64.b64encode(command.encode("utf-16-le")).decode("ascii")
+                proc = await asyncio.create_subprocess_exec(
+                    "powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded, **options)
+            else:
+                proc = await asyncio.create_subprocess_shell(command, **options)
             try:
                 out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout_i)
                 timed_out = False
@@ -1247,7 +1272,18 @@ class WorkerManager:
             except (TypeError, ValueError):
                 max_chars_i = DEFAULT_LOCAL_AGENT_TOOL_OUTPUT_CHARS
             text = path.read_text(encoding="utf-8", errors="replace")
-            bounded, truncated = _bounded_tail(text, max_chars_i)
+            if "start_line" in arguments or "line_count" in arguments:
+                try:
+                    start = max(1, int(arguments.get("start_line", 1)))
+                    count = max(1, min(int(arguments.get("line_count", 200)), 1000))
+                except (TypeError, ValueError):
+                    return {"ok": False, "error": "invalid_line_range"}
+                lines = text.splitlines(keepends=True)
+                selected = "".join(lines[start - 1:start - 1 + count])
+                bounded = selected[:max_chars_i]
+                truncated = len(selected) > max_chars_i or start - 1 + count < len(lines)
+            else:
+                bounded, truncated = _bounded_tail(text, max_chars_i)
             return {
                 "ok": True,
                 "tool": tool_name,
@@ -1316,10 +1352,11 @@ class WorkerManager:
             tool = {"run": "run_command", "bash": "run_command", "shell": "run_command",
                     "write": "write_file"}.get(tool_name, tool_name)
             request: dict[str, Any] | None = None
-            if tool == "run_command":
-                command = str(arguments.get("command") or arguments.get("cmd") or "").strip()
+            if tool in {"run_command", "run_python"}:
+                command = str((arguments.get("code") or "") if tool == "run_python" else (arguments.get("command") or arguments.get("cmd") or "")).strip()
                 if command and _local_agent_command_denial(command, folder) is None:
-                    request = {"command": command}
+                    request = {"command": command, "shell": arguments.get("shell", "default")}
+                tool = "run_command"
             elif tool == "write_file":
                 path, error = _resolve_worker_relative_path(folder, str(arguments.get("path") or ""))
                 content = arguments.get("content")
@@ -1585,7 +1622,7 @@ class WorkerManager:
 
         async def execute_with_progress(tool_name, arguments, duplicate_result):
             action = worker_action(tool_name, arguments)
-            important = tool_name in {"run_command", "run", "bash", "shell", "write_file", "write"}
+            important = tool_name in {"run_python", "run_command", "run", "bash", "shell", "write_file", "write"}
             progress(f"Step {step}: next action — {action}",
                      important=important)
             result = (duplicate_result if duplicate_result is not None

@@ -659,3 +659,43 @@ def test_xml_style_tool_calls_are_parsed():
 )
 def test_answer_only_detection(task, files, expected):
     assert _is_answer_only_worker_task(task, files) is expected
+
+def test_python_tool_multiline_and_errors(isolated):
+    folder = isolated / 'app'
+    folder.mkdir()
+    result = execute('run_python', {'code': "from pathlib import Path\nprint(Path.cwd().name)\nprint('hello')"}, folder)
+    assert result['ok'] and result['stdout'].splitlines() == ['app', 'hello']
+    result = execute('run_python', {'code': "raise RuntimeError('visible failure')"}, folder)
+    assert not result['ok'] and 'visible failure' in result['stderr']
+
+
+def test_read_file_line_ranges(isolated):
+    folder = isolated / 'app'
+    folder.mkdir()
+    (folder / 'large.py').write_text(''.join(f'line {i}\n' for i in range(1, 1001)))
+    for start in (1, 500, 999):
+        result = execute('read_file', {'path': 'large.py', 'start_line': start, 'line_count': 2}, folder)
+        assert result['content'] == f'line {start}\nline {start+1}\n'
+    assert not execute('read_file', {'path': 'large.py', 'start_line': 'bad'}, folder)['ok']
+
+
+@pytest.mark.skipif(sys.platform != 'win32', reason='Windows PowerShell')
+def test_powershell_preserves_variables_and_newlines(isolated):
+    folder = isolated / 'app'
+    folder.mkdir()
+    result = execute('run_command', {'shell': 'powershell', 'command': "$value = 'hello world'\nWrite-Output $value\nWrite-Output (Get-Location).Path"}, folder)
+    assert result['ok'] and result['stdout'].splitlines() == ['hello world', str(folder)]
+
+
+def test_python_requires_free_command_approval(isolated):
+    folder = isolated / 'app'
+    folder.mkdir()
+    manager = WorkerManager(send=lambda *a: None, owner=1, dispatch_dir=isolated / 'dq')
+    requests = []
+    async def deny(folder, tool, request):
+        requests.append((tool, request))
+        return 'denied_by_operator'
+    manager.tool_approver = deny
+    result = run(manager._execute_checked('free', folder, 'run_python', {'code': "print('hello')"}))
+    assert result['error'] == 'denied_by_operator'
+    assert requests[0][0] == 'run_command'

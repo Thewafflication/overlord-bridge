@@ -197,7 +197,7 @@ class FreeWork:
             return None
         if tool == "run_command":
             command = request["command"]
-            title, detail = "Free worker: run command", f"{command}\n(in {folder})"
+            title, detail = "Free worker: run command", f"{command}\n(shell: {request.get('shell', 'default')}; in {folder})"
             candidates, context = [command], {"workspace": str(folder), "request": request}
         else:
             content = request["content"]
