@@ -1659,7 +1659,7 @@ class WorkerManager:
         )
 
         preload_blocks: list[str] = []
-        for hinted_path in files or []:
+        for hinted_path in dict.fromkeys([*(files or []), "HANDOFF.md"]):
             path, error = _resolve_worker_relative_path(folder, hinted_path)
             if error or path is None:
                 continue
@@ -1732,7 +1732,8 @@ class WorkerManager:
                     "role": "user",
                     "content": (
                         "Here are the suggested starting files already loaded for you. "
-                        "Use them before broad exploration.\n\n"
+                        "Use them before broad exploration. Handoff notes describe prior work and may be stale; "
+                        "reconcile them against the current task and source, and do not replay side effects automatically.\n\n"
                         + "\n\n".join(preload_blocks)
                     ),
                 }
@@ -1824,6 +1825,7 @@ class WorkerManager:
                 last_progress = now
 
         async def execute_with_progress(tool_name, arguments, duplicate_result):
+            nonlocal completion_checkpoint
             action = worker_action(tool_name, arguments)
             important = tool_name in {"run_python", "run_command", "run", "bash", "shell", "write_file", "write", "edit_file"}
             progress(f"Step {step}: next action — {action}",
@@ -1831,6 +1833,7 @@ class WorkerManager:
             result = (duplicate_result if duplicate_result is not None
                       else await self._execute_checked(brain, folder, tool_name, arguments))
             if result.get("ok"):
+                completion_checkpoint = False
                 detail = "Completed"
                 if tool_name == "list_files":
                     detail = f"Found {len(result.get('files', []))} project files"
@@ -1924,6 +1927,7 @@ class WorkerManager:
                     final_text = "Stopped before completion: model returned three empty responses. No completion was confirmed."
                     step_limited = True
                     break
+                empty_responses = 0
                 if content:
                     transcript.append(f"assistant[{step}]: {content}")
 
