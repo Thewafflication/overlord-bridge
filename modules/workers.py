@@ -2066,6 +2066,8 @@ class WorkerManager:
                 )}]
                 for attempt in range(3):
                     progress(f"Planning task: requesting a concrete plan ({attempt + 1}/3).", important=True)
+                    planning_messages = _bounded_worker_messages(
+                        planning_messages, [], prefix_count=initial_context_count)
                     try:
                         planned = await self.free_completer(planning_messages, plan_tools)
                     except FreeUnavailable as exc:
