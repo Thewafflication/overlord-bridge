@@ -4,9 +4,9 @@ Owner request: mirror Telegram chat in the desktop GUI, accept GUI chat input an
 
 ## Current state
 
-This branch preserves partial GUI work, queue tests and scratch experiments. Worker commit cd3953c changed chat_requests to read bytes and corrected the truncate test; the worker reported 1,230 tests passing, but final review rejected GUI completion. It pushed v1.0.42 while source versions still declared 1.0.41. That tag/assets are preserved as a prerelease, not a completed stable GUI feature. Do not reuse that version.
+Partial GUI work, queue tests and scratch files are preserved. cd3953c changed queue reading to bytes and fixed the truncate test, but GUI completion was rejected. Worker tag v1.0.42 used source versions 1.0.41; it remains a prerelease. Do not reuse it.
 
-Main 1.0.45 is merged here. Its canonical checks passed (1,261 tests, one skip), excluding this GUI branch's additional tests. The last 1.0.44 run reached 65 steps without edits: it reran passing queue/full tests, repeatedly searched/read the same GUI paths, and submitted invalid search arguments containing result metadata (ok). The owner interrupted it after repeated empty primary replies; fallback models also returned 404/400/429. No GUI completion was established.
+Main 1.0.45 is merged here. Its canonical checks passed (1,261 tests, one skip), excluding this GUI branch's additional tests. The last run reached 65 steps without edits, repeating passing tests, GUI discovery and invalid search arguments containing result metadata (ok). The owner interrupted it after repeated empty primary replies; fallback models also returned 404/400/429. No GUI completion was established.
 
 The harness now requires a bounded plan-only progress phase after 12 steps without a confirmed file edit. Record confirmed findings and file/line locations, unresolved uncertainty and the next concrete action in explanation; this state survives trimming. Three invalid plans or pool exhaustion stop incomplete. No file/command tool executes during that phase. Do not manufacture edits for a read-only task. Normal work must still produce the requested implementation and verification.
 
