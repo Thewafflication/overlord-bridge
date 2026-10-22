@@ -522,3 +522,5 @@ Model-facing worker tool calls reject unknown top-level parameter names and inco
 
 
 Confirmed file mutations retain their own bounded 20-entry metadata ledger across worker context trimming, independent of read/search history. Progress checkpoints and final review use it to reconcile actual edits with potentially stale plans. Release builds validate their requested version against pyproject.toml and modules/version.py FALLBACK_VERSION before staging/signing; use python tools/check_release_version.py <version-or-tag> locally.
+
+- Worker formal call wrappers are validated as a whole before execution/history: malformed batches return explicit retry guidance, and valid siblings in an invalid batch do not execute. No tool is guessed from arguments.

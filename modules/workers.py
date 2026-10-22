@@ -1019,6 +1019,27 @@ def _local_agent_json_result(result: dict[str, Any], limit: int) -> str:
     return bounded
 
 
+def _worker_call_envelope_error(calls: Any) -> str | None:
+    """Validate provider structure before execution or adding it to chat history."""
+    if not isinstance(calls, list):
+        return "tool_calls must be an array of function calls."
+    ids = set()
+    for call in calls:
+        if not isinstance(call, dict):
+            return "Each tool call must be an object."
+        call_id = call.get("id")
+        if not isinstance(call_id, str) or not call_id.strip() or call_id in ids:
+            return "Each tool call needs a nonempty string id, unique within the response."
+        ids.add(call_id)
+        function = call.get("function")
+        if call.get("type", "function") != "function" or not isinstance(function, dict):
+            return "Each tool call needs type=function and a function object."
+        name = function.get("name")
+        if not isinstance(name, str) or not name.strip():
+            return "function.name must be a nonempty string naming an available tool."
+    return None
+
+
 def _bounded_worker_messages(messages: list[dict[str, Any]], evidence: list[str],
                              limit: int = 48000, *, prefix_count: int = 2,
                              plan: dict[str, Any] | None = None,
@@ -2253,6 +2274,20 @@ class WorkerManager:
                     transcript.append(f"assistant[{step}]: {content}")
 
                 if tool_calls:
+                    envelope_error = _worker_call_envelope_error(tool_calls)
+                    if envelope_error:
+                        # Invalid assistant/tool pairs poison later provider requests.
+                        # Reject the whole batch, including valid siblings, with no actions.
+                        recovery = json.dumps({
+                            "ok": False, "error": "invalid_tool_calls", "message": envelope_error,
+                            "available_tools": [t["function"]["name"] for t in _local_agent_tools()],
+                            "instruction": "No call in this response was executed. Resubmit a valid function call "
+                                           "using its exact name and parameter schema.",
+                        })
+                        messages.append({"role": "user", "content": recovery})
+                        transcript.append(f"coach[{step}:invalid_tool_calls]: {recovery}")
+                        progress(f"Step {step}: malformed tool-call wrapper; requesting a corrected call.", important=True)
+                        continue
                     if content:
                         progress(f"Step {step}: worker note — {content}", emit=False)
                     messages.append(

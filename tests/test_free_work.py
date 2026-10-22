@@ -1274,3 +1274,42 @@ def test_confirmed_mutations_survive_discovery_and_context_trimming(isolated, tm
     assert any('Recent confirmed file changes' in str(messages) and 'changed.py' in str(messages)
                for messages, _ in seen)
     assert all(len(json.dumps(messages, ensure_ascii=False)) <= 48000 for messages, _ in seen)
+
+
+@pytest.mark.parametrize('calls', [
+    {'function': {'name': 'run_python'}},
+    [None],
+    [{'id': 'bad', 'function': 'run_python'}],
+    [{'id': 'bad', 'function': {'arguments': '{}'}}],
+    [{'id': 'bad', 'function': {'name': ['run_python'], 'arguments': '{}'}}],
+    [{'function': {'name': 'run_python', 'arguments': '{}'}}],
+    [{'id': 'same', 'function': {'name': 'run_python', 'arguments': '{}'}}] * 2,
+])
+def test_malformed_tool_call_envelopes_recover_without_execution(isolated, tmp_path, calls):
+    project = isolated / 'invalid-calls'
+    project.mkdir()
+    completer, seen = scripted_pool([
+        {'content': '', 'tool_calls': calls},
+        call('run_python', {'code': 'print("recovered")'}, 'good-call'), final_result('Recovered'),
+    ])
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert any('invalid_tool_calls' in str(messages) for messages, _ in seen)
+    assert final_tool_result(seen, 'good-call')['stdout'].strip() == 'recovered'
+    assert all(m.get('tool_calls') != calls for messages, _ in seen for m in messages)
+    assert events(mgr)[-1]['status'] == 'finished'
+
+
+def test_invalid_parallel_batch_does_not_execute_valid_siblings(isolated, tmp_path):
+    project = isolated / 'invalid-batch'
+    project.mkdir()
+    valid = call('run_python', {'code': 'from pathlib import Path; Path("unexpected").touch()'}, 'valid')['tool_calls'][0]
+    completer, seen = scripted_pool([
+        {'content': '', 'tool_calls': [valid, {'id': 'invalid', 'function': None}]},
+        final_result('No work performed'),
+    ])
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert not (project / 'unexpected').exists()
+    assert 'No call in this response was executed' in str(seen[-1][0])
+    assert not any(m['role'] == 'tool' for m in seen[-1][0])
