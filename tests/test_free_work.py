@@ -1083,3 +1083,52 @@ def test_noop_writes_do_not_bypass_duplicate_guard(isolated, tmp_path):
     assert final_tool_result(seen, 'write-1')['changed'] is False
     assert final_tool_result(seen, 'write-3')['error'] == 'duplicate_tool_call_blocked'
     assert target.stat().st_mtime_ns == before
+
+
+@pytest.mark.parametrize('args', [
+    {}, {'plan': []}, {'plan': [{'step': 'test', 'status': []}]},
+    {'plan': [{'step': '', 'status': 'pending'}]},
+    {'plan': [{'step': 'x' * 201, 'status': 'pending'}]},
+    {'plan': [{'step': 'test', 'status': 'unknown'}]},
+    {'plan': [{'step': 'test', 'status': 'pending'}] * 13},
+    {'plan': [{'step': 'test', 'status': 'pending'}], 'explanation': 'x' * 1001},
+])
+def test_invalid_worker_plans_are_rejected(tmp_path, args):
+    mgr, _, _ = manager(tmp_path, None)
+    assert run(mgr._local_agent_execute_tool(tmp_path, 'update_plan', args))['error'] == 'invalid_plan'
+
+
+def test_plan_metadata_does_not_write_files_or_request_approval(tmp_path):
+    async def approve(*args):
+        raise AssertionError('plan metadata needs no command or file approval')
+    mgr, _, _ = manager(tmp_path, None, approver=approve)
+    before = set(tmp_path.iterdir())
+    result = run(mgr._execute_checked('free', tmp_path, 'update_plan', {
+        'plan': [{'step': 'Add queue tests', 'status': 'in_progress'}], 'explanation': 'Known next action'}))
+    assert result['ok'] and result['plan']['explanation'] == 'Known next action'
+    assert set(tmp_path.iterdir()) == before
+
+
+def test_latest_worker_plan_survives_repeated_context_trimming(isolated, tmp_path):
+    project = isolated / 'plan-memory'
+    project.mkdir()
+    pressure = context_pressure_actions(project)
+    completer, seen = scripted_pool([
+        call('update_plan', {'plan': [{'step': 'Inspect queue code', 'status': 'in_progress'}]}),
+        *pressure,
+        call('update_plan', {'plan': [
+            {'step': 'Inspect queue code', 'status': 'completed'},
+            {'step': 'Add queue behavior regression tests', 'status': 'in_progress'}],
+            'explanation': 'Inspection complete; implement known tests next'}),
+        *[call('read_file', {'path': 'large.py', 'start_line': i * 15 + 1, 'line_count': 25}, f'next-{i}')
+          for i in range(12)],
+        final_result('Inspection finished'),
+    ])
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    checkpoints = [m['content'] for m in seen[-1][0]
+                   if m.get('content', '').startswith('Worker context checkpoint')]
+    assert checkpoints and 'Add queue behavior regression tests' in checkpoints[-1]
+    assert 'Inspection complete; implement known tests next' in checkpoints[-1]
+    assert 'assessment, not verified completion' in checkpoints[-1]
+    assert all(len(json.dumps(messages, ensure_ascii=False)) <= 48000 for messages, _ in seen)

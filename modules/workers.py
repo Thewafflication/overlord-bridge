@@ -794,6 +794,17 @@ def _prepare_worker_edit(folder: Path, arguments: dict[str, Any]) -> tuple[Path 
 
 def _local_agent_tools() -> list[dict[str, Any]]:
     return [
+        {"type": "function", "function": {
+            "name": "update_plan",
+            "description": "Record the current task plan and findings in worker memory. Survives context trimming for this run. Update as steps finish or a specific blocker changes the next action. This records your assessment, not verified completion, and changes no project files.",
+            "parameters": {"type": "object", "properties": {
+                "explanation": {"type": "string", "maxLength": 1000},
+                "plan": {"type": "array", "minItems": 1, "maxItems": 12, "items": {
+                    "type": "object", "properties": {
+                        "step": {"type": "string", "minLength": 1, "maxLength": 200},
+                        "status": {"type": "string", "enum": ["pending", "in_progress", "completed"]}},
+                    "required": ["step", "status"], "additionalProperties": False}}},
+                "required": ["plan"], "additionalProperties": False}}},
         {
             "type": "function",
             "function": {
@@ -974,7 +985,8 @@ def _local_agent_json_result(result: dict[str, Any], limit: int) -> str:
 
 
 def _bounded_worker_messages(messages: list[dict[str, Any]], evidence: list[str],
-                             limit: int = 48000, *, prefix_count: int = 2) -> list[dict[str, Any]]:
+                             limit: int = 48000, *, prefix_count: int = 2,
+                             plan: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """Retain the task, bounded action evidence and complete recent exchanges.
 
     This is mechanical history trimming, not an invented natural-language summary.
@@ -995,7 +1007,9 @@ def _bounded_worker_messages(messages: list[dict[str, Any]], evidence: list[str]
             "These are recorded tool actions, not proof that the task is finished. Reconcile current files "
             "and git status, preserve pre-existing changes, and continue from the latest results. Reread "
             "a targeted source region if its prior contents are no longer present. Do not restart a broad survey.\n" +
-            "\n".join(evidence)[-min(8000, (limit - size(base)) // 3):]
+            ("\n".join(evidence) + ("\nLatest model-maintained plan (assessment, not verified completion):\n" +
+                                    json.dumps(plan, ensure_ascii=False) if plan else ""))[
+                                        -min(8000, (limit - size(base)) // 3):]
         ),
     }
     groups = []
@@ -1312,6 +1326,23 @@ class WorkerManager:
         arguments: dict[str, Any],
     ) -> dict[str, Any]:
         tool_name = worker_tool_name(tool_name)
+
+        if tool_name == "update_plan":
+            plan = arguments.get("plan")
+            explanation = arguments.get("explanation", "")
+            valid = isinstance(explanation, str) and len(explanation) <= 1000
+            valid = valid and isinstance(plan, list) and 1 <= len(plan) <= 12
+            if valid:
+                valid = all(isinstance(item, dict) and isinstance(item.get("step"), str)
+                            and 1 <= len(item["step"].strip()) <= 200
+                            and isinstance(item.get("status"), str)
+                            and item["status"] in {"pending", "in_progress", "completed"}
+                            for item in plan)
+            if not valid:
+                return {"ok": False, "error": "invalid_plan",
+                        "message": "Supply 1-12 steps (step text <=200 characters; status pending/in_progress/completed) and optional explanation <=1000 characters."}
+            return {"ok": True, "tool": tool_name, "plan": {"explanation": explanation,
+                    "plan": [{"step": item["step"], "status": item["status"]} for item in plan]}}
 
         if tool_name in {"run_command", "run_python"}:
             command = str(arguments.get("command") or arguments.get("cmd") or "").strip()
@@ -1755,6 +1786,8 @@ class WorkerManager:
                 "need project context, do not inspect files or run commands; return the final "
                 "answer directly. "
                 "Prefer the suggested starting files and any preloaded file contents before exploring further. "
+                "Use update_plan to record concrete next steps and findings; update it as work progresses. "
+                "The latest plan survives context trimming; continue from it instead of restarting discovery. "
                 "Prefer targeted commands compatible with the host environment. "
                 "When editing existing files, read the target region first and use edit_file for exact small replacements. "
                 "Use write_file for new files; do not regenerate a large existing file for a small change. "
@@ -1804,6 +1837,7 @@ class WorkerManager:
         transcript: list[str] = []
         completion_evidence: list[str] = []
         completion_commands: list[str] = []
+        worker_plan: dict[str, Any] | None = None
         denial_counts: dict[str, int] = {}
         tool_call_counts: dict[str, int] = {}
 
@@ -1891,7 +1925,7 @@ class WorkerManager:
                 last_progress = now
 
         async def execute_with_progress(tool_name, arguments, duplicate_result):
-            nonlocal completion_checkpoint, final_review_rejected, last_edit_step
+            nonlocal completion_checkpoint, final_review_rejected, last_edit_step, worker_plan
             action = worker_action(tool_name, arguments)
             important = tool_name in {"run_python", "run_command", "run", "bash", "shell", "write_file", "write", "edit_file"}
             progress(f"Step {step}: next action — {action}",
@@ -1916,6 +1950,8 @@ class WorkerManager:
             if len(ledger) > 20:
                 del ledger[0]
             if result.get("ok"):
+                if tool_name == "update_plan":
+                    worker_plan = result["plan"]
                 completion_checkpoint = False
                 final_review_rejected = False
                 if tool_name == "edit_file" or (tool_name in {"write_file", "write"} and result.get("changed")):
@@ -2002,7 +2038,7 @@ class WorkerManager:
                 if is_free:
                     bounded_messages = _bounded_worker_messages(
                         messages, completion_evidence + completion_commands,
-                        prefix_count=initial_context_count)
+                        prefix_count=initial_context_count, plan=worker_plan)
                     if bounded_messages is not messages:
                         messages = bounded_messages
                         # Source results may have been evicted. Allow reacquisition
