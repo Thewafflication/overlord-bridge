@@ -117,6 +117,25 @@ def default_path(base_dir: Path) -> Path:
     return Path(base_dir) / "run" / "chat-mirror.jsonl"
 
 
+class DisabledChatMirror:
+    """A mirror that records nothing, for a bridge with no transcript.
+
+    The transcript is a convenience for the desktop window, never a
+    requirement for the conversation itself. A bridge that was assembled
+    without one (a test, or a half-built instance) must still serve messages
+    rather than fail on every one of them.
+    """
+
+    def append(self, role: str, text: str, source: str = SOURCE_TELEGRAM) -> None:
+        return None
+
+    def read_since(self, offset: int = 0) -> Tuple[List[Dict], int]:
+        return [], offset
+
+    def iter_all(self) -> Iterator[Dict]:
+        return iter(())
+
+
 def describe_source(source: str) -> str:
     """Human label for where a message came from."""
     if source == SOURCE_GUI:
@@ -128,6 +147,7 @@ def describe_source(source: str) -> str:
 
 __all__ = [
     "ChatMirror",
+    "DisabledChatMirror",
     "ROLE_OWNER",
     "ROLE_OVERLORD",
     "SOURCE_GUI",

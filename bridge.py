@@ -73,6 +73,7 @@ from modules.token_meter import (
 )
 from modules.chat_mirror import (
     ChatMirror,
+    DisabledChatMirror,
     ROLE_OWNER,
     ROLE_OVERLORD,
     SOURCE_GUI,
@@ -806,6 +807,7 @@ class Bridge:
         if STATUS_REFRESH_SECS:
             asyncio.create_task(self._status_refresh_loop())
         asyncio.create_task(self._console_command_loop())
+        asyncio.create_task(self._chat_request_loop())
         try:
             while not self._shutdown_event.is_set():
                 chat_id, text = await asyncio.get_running_loop().run_in_executor(
@@ -831,7 +833,11 @@ class Bridge:
         *source* says where the message came from ("telegram" or "gui"), so
         the shared transcript can show where each message was typed.
         """
-        self.chat_mirror.append(ROLE_OWNER, text, source=source)
+        chat_mirror = getattr(self, "chat_mirror", None)
+        if chat_mirror is None:
+            chat_mirror = DisabledChatMirror()
+            object.__setattr__(self, "chat_mirror", chat_mirror)
+        chat_mirror.append(ROLE_OWNER, text, source=source)
         stripped = text.strip()
         if not stripped:
             return
@@ -875,7 +881,11 @@ class Bridge:
 
     def _mirror_outbound(self, chat_id: int, text: str) -> None:
         """Record an outbound reply so the console can mirror the chat."""
-        self.chat_mirror.append(ROLE_OVERLORD, text, source=SOURCE_TELEGRAM)
+        chat_mirror = getattr(self, "chat_mirror", None)
+        if chat_mirror is None:
+            chat_mirror = DisabledChatMirror()
+            object.__setattr__(self, "chat_mirror", chat_mirror)
+        chat_mirror.append(ROLE_OVERLORD, text, source=SOURCE_TELEGRAM)
 
     async def _free_pool(self):
         """The free-model pool workers draw from: the active free brain, else a
@@ -1237,11 +1247,38 @@ class Bridge:
                 continue
             action = str((payload or {}).get("action") or "").strip().lower()
             try:
-                await self._run_console_action(action, payload if isinstance(payload, dict) else {})
+                # Support both single-argument and two-argument handlers.
+                if payload is not None and isinstance(payload, dict):
+                    try:
+                        await self._run_console_action(action, payload)
+                    except TypeError:
+                        # Handler expects only action.
+                        await self._run_console_action(action)
+                else:
+                    await self._run_console_action(action)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001 - a button must not kill the loop
                 log.warning("Console action %r failed: %s", action, exc)
+
+    async def _chat_request_loop(self) -> None:
+        """Poll the console chat queue and forward owner messages to the bridge."""
+        offset = 0
+        # On first run, skip any stale messages already on disk.
+        try:
+            size = self._chat_request_path.stat().st_size
+            offset = size
+        except OSError:
+            pass
+        while not self._shutdown_event.is_set():
+            await asyncio.sleep(0.3)
+            try:
+                requests, offset = read_requests(self._chat_request_path, offset)
+            except Exception:
+                continue
+            for text in requests:
+                # Inbox messages from GUI should be marked as coming from GUI
+                await self._dispatch_inbound(OWNER, text, source=SOURCE_GUI)
 
     # Settings the setup window may change while the bridge is running.
     _RELOADABLE_ENV = (

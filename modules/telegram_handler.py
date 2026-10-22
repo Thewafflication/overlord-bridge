@@ -392,7 +392,7 @@ class TelegramHandler(threading.Thread):
         """
         if not text:
             return
-        if mirror and self.on_send is not None:
+        if mirror and getattr(self, "on_send", None) is not None:
             # Mirrored before delivery so the console shows the reply even if
             # Telegram itself refuses the message.
             try:

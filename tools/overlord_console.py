@@ -307,8 +307,9 @@ class OverlordConsole:
         self.text.tag_configure("debug", foreground="#64748b")
         self.text.tag_configure("plain", foreground="#d1d5db")
         self.text.tag_configure("command", foreground="#86efac")
-        self.chat_text.tag_configure("owner", foreground="#86efac")
-        self.chat_text.tag_configure("overlord", foreground="#dbeafe")
+        if hasattr(self, "chat_text"):
+            self.chat_text.tag_configure("owner", foreground="#86efac")
+            self.chat_text.tag_configure("overlord", foreground="#dbeafe")
 
     def _seek_initial_tail(self) -> None:
         try:
