@@ -231,16 +231,22 @@ def final_result(text, **extra):
     return {"content": json.dumps({"final": text, "outcome": "finished"}), **extra}
 
 
-def scripted_pool(replies):
+def scripted_pool(replies, reviews=None):
     queue = list(replies)
+    review_queue = list(reviews or [])
     seen = []
+    reviewed = []
 
     async def complete(messages, tools):
+        if tools is None and messages[0]['content'].startswith('You are the completion reviewer'):
+            reviewed.append(json.loads(json.dumps(messages)))
+            return review_queue.pop(0) if review_queue else {'content': '{"complete":true,"reason":"Verified"}'}
         seen.append((json.loads(json.dumps(messages)), tools))
         message = dict(queue.pop(0))
         message["_free_model"] = message.pop("_model", "nvidia:test")
         return message
 
+    complete.reviews = reviewed
     return complete, seen
 
 
@@ -824,3 +830,74 @@ def test_empty_response_guard_counts_consecutive_failures(isolated, tmp_path):
     mgr, sent, _ = manager(tmp_path, completer)
     start(mgr, project)
     assert len(seen) == 6 and events(mgr)[-1]['status'] == 'finished'
+
+
+def test_completion_review_sends_unsupported_success_back_to_tools(isolated, tmp_path):
+    project = isolated / 'review-recovery'
+    project.mkdir()
+    completer, seen = scripted_pool([
+        call('write_file', {'path': 'feature.py', 'content': 'enabled = True'}),
+        final_result('Implemented feature; tests are runnable, pending validation.'),
+        call('run_python', {'code': 'print("validated")'}),
+        final_result('Validated feature'),
+    ], reviews=[{'content': '{"complete":false,"reason":"Run validation and commit the changes."}'},
+                {'content': '{"complete":true,"reason":"Validation evidence checked."}'}])
+    mgr, sent, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert events(mgr)[-1]['status'] == 'finished'
+    assert len(completer.reviews) == 2
+    assert 'Run validation and commit' in str(seen[2][0])
+    evidence = json.loads(completer.reviews[1][1]['content'])
+    assert evidence['task'] == 'implement the feature'
+    assert 'validated' in evidence['tool_evidence']
+    assert 'exit_code' in evidence['tool_evidence']
+
+
+@pytest.mark.parametrize('decision', [
+    {'complete': False, 'reason': 'No validation or commit evidence.'},
+    {'complete': 'true', 'reason': 'Invalid boolean'},
+    {},
+])
+def test_repeated_unverified_final_claim_is_incomplete(isolated, tmp_path, decision):
+    project = isolated / 'review-rejected'
+    project.mkdir()
+    completer, seen = scripted_pool([final_result('Done'), final_result('Done again')],
+                                  reviews=[{'content': json.dumps(decision)}] * 2)
+    mgr, sent, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert events(mgr)[-1]['status'] == 'incomplete'
+    assert len(seen) == 2 and len(completer.reviews) == 2
+    assert '✅ Finished' not in sent[-1]
+
+
+def test_blocked_final_does_not_require_completion_review(isolated, tmp_path):
+    project = isolated / 'blocked-review'
+    project.mkdir()
+    completer, _ = scripted_pool([{'content': '{"final":"Cannot proceed","outcome":"blocked"}'}])
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert events(mgr)[-1]['status'] == 'incomplete' and not completer.reviews
+
+
+def test_search_query_error_teaches_valid_arguments(tmp_path):
+    mgr, _, _ = manager(tmp_path, None)
+    result = run(mgr._local_agent_execute_tool(tmp_path, 'search_file', {'pattern': 'needle'}))
+    assert result['error'] == 'missing_search_query'
+    assert result['example']['arguments']['query']
+    assert 'filenames only' in result['message']
+
+
+def test_unavailable_completion_review_never_reports_success(isolated, tmp_path):
+    project = isolated / 'review-offline'
+    project.mkdir()
+    replies = [final_result('Done'), final_result('Done')]
+
+    async def complete(messages, tools):
+        if tools is None:
+            raise RuntimeError('provider unavailable')
+        return replies.pop(0)
+
+    mgr, sent, _ = manager(tmp_path, complete)
+    start(mgr, project)
+    assert events(mgr)[-1]['status'] == 'incomplete'
+    assert 'Completion review unavailable' in sent[-1]
