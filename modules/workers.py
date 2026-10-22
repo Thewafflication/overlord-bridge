@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import fnmatch
 import sys
 from modules.free_services import OPENROUTER_BASE, validate_free_model, free_provider_policy
 import json
@@ -374,6 +375,10 @@ _LOCAL_AGENT_SKIP_DIRS = {
     "node_modules",
     "node_modules_bak",
     ".aider",
+}
+_LOCAL_AGENT_LIST_SKIP_DIRS = _LOCAL_AGENT_SKIP_DIRS | {
+    "build", "dist", "out", ".pytest_cache", ".staged-validation", ".wpm",
+    "run", "dispatch", "worker_reports",
 }
 _LOCAL_AGENT_SKIP_PATH_PARTS = {
     ("data", "processed"),
@@ -840,11 +845,13 @@ def _local_agent_tools() -> list[dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "list_files",
-                "description": "List project files, excluding bulky generated folders.",
+                "description": "Find project files without traversing generated, dependency, secret or linked directories. Prefer this over recursive shell listings. Optionally select a project-relative directory path and filename pattern such as *.py. Results are capped; narrow the path/pattern when truncated.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "max_files": {"type": "integer"},
+                        "path": {"type": "string"},
+                        "pattern": {"type": "string"},
                     },
                 },
             },
@@ -1184,8 +1191,13 @@ class WorkerManager:
             await proc.wait()
 
     @staticmethod
-    async def _terminate_worker_process(proc: asyncio.subprocess.Process) -> None:
+    async def _terminate_worker_process(proc: asyncio.subprocess.Process, *, process_group: bool = False) -> None:
         """Stop an owned command, including its Windows child processes."""
+        if process_group and os.name != "nt":
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
         if proc.returncode is not None:
             return
         if os.name == "nt":
@@ -1247,6 +1259,8 @@ class WorkerManager:
             environment["PATH"] = str(interpreter.parent) + os.pathsep + environment.get("PATH", "")
             options = dict(cwd=str(folder), stdout=asyncio.subprocess.PIPE,
                            stderr=asyncio.subprocess.PIPE, env=environment)
+            if os.name != "nt":
+                options["start_new_session"] = True
             if tool_name == "run_python":
                 proc = await asyncio.create_subprocess_exec(str(interpreter), "-c", command, **options)
             elif shell == "powershell":
@@ -1255,16 +1269,28 @@ class WorkerManager:
                     "powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded, **options)
             else:
                 proc = await asyncio.create_subprocess_shell(command, **options)
+            communication = asyncio.create_task(proc.communicate())
             try:
-                out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout_i)
+                out, err = await asyncio.wait_for(asyncio.shield(communication), timeout=timeout_i)
                 timed_out = False
             except asyncio.CancelledError:
-                await self._terminate_worker_process(proc)
+                await self._terminate_worker_process(proc, process_group=os.name != "nt")
                 raise
             except asyncio.TimeoutError:
-                proc.kill()
-                out, err = await proc.communicate()
                 timed_out = True
+                log_command("worker", "timeout cleanup started", command, folder)
+                try:
+                    await self._terminate_worker_process(proc, process_group=os.name != "nt")
+                except (OSError, asyncio.TimeoutError):
+                    log.warning("Worker command cleanup did not finish for PID %s", proc.pid)
+                try:
+                    out, err = await asyncio.wait_for(asyncio.shield(communication), timeout=5)
+                except asyncio.TimeoutError:
+                    out, err = b"", b"Command timed out; output pipes did not close after process cleanup."
+            finally:
+                if not communication.done():
+                    communication.cancel()
+                    await asyncio.gather(communication, return_exceptions=True)
             log_command("worker", "timed out" if timed_out else "completed", command, folder,
                         exit_code=proc.returncode)
             stdout = (out or b"").decode(errors="replace")
@@ -1363,17 +1389,35 @@ class WorkerManager:
                 max_files_i = max(1, min(int(max_files), 1000))
             except (TypeError, ValueError):
                 max_files_i = 300
+            search_root, error = _resolve_worker_relative_path(folder, str(arguments.get("path") or "."))
+            if error or search_root is None:
+                return {"ok": False, "error": error or "bad_path"}
+            denial = _local_agent_path_denial(search_root, folder, write=False)
+            if denial:
+                return {"ok": False, "error": denial}
+            if not search_root.is_dir():
+                return {"ok": False, "error": "directory_not_found"}
+            if any(part in _LOCAL_AGENT_LIST_SKIP_DIRS for part in search_root.relative_to(folder.resolve()).parts):
+                return {"ok": False, "error": "listing_generated_directory_denied"}
+            pattern = str(arguments.get("pattern") or "*")
+            if "/" in pattern or "\\" in pattern:
+                return {"ok": False, "error": "pattern_must_be_filename_glob"}
             files: list[str] = []
-            for root, dirs, names in os.walk(folder):
+            for root, dirs, names in os.walk(search_root):
                 root_path = Path(root)
                 rel_parts = root_path.relative_to(folder).parts if root_path != folder else ()
                 dirs[:] = [
                     d
                     for d in dirs
-                    if d not in _LOCAL_AGENT_SKIP_DIRS
+                    if d not in _LOCAL_AGENT_LIST_SKIP_DIRS
+                    and not (root_path / d).is_symlink()
+                    and not (root_path / d).is_junction()
+                    and _local_agent_path_denial(root_path / d, folder, write=False) is None
                     and not any(tuple(rel_parts + (d,))[: len(skip)] == skip for skip in _LOCAL_AGENT_SKIP_PATH_PARTS)
                 ]
                 for name in sorted(names):
+                    if not fnmatch.fnmatchcase(name.casefold(), pattern.casefold()):
+                        continue
                     path = root_path / name
                     denial = _local_agent_path_denial(path, folder, write=False)
                     if denial:
@@ -1569,6 +1613,8 @@ class WorkerManager:
                     f"Python interpreter: {_worker_python(folder)}\n"
                     "Commands use this interpreter directory first on PATH. "
                     "Use run_python for code, or run_command for python -m pytest or python tools/check.py. "
+                    "Use list_files with path/pattern (for example path=modules, pattern=*.py) to narrow discovery; "
+                    "do not use recursive shell listings that filter generated folders only after traversal. "
                     "Use search_file for literal source search, then read_file line ranges for context.\n"
                     f"Suggested starting files: {', '.join(files or []) or '(none)'}\n\n"
                     f"Task:\n{task}"

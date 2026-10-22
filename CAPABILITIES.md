@@ -473,3 +473,6 @@ Project workers expose `run_command` with an optional `shell: "powershell"` on W
 
 
 Free workers now prefer an existing project `.venv` for Python execution and command PATH (bridge interpreter fallback); their startup context names it. `search_file` searches a named allowed text file for a case-insensitive literal `query`, returning bounded matches with line numbers. Unknown tool errors include supported tool names. Empty responses receive two continuation attempts, then produce an incomplete result; final outcomes are logged with bounded, redacted text.
+
+
+Worker `list_files` accepts `path` (project-relative directory) and `pattern` (filename glob, e.g. `*.py`). Generated/dependency/secret/linked directories are pruned during traversal. Worker command timeouts clean up the owned Windows process tree or POSIX process group before a bounded output drain; timeout cleanup is logged and buffered output is retained when pipes close.

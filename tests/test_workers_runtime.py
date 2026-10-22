@@ -741,3 +741,74 @@ def test_unknown_tool_explains_available_tools(isolated):
     result = execute('unavailable', {}, isolated)
     assert result['error'] == 'unknown_tool:unavailable'
     assert 'search_file' in result['available_tools']
+
+
+def test_timed_out_command_kills_child_tree_and_preserves_output(isolated, tmp_path):
+    async def scenario():
+        project = isolated / 'timeout'
+        project.mkdir()
+        manager, _, _ = make_manager(tmp_path)
+        code = (
+            'import subprocess, sys, time\n'
+            'subprocess.Popen([sys.executable, "-c", '
+            '"import time; from pathlib import Path; time.sleep(3); Path(\'orphan.txt\').write_text(\'alive\')"])\n'
+            'print("started", flush=True)\n'
+            'time.sleep(60)'
+        )
+        started = asyncio.get_running_loop().time()
+        result = await asyncio.wait_for(manager._local_agent_execute_tool(
+            project, 'run_python', {'code': code, 'timeout_seconds': 1}), timeout=15)
+        assert result['timed_out'] and not result['ok']
+        assert 'started' in result['stdout']
+        assert asyncio.get_running_loop().time() - started < 15
+        await asyncio.sleep(3)
+        assert not (project / 'orphan.txt').exists()
+    run(scenario())
+
+
+def test_timeout_remains_bounded_when_output_pipe_never_closes(isolated, tmp_path, monkeypatch):
+    async def scenario():
+        class StuckProcess:
+            pid = 999999
+            returncode = None
+            async def communicate(self):
+                await asyncio.Event().wait()
+        async def spawn(*args, **kwargs):
+            return StuckProcess()
+        async def cleanup(*args, **kwargs):
+            pass
+        manager, _, _ = make_manager(tmp_path)
+        monkeypatch.setattr(workers.asyncio, 'create_subprocess_exec', spawn)
+        monkeypatch.setattr(manager, '_terminate_worker_process', cleanup)
+        result = await asyncio.wait_for(manager._local_agent_execute_tool(
+            isolated, 'run_python', {'code': 'print(1)', 'timeout_seconds': 1}), timeout=10)
+        assert result['timed_out'] and not result['ok']
+        assert 'output pipes did not close' in result['stderr']
+    run(scenario())
+
+
+def test_file_discovery_filters_before_traversal_and_can_target_a_folder(isolated, monkeypatch):
+    project = isolated / 'discovery'
+    for relative in ('modules/main.py', 'modules/readme.md', 'tests/test_main.py',
+                     'build/generated.py', 'out/copy.py', '.venv/large.py',
+                     '.staged-validation/tree/nested.py'):
+        target = project / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text('test')
+    original = workers.os.walk
+    visited = []
+    def walk(*args, **kwargs):
+        for value in original(*args, **kwargs):
+            visited.append(Path(value[0]).relative_to(project).as_posix())
+            yield value
+    monkeypatch.setattr(workers.os, 'walk', walk)
+    result = execute('list_files', {'path': 'modules', 'pattern': '*.PY'}, project)
+    assert result['files'] == ['modules/main.py']
+    assert visited == ['modules']
+    visited.clear()
+    result = execute('list_files', {'pattern': '*.py'}, project)
+    assert set(result['files']) == {'modules/main.py', 'tests/test_main.py'}
+    assert not any(p.startswith(('build', 'out', '.venv', '.staged-validation')) for p in visited)
+    assert not execute('list_files', {'path': '../outside'}, project)['ok']
+    assert not execute('list_files', {'path': '.venv'}, project)['ok']
+    assert not execute('list_files', {'pattern': '../*.py'}, project)['ok']
