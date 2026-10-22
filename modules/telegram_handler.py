@@ -108,6 +108,7 @@ class TelegramHandler(threading.Thread):
         owner_chat_id: int,
         on_permission_response: Optional[Callable[[str, str], None]] = None,
         on_choice_response: Optional[Callable[[str, str], None]] = None,
+        on_send: Optional[Callable[[int, str], None]] = None,
     ) -> None:
         super().__init__(daemon=True, name="telegram-handler")
         self.token = token
@@ -115,6 +116,9 @@ class TelegramHandler(threading.Thread):
         self.owner_chat_id = int(owner_chat_id)
         self.on_permission_response = on_permission_response
         self.on_choice_response = on_choice_response
+        # Called with every outbound message so the bridge can mirror the
+        # conversation into the desktop console's chat view.
+        self.on_send = on_send
 
         self.application = Application.builder().token(token).build()
         # Reuse the application's initialized bot and HTTP connection pool for
@@ -380,7 +384,16 @@ class TelegramHandler(threading.Thread):
     # ------------------------------------------------------------------ outbound
     def send(self, chat_id: int, text: str) -> None:
         """Thread-safe: queue a (chunked) reply onto the polling loop."""
-        if not text or self.loop is None:
+        if not text:
+            return
+        if self.on_send is not None:
+            # Mirrored before delivery so the console shows the reply even if
+            # Telegram itself refuses the message.
+            try:
+                self.on_send(chat_id, text)
+            except Exception as exc:  # noqa: BLE001 - mirroring is never load-bearing
+                log.debug("Could not mirror outgoing message: %s", exc)
+        if self.loop is None:
             return
         asyncio.run_coroutine_threadsafe(self._send(chat_id, text), self.loop)
 

@@ -71,11 +71,26 @@ from modules.token_meter import (
     format_history,
     normalize_usage,
 )
+from modules.chat_mirror import (
+    ChatMirror,
+    ROLE_OWNER,
+    ROLE_OVERLORD,
+    SOURCE_GUI,
+    SOURCE_TELEGRAM,
+)
+from modules.chat_mirror import (
+    ChatMirror,
+    ROLE_OWNER,
+    ROLE_OVERLORD,
+    SOURCE_GUI,
+    SOURCE_TELEGRAM,
+)
 from modules.conversation_history import (
     Handoff,
     SharedConversationHistory,
     add_handoff_to_turn,
 )
+
 from modules.telegram_handler import TelegramHandler
 from modules.single_instance import AlreadyRunningError, SingleInstance
 from modules.windows_tray import WindowsTray
@@ -102,6 +117,12 @@ CONSOLE_STATUS_FILE = BASE_DIR / "run" / "brain-status.json"
 # by writing this file; the bridge watches its mtime. One-way and file-based on
 # purpose: no socket to secure, and a stale file is simply ignored.
 CONSOLE_COMMAND_FILE = BASE_DIR / "run" / "console-command.json"
+# The conversation transcript shared with the desktop console: the bridge
+# appends every owner message and every reply, and the console reads it.
+CHAT_MIRROR_FILE = BASE_DIR / "run" / "chat-mirror.jsonl"
+# The conversation transcript shared with the desktop console. The bridge
+# appends every owner message and every reply; the console reads it.
+CHAT_MIRROR_FILE = BASE_DIR / "run" / "chat-mirror.jsonl"
 TELEGRAM_CHOICE_INSTRUCTIONS = (
     "When you need the user to choose among discrete options or answer a short "
     "clarifying question, use your native interactive user-input tool instead "
@@ -506,12 +527,14 @@ class Bridge:
             permission_level=os.environ.get(PERMISSION_LEVEL),
             audit=PermissionAudit(BASE_DIR / "run/permissions.jsonl", root=BASE_DIR),
         )
+        self.chat_mirror = ChatMirror(CHAT_MIRROR_FILE)
         self.telegram = TelegramHandler(
             TOKEN,
             self.inbound,
             OWNER,
             on_permission_response=self.gate.on_permission_response,
             on_choice_response=self.gate.on_choice_response,
+            on_send=self._mirror_outbound,
         )
         self.gate.telegram = self.telegram
         self.brain_name = _BRAIN_NAME
@@ -549,6 +572,7 @@ class Bridge:
         self._pending_handoff: Handoff | None = (
             self._conversation_history.handoff_for(self.brain_name)
         )
+        self.chat_mirror = ChatMirror(CHAT_MIRROR_FILE)
         self.tray = WindowsTray(
             self.request_shutdown,
             log_path=CONSOLE_LOG_FILE,
@@ -806,6 +830,7 @@ class Bridge:
         Handlers run on the main loop, so one that raises must not unwind it:
         that would shut the whole bridge down over a single bad command.
         """
+        self.chat_mirror.append(ROLE_OWNER, text, source=SOURCE_TELEGRAM)
         stripped = text.strip()
         if not stripped:
             return
@@ -846,6 +871,10 @@ class Bridge:
         except Exception as exc:  # noqa: BLE001 - keep the bridge alive
             log.exception("Command %r failed", command)
             self.telegram.send(chat_id, f"⚠️ {command or 'Message'} failed: {exc}")
+
+    def _mirror_outbound(self, chat_id: int, text: str) -> None:
+        """Record an outbound reply so the console can mirror the chat."""
+        self.chat_mirror.append(ROLE_OVERLORD, text, source=SOURCE_TELEGRAM)
 
     async def _free_pool(self):
         """The free-model pool workers draw from: the active free brain, else a
