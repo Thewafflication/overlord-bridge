@@ -667,6 +667,19 @@ def test_python_tool_multiline_and_errors(isolated):
     assert result['ok'] and result['stdout'].splitlines() == ['app', 'hello']
     result = execute('run_python', {'code': "raise RuntimeError('visible failure')"}, folder)
     assert not result['ok'] and 'visible failure' in result['stderr']
+    assert result['shell'] == 'direct Python'
+    assert result['python_interpreter'] == str(workers._worker_python(folder))
+    assert 'python -m pytest' in result['recovery_hint']
+
+
+def test_failed_command_reports_shell_and_recovery_context(isolated):
+    folder = isolated / 'failed-command'
+    folder.mkdir()
+    result = execute('run_command', {'command': 'exit 7'}, folder)
+    assert not result['ok'] and result['exit_code'] == 7
+    assert result['shell'] == ('cmd.exe' if sys.platform == 'win32' else '/bin/sh')
+    assert 'Read stderr/stdout' in result['recovery_hint']
+    assert result['python_interpreter'] == str(workers._worker_python(folder))
 
 
 def test_read_file_line_ranges(isolated):

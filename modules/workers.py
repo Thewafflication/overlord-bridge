@@ -1337,7 +1337,7 @@ class WorkerManager:
             stderr = (err or b"").decode(errors="replace")
             stdout_tail, stdout_truncated = _bounded_tail(stdout, DEFAULT_LOCAL_AGENT_TOOL_OUTPUT_CHARS)
             stderr_tail, stderr_truncated = _bounded_tail(stderr, DEFAULT_LOCAL_AGENT_TOOL_OUTPUT_CHARS)
-            return {
+            result = {
                 "ok": proc.returncode == 0 and not timed_out,
                 "tool": tool_name,
                 "command": command,
@@ -1348,6 +1348,21 @@ class WorkerManager:
                 "stderr": stderr_tail,
                 "stderr_truncated": stderr_truncated,
             }
+            if not result["ok"]:
+                result["shell"] = ("direct Python" if tool_name == "run_python" else
+                                   "powershell" if shell == "powershell" else
+                                   "cmd.exe" if os.name == "nt" else "/bin/sh")
+                result["python_interpreter"] = str(interpreter)
+                result["recovery_hint"] = (
+                    "Read stderr/stdout to distinguish command syntax from a program/test failure. "
+                    "The project interpreter directory is already first on PATH: use run_command with "
+                    "command='python -m pytest ...' or command='python tools/check.py all'. "
+                    "Use run_python for Python code. On Windows, run_command defaults to cmd.exe; "
+                    "set shell='powershell' for PowerShell syntax. Avoid nested shells and Unix-only "
+                    "tail/head/grep pipelines on Windows; tool output is bounded automatically. "
+                    "An ignored .venv listing is not evidence that the interpreter is unavailable."
+                )
+            return result
 
         if tool_name == "search_file":
             query = arguments.get("query")
