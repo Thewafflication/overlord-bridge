@@ -812,3 +812,27 @@ def test_file_discovery_filters_before_traversal_and_can_target_a_folder(isolate
     assert not execute('list_files', {'path': '../outside'}, project)['ok']
     assert not execute('list_files', {'path': '.venv'}, project)['ok']
     assert not execute('list_files', {'pattern': '../*.py'}, project)['ok']
+
+
+@pytest.mark.parametrize('outcome', ['finished', 'crashed', 'cancelled'])
+def test_worker_typing_lifecycle_is_balanced(isolated, tmp_path, monkeypatch, outcome):
+    async def scenario():
+        manager, _, _ = make_manager(tmp_path)
+        activity = []
+        manager._begin_typing = lambda owner: activity.append(('begin', owner))
+        manager._end_typing = lambda owner: activity.append(('end', owner))
+        async def worker(*args, **kwargs):
+            assert activity == [('begin', 42)]
+            if outcome == 'crashed':
+                raise RuntimeError('worker failed')
+            if outcome == 'cancelled':
+                raise asyncio.CancelledError
+        monkeypatch.setattr(manager, '_run_worker', worker)
+        invocation = manager._run('typing', isolated, 'task', 'free', None, False)
+        if outcome == 'finished':
+            await invocation
+        else:
+            with pytest.raises(RuntimeError if outcome == 'crashed' else asyncio.CancelledError):
+                await invocation
+        assert activity == [('begin', 42), ('end', 42)]
+    run(scenario())

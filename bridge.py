@@ -563,6 +563,8 @@ class Bridge:
         self.workers = WorkerManager(
             send=self.telegram.send,
             owner=OWNER,
+            begin_typing=self.telegram.begin_typing,
+            end_typing=self.telegram.end_typing,
             # So a worker killed by a bridge restart is reported as interrupted,
             # not as a failure (a worker that restarts the bridge kills itself:
             # it lives in this service's cgroup).

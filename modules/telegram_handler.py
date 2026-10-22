@@ -123,6 +123,8 @@ class TelegramHandler(threading.Thread):
         self.loop: Optional[asyncio.AbstractEventLoop] = None
         self._ready = threading.Event()
         self._typing_tasks: dict[int, asyncio.Task] = {}
+        self._typing_users: dict[int, int] = {}
+        self._typing_wakeups: dict[int, asyncio.Event] = {}
         self._choice_for_chat: dict[int, str] = {}
         self._choice_options: dict[str, list[str]] = {}
         self._choice_typing: set[str] = set()
@@ -398,6 +400,9 @@ class TelegramHandler(threading.Thread):
                         **({"parse_mode": "HTML"} if expandable else {}),
                     ),
                 )
+                wakeup = getattr(self, "_typing_wakeups", {}).get(chat_id)
+                if wakeup is not None:
+                    wakeup.set()
 
     async def _telegram_call(
         self,
@@ -461,14 +466,21 @@ class TelegramHandler(threading.Thread):
             asyncio.run_coroutine_threadsafe(self._begin_typing(chat_id), self.loop)
 
     async def _begin_typing(self, chat_id: int) -> None:
-        old = self._typing_tasks.pop(chat_id, None)
-        if old is not None:
-            old.cancel()
+        if not hasattr(self, "_typing_users"):
+            self._typing_users = {}
+            self._typing_wakeups = {}
+        self._typing_users[chat_id] = self._typing_users.get(chat_id, 0) + 1
+        task = self._typing_tasks.get(chat_id)
+        if task is not None and not task.done():
+            return
+        self._typing_wakeups[chat_id] = asyncio.Event()
         self._typing_tasks[chat_id] = asyncio.create_task(self._typing_loop(chat_id))
 
     async def _typing_loop(self, chat_id: int) -> None:
+        wakeup = self._typing_wakeups[chat_id]
         try:
             while True:
+                wakeup.clear()
                 await self._telegram_call(
                     "typing indicator",
                     lambda: self.bot.send_chat_action(
@@ -477,7 +489,10 @@ class TelegramHandler(threading.Thread):
                     attempts=1,
                     quiet=True,
                 )
-                await asyncio.sleep(4)
+                try:
+                    await asyncio.wait_for(wakeup.wait(), timeout=4)
+                except asyncio.TimeoutError:
+                    pass
         except asyncio.CancelledError:
             return
 
@@ -486,6 +501,13 @@ class TelegramHandler(threading.Thread):
             asyncio.run_coroutine_threadsafe(self._end_typing(chat_id), self.loop)
 
     async def _end_typing(self, chat_id: int) -> None:
+        users = getattr(self, "_typing_users", {})
+        remaining = users.get(chat_id, 0) - 1
+        if remaining > 0:
+            users[chat_id] = remaining
+            return
+        users.pop(chat_id, None)
+        getattr(self, "_typing_wakeups", {}).pop(chat_id, None)
         task = self._typing_tasks.pop(chat_id, None)
         if task is not None:
             task.cancel()
@@ -692,6 +714,8 @@ class TelegramHandler(threading.Thread):
                 for task in self._typing_tasks.values():
                     task.cancel()
                 self._typing_tasks.clear()
+                self._typing_users.clear()
+                self._typing_wakeups.clear()
                 if self.application.updater and self.application.updater.running:
                     await self.application.updater.stop()
                 await self.application.stop()

@@ -1023,9 +1023,13 @@ class WorkerManager:
         report_events_max_bytes: int = 1024 * 1024,
         on_report: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
         is_shutting_down: Callable[[], bool] | None = None,
+        begin_typing: Callable[[int], None] | None = None,
+        end_typing: Callable[[int], None] | None = None,
     ) -> None:
         # send(chat_id, text): thread-safe Telegram send (TelegramHandler.send)
         self._send = send
+        self._begin_typing = begin_typing
+        self._end_typing = end_typing
         self.owner = owner
         # Lets the manager tell "the bridge is going down and took its workers
         # with it" apart from "the worker's task actually failed".
@@ -1757,6 +1761,7 @@ class WorkerManager:
             final_text = ""
             step_limited = False
             empty_responses = 0
+            completion_checkpoint = False
             step = 0
             while max_steps == 0 or step < max_steps:
                 step += 1
@@ -1863,6 +1868,8 @@ class WorkerManager:
                         if not final_text:
                             final_text = "Stopped before completion: model supplied an empty final answer."
                             step_limited = True
+                        elif fallback.get("outcome") == "blocked":
+                            step_limited = True
                         break
                     if answer_only:
                         final_text = content or "(no final response)"
@@ -1897,6 +1904,25 @@ class WorkerManager:
                         messages.append({"role": "user", "content": followup})
                     continue
 
+                if is_free and not answer_only:
+                    if not completion_checkpoint:
+                        completion_checkpoint = True
+                        messages.append({"role": "assistant", "content": content})
+                        checkpoint = (
+                            "Completion checkpoint: your text ended the turn, but a plan or intention is not "
+                            "completed work. Review the original task and actual tool results. If work remains, "
+                            "continue with tools now. When the task is complete, return exactly "
+                            '{"final":"summary of actual changes, validation and commit", "outcome":"finished"}. '
+                            "If you cannot complete it, return the same JSON with outcome=blocked and explain "
+                            "the concrete blocker. Do not claim edits, tests, commits or pushes you did not do."
+                        )
+                        messages.append({"role": "user", "content": checkpoint})
+                        transcript.append(f"coach[{step}:completion_checkpoint]: {checkpoint}")
+                        progress(f"Step {step}: checking completion; worker may continue with tools.", important=True)
+                        continue
+                    final_text = content + "\nCompletion was not confirmed using the requested final-result contract."
+                    step_limited = True
+                    break
                 final_text = content or "(no final response)"
                 break
             else:
@@ -2319,6 +2345,37 @@ class WorkerManager:
         return argv
 
     async def _run(
+        self,
+        name: str,
+        folder: Path,
+        task: str,
+        brain: str,
+        session: str | None,
+        resume: bool,
+        model: str | None = None,
+        files: list[str] | None = None,
+        approval_policy: str | None = None,
+        sandbox: str | None = None,
+        bypass_codex_sandbox: bool = False,
+    ) -> None:
+        typing_started = False
+        if self._begin_typing is not None:
+            try:
+                self._begin_typing(self.owner)
+                typing_started = True
+            except Exception as exc:
+                log.warning("Could not start worker typing indicator: %s", exc)
+        try:
+            await self._run_worker(name, folder, task, brain, session, resume, model, files,
+                                   approval_policy, sandbox, bypass_codex_sandbox)
+        finally:
+            if typing_started and self._end_typing is not None:
+                try:
+                    self._end_typing(self.owner)
+                except Exception as exc:
+                    log.warning("Could not stop worker typing indicator: %s", exc)
+
+    async def _run_worker(
         self,
         name: str,
         folder: Path,

@@ -227,6 +227,10 @@ def test_modes_decide_what_needs_approval(tmp_path, mode, tool, asks):
 
 
 # ------------------------------------------------- workers using the pool
+def final_result(text, **extra):
+    return {"content": json.dumps({"final": text, "outcome": "finished"}), **extra}
+
+
 def scripted_pool(replies):
     queue = list(replies)
     seen = []
@@ -276,7 +280,7 @@ def test_default_free_worker_continues_past_thirty_steps(isolated, tmp_path):
     project.mkdir()
     completer, seen = scripted_pool([
         *[call("read_file", {"path": f"file-{step}.py"}, f"call-{step}") for step in range(35)],
-        {"content": "Task completed after checking all files."},
+        final_result('Task completed after checking all files.'),
     ])
     mgr, sent, _ = manager(tmp_path, completer)
     assert mgr.free_max_steps == 0
@@ -329,7 +333,7 @@ def test_worker_announces_specific_actions_before_executing(isolated, tmp_path, 
     completer, _ = scripted_pool([
         command,
         call("write_file", {"path": "src/example.py", "content": "x = 1"}, "c2"),
-        {"content": "Implemented the change."},
+        final_result('Implemented the change.'),
     ])
     mgr, sent, _ = manager(tmp_path, completer)
     executed = []
@@ -355,7 +359,7 @@ def test_fast_read_activity_is_batched_instead_of_spamming(isolated, tmp_path):
     project.mkdir()
     completer, _ = scripted_pool([
         *[call("read_file", {"path": f"file-{step}.py"}, f"call-{step}") for step in range(20)],
-        {"content": "Review complete."},
+        final_result('Review complete.'),
     ])
     mgr, sent, _ = manager(tmp_path, completer)
     start(mgr, project)
@@ -376,7 +380,7 @@ def test_a_free_worker_edits_files_after_the_operator_approves(isolated, tmp_pat
     completer, seen = scripted_pool([
         call("write_file", {"path": "feature.py", "content": "print('hi')"}),
         call("list_files", {}, "c2"),
-        {"content": "Added feature.py", "_model": "openrouter:vendor/m:free"},
+        final_result("Added feature.py", _model="openrouter:vendor/m:free"),
     ])
     mgr, sent, reports = manager(tmp_path, completer, approver)
     start(mgr, project)
@@ -398,7 +402,7 @@ def test_a_refused_write_never_touches_the_disk_and_the_model_is_told(isolated, 
 
     completer, seen = scripted_pool([
         call("write_file", {"path": "feature.py", "content": "x"}),
-        {"content": "I could not write the file."},
+        {"content": json.dumps({"final": "I could not write the file.", "outcome": "blocked"})},
     ])
     mgr, sent, _ = manager(tmp_path, completer, approver)
     start(mgr, project)
@@ -421,7 +425,7 @@ def test_actions_the_rules_already_forbid_never_reach_the_operator(isolated, tmp
         call("write_file", {"path": "../escape.txt", "content": "x"}, "c2"),
         call("run_command", {"command": "cat ~/.ssh/id_rsa"}, "c3"),
         call("run_command", {"command": "sudo reboot"}, "c4"),
-        {"content": "done"},
+        final_result('done'),
     ])
     mgr, _, _ = manager(tmp_path, completer, approver)
     start(mgr, project)
@@ -438,7 +442,7 @@ def test_reads_and_listings_never_prompt(isolated, tmp_path):
     async def approver(folder, tool, request):
         asked.append(tool)
 
-    completer, seen = scripted_pool([call("read_file", {"path": "a.txt"}), {"content": "ok"}])
+    completer, seen = scripted_pool([call("read_file", {"path": "a.txt"}), final_result('ok')])
     mgr, _, _ = manager(tmp_path, completer, approver)
     start(mgr, project)
     assert asked == [] and "hello" in json.dumps(seen[1][0])
@@ -453,7 +457,7 @@ def test_commands_are_approved_then_run_inside_the_project(isolated, tmp_path):
         asked.append((tool, request["command"], folder))
 
     completer, seen = scripted_pool([call("run_command", {"command": "python -c \"print(6*7)\""}),
-                                     {"content": "42"}])
+                                     final_result('42')])
     mgr, *_ = manager(tmp_path, completer, approver)
     start(mgr, project)
     assert asked and asked[0][0] == "run_command" and asked[0][2] == project.resolve()
@@ -463,7 +467,7 @@ def test_commands_are_approved_then_run_inside_the_project(isolated, tmp_path):
 def test_the_free_brain_can_be_named_a_few_ways_and_needs_a_pool(isolated, tmp_path):
     project = isolated / "app"
     project.mkdir()
-    completer, _ = scripted_pool([{"content": "ok"}])
+    completer, _ = scripted_pool([final_result('ok')])
     mgr, sent, _ = manager(tmp_path, completer)
     start(mgr, project, brain="Free-Model")
     assert events(mgr)[-1]["brain"] == "free" and events(mgr)[-1]["status"] == "finished"
@@ -487,12 +491,12 @@ def test_pool_exhaustion_is_reported_as_a_crash_with_the_reason(isolated, tmp_pa
 def test_extra_roots_let_workers_use_projects_outside_the_default_zones(isolated, tmp_path):
     outside = tmp_path / "repos" / "app"
     outside.mkdir(parents=True)
-    completer, _ = scripted_pool([{"content": "ok"}])
+    completer, _ = scripted_pool([final_result('ok')])
     refused, sent, _ = manager(tmp_path, completer)
     start(refused, outside)
     assert "bad/missing folder" in sent[-1]
     allowed, sent, _ = manager(tmp_path / "y", completer, extra_roots=(tmp_path / "repos",))
-    completer2, _ = scripted_pool([{"content": "ok"}])
+    completer2, _ = scripted_pool([final_result('ok')])
     allowed.free_completer = completer2
     start(allowed, outside)
     assert events(allowed)[-1]["status"] == "finished"
@@ -668,7 +672,7 @@ def test_empty_worker_response_recovers_after_unknown_search(isolated, tmp_path)
         call('unavailable_search', {'query': 'pending'}),
         {'content': ''},
         call('search_file', {'path': 'source.py', 'query': 'pending'}),
-        {'content': 'Inspected the pending request on line 1; no changes required.'},
+        final_result('Inspected the pending request on line 1; no changes required.'),
     ])
     mgr, sent, _ = manager(tmp_path, completer)
     start(mgr, project)
@@ -697,3 +701,31 @@ def test_empty_json_final_is_not_success(isolated, tmp_path):
     mgr, sent, _ = manager(tmp_path, completer)
     start(mgr, project)
     assert events(mgr)[-1]['status'] == 'incomplete'
+
+
+def test_plan_only_worker_ending_returns_to_tools_before_completion(isolated, tmp_path):
+    project = isolated / 'unfinished-plan'
+    project.mkdir()
+    completer, seen = scripted_pool([
+        {'content': "Now I'll implement the feature."},
+        call('write_file', {'path': 'feature.py', 'content': 'implemented = True'}),
+        final_result('Implemented feature.py'),
+    ])
+    mgr, sent, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert (project / 'feature.py').read_text() == 'implemented = True'
+    assert events(mgr)[-1]['status'] == 'finished'
+    assert any('Completion checkpoint' in str(m) for m in seen[1][0])
+
+
+def test_worker_ignoring_completion_checkpoint_is_incomplete(isolated, tmp_path):
+    project = isolated / 'ignored-checkpoint'
+    project.mkdir()
+    completer, seen = scripted_pool([
+        {'content': "I'll implement it now."},
+        {'content': "I'll start by editing."},
+    ])
+    mgr, sent, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert len(seen) == 2 and events(mgr)[-1]['status'] == 'incomplete'
+    assert '✅ Finished' not in sent[-1]

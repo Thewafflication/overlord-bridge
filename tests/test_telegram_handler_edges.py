@@ -446,3 +446,27 @@ def test_polling_errors_are_logged_without_raising(caplog):
     TelegramHandler._polling_error(TelegramError("odd"))
     text = caplog.text
     assert "another Overlord instance" in text and "retrying" in text and "odd" in text
+
+
+def test_typing_is_shared_by_overlapping_operations_and_refreshed_after_messages():
+    async def scenario():
+        handler = make_handler()
+        actions = asyncio.Queue()
+        async def action(**kwargs):
+            await actions.put(kwargs)
+        handler.bot.send_chat_action = action
+        await handler._begin_typing(42)
+        await asyncio.wait_for(actions.get(), timeout=1)
+        original = handler._typing_tasks[42]
+        await handler._begin_typing(42)
+        assert handler._typing_tasks[42] is original
+        await handler._end_typing(42)
+        assert handler._typing_tasks[42] is original and not original.done()
+        await handler._send(42, 'worker progress')
+        refreshed = await asyncio.wait_for(actions.get(), timeout=1)
+        assert refreshed['chat_id'] == 42
+        await handler._end_typing(42)
+        await asyncio.sleep(0)
+        assert not handler._typing_tasks and not handler._typing_users
+        assert not handler._typing_wakeups and original.done()
+    run(scenario())
