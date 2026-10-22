@@ -925,3 +925,36 @@ def test_model_protocol_artifact_in_tool_name_executes_as_known_tool(isolated, t
     assert 'unknown_tool' not in sent[-1]
     prior_calls = [m for m in seen[-1]['messages'] if m.get('tool_calls')]
     assert [m['tool_calls'][0]['function']['name'] for m in prior_calls] == ['write_file', 'edit_file']
+
+
+def test_search_accepts_directories_or_omitted_path_and_filename_filter(isolated):
+    project = isolated / 'directory-search'
+    for name, content in [('src/main.py', 'first\nPending request\n'),
+                          ('src/readme.md', 'pending docs'), ('tests/test_main.py', 'pending test'),
+                          ('build/generated.py', 'pending generated'), ('.venv/dependency.py', 'pending dependency')]:
+        path = project / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+    result = execute('search_file', {'query': 'PENDING', 'pattern': '*.py'}, project)
+    assert result['ok']
+    assert {m['path'] for m in result['matches']} == {'src/main.py', 'tests/test_main.py'}
+    result = execute('search_file', {'path': 'src', 'query': 'pending', 'pattern': '*.py'}, project)
+    assert [(m['path'], m['line']) for m in result['matches']] == [('src/main.py', 2)]
+    assert result['files_scanned'] == 1
+
+
+def test_directory_search_bounds_file_count_and_skips_oversized_binary_files(isolated):
+    project = isolated / 'search-limits'
+    project.mkdir()
+    (project / 'binary.bin').write_bytes(b'pending\x00data')
+    (project / 'large.txt').write_bytes(b'pending' * 100000)
+    (project / 'small.py').write_text('pending\n' * 200)
+    result = execute('search_file', {'query': 'pending'}, project)
+    assert result['files_skipped'] == 2 and result['truncated']
+    assert len(result['matches']) <= 100
+    assert len(json.dumps(result)) < workers.DEFAULT_LOCAL_AGENT_TOOL_OUTPUT_CHARS
+    for i in range(505):
+        (project / f'file-{i}.py').write_text('no matches')
+    result = execute('search_file', {'query': 'absent', 'pattern': '*.py'}, project)
+    assert result['files_truncated'] and result['truncated']
+    assert result['files_scanned'] <= 500

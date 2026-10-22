@@ -63,7 +63,7 @@ def worker_tool_name(raw: str) -> str:
 def worker_action(tool: str, arguments: dict) -> str:
     tool = worker_tool_name(tool)
     if tool in {"search_file", "search"}:
-        return f"Search {arguments.get('path', '(unspecified file)')} for {arguments.get('query', '(unspecified query)')}"
+        return f"Search {(arguments.get('path') or '.')} for {arguments.get('query', '(unspecified query)')}"
     if tool == "read_file":
         return f"Read {arguments.get('path', '(unspecified file)')}"
     if tool == "edit_file":

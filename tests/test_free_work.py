@@ -757,3 +757,26 @@ def test_truncated_agent_responses_are_discarded_before_fallback(tmp_path, monke
     result, spec, skipped = run(pool.complete([{'role': 'user', 'content': 'implement it'}], TOOLS))
     assert spec == NV2 and result['content'] == 'valid fallback'
     assert not result.get('tool_calls') and 'truncated' in skipped[0]
+
+
+def test_worker_response_override_is_per_request_and_preserves_chat_budget(tmp_path, monkeypatch):
+    pool = make_pool(tmp_path, monkeypatch, [reply({'content': 'worker'}), reply({'content': 'chat'})])
+    run(pool.complete([{'role': 'user', 'content': 'work'}], TOOLS, max_tokens=8192))
+    run(pool.complete([{'role': 'user', 'content': 'chat'}]))
+    assert pool.calls[0]['max_tokens'] == 4096  # GPT-OSS published model cap
+    assert pool.calls[1]['max_tokens'] == pool.max_tokens == 2048
+    assert pool._payload(OR, [], TOOLS, max_tokens=8192)['max_tokens'] == 8192
+    assert pool._payload(OR, [])['max_tokens'] == 2048
+
+
+def test_project_work_passes_its_budget_without_mutating_shared_pool(tmp_path):
+    calls = []
+    async def complete(messages, tools, **kwargs):
+        calls.append(kwargs)
+        return {'content': 'worker'}, NV, []
+    async def pool():
+        return SimpleNamespace(complete=complete)
+    work, *_ = make_work(tmp_path, pool=pool, response_tokens=12000)
+    result = run(work.complete([], TOOLS))
+    assert result['_free_model'] == NV.key
+    assert calls == [{'patience': 120.0, 'max_tokens': 12000}]

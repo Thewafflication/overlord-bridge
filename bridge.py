@@ -732,6 +732,7 @@ class Bridge:
             send=self.telegram.send, roots=project_roots, workers=self.workers,
             gate=self.gate, pool=self._free_pool,
             approval=FREE_WORK_APPROVAL, patience=FREE_WORK_PATIENCE,
+            response_tokens=env_int("OVERLORD_FREE_WORK_MAX_TOKENS", 8192),
             projects=lambda: configured_paths(PROJECT_FOLDERS),
         )
 

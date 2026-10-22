@@ -79,12 +79,14 @@ class FreeWork:
         pool: Callable[[], Awaitable[Any]],
         approval: str = "all",
         patience: float = 120.0,
+        response_tokens: int = 8192,
         projects: Callable[[], list[Path]] | None = None,
     ) -> None:
         self._send, self._roots, self.workers, self.gate = send, roots, workers, gate
         self._pool = pool
         self.approval = normalize_mode(approval)
         self.patience = patience
+        self.response_tokens = max(64, min(int(response_tokens), 32768))
         self._projects = projects or (lambda: [])
 
     # ------------------------------------------------------------- commands
@@ -187,7 +189,7 @@ class FreeWork:
     async def complete(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None) -> dict[str, Any]:
         """One assistant turn from the shared pool (waiting out short rate limits)."""
         pool = await self._pool()
-        message, spec, _ = await pool.complete(messages, tools, patience=self.patience)
+        message, spec, _ = await pool.complete(messages, tools, patience=self.patience, max_tokens=self.response_tokens)
         message["_free_model"] = spec.key
         return message
 
