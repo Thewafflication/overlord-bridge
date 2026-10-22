@@ -482,7 +482,7 @@ def test_the_free_brain_can_be_named_a_few_ways_and_needs_a_pool(isolated, tmp_p
     assert events(lonely)[-1]["reason"] == "free_pool_unavailable" and "not configured" in sent[-1]
 
 
-def test_pool_exhaustion_is_reported_as_a_crash_with_the_reason(isolated, tmp_path):
+def test_pool_exhaustion_reports_incomplete_with_the_reason(isolated, tmp_path):
     project = isolated / "app"
     project.mkdir()
 
@@ -491,7 +491,8 @@ def test_pool_exhaustion_is_reported_as_a_crash_with_the_reason(isolated, tmp_pa
 
     mgr, sent, _ = manager(tmp_path, exhausted)
     start(mgr, project)
-    assert events(mgr)[-1]["status"] == "crashed" and "Next model free in about 60s" in sent[-1]
+    assert events(mgr)[-1]["status"] == "incomplete" and "Next model free in about 60s" in sent[-1]
+    assert 'publication have not been confirmed' in sent[-1]
 
 
 def test_extra_roots_let_workers_use_projects_outside_the_default_zones(isolated, tmp_path):
@@ -950,4 +951,55 @@ def test_command_evidence_survives_later_discovery(isolated, tmp_path):
     evidence = json.loads(completer.reviews[0][1]['content'])['tool_evidence']
     assert 'validation-marker' in evidence and '"step": 1' in evidence
     assert 'missing-0.py' not in evidence
+    assert events(mgr)[-1]['status'] == 'finished'
+
+
+def test_worker_context_bound_retains_task_and_whole_parallel_tool_exchanges():
+    base = [{'role': 'system', 'content': 'worker rules'},
+            {'role': 'user', 'content': 'original task: complete GUI chat'}]
+    history = list(base)
+    for step in range(30):
+        calls = [call('read_file', {'path': f'{step}-{n}.py'}, f'{step}-{n}')['tool_calls'][0]
+                 for n in range(2)]
+        history.append({'role': 'assistant', 'content': f'plan-{step}', 'tool_calls': calls})
+        history.extend({'role': 'tool', 'tool_call_id': c['id'], 'content': 'source ' * 400}
+                       for c in calls)
+    bounded = workers._bounded_worker_messages(history, ['step 1: tests failed', 'step 29: edited GUI'])
+    assert len(json.dumps(bounded, ensure_ascii=False)) <= 48000
+    assert bounded[:2] == base and len(history) == 92
+    assert 'tests failed' in bounded[2]['content']
+    assert 'plan-29' in str(bounded) and 'plan-0' not in str(bounded)
+    for index, message in enumerate(bounded):
+        if message['role'] == 'assistant':
+            ids = [c['id'] for c in message['tool_calls']]
+            assert [m['tool_call_id'] for m in bounded[index+1:index+3]] == ids
+        if message['role'] == 'tool':
+            assert any(message['tool_call_id'] == c['id'] for m in bounded[:index]
+                       for c in m.get('tool_calls', []))
+
+
+def test_oversized_tool_batch_is_omitted_as_a_whole():
+    messages = [{'role': 'system', 'content': 'rules'}, {'role': 'user', 'content': 'task'},
+                {'role': 'assistant', 'tool_calls': [{'id': 'large', 'function': {
+                    'name': 'write_file', 'arguments': json.dumps({'content': 'x' * 60000})}}]},
+                {'role': 'tool', 'tool_call_id': 'large', 'content': 'success'}]
+    bounded = workers._bounded_worker_messages(messages, ['write_file: success'])
+    assert len(json.dumps(bounded)) < 48000
+    assert all(m['role'] != 'tool' and not m.get('tool_calls') for m in bounded)
+    assert 'write_file: success' in bounded[-1]['content']
+
+
+def test_live_worker_context_is_bounded_during_long_file_inspection(isolated, tmp_path):
+    project = isolated / 'long-context'
+    project.mkdir()
+    (project / 'large.py').write_text(('line of source text ' * 20 + '\n') * 600)
+    completer, seen = scripted_pool([
+        *[call('read_file', {'path': 'large.py', 'start_line': i * 20 + 1, 'line_count': 20}, str(i))
+          for i in range(25)], final_result('Reviewed source'),
+    ])
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert all(len(json.dumps(messages, ensure_ascii=False)) <= 48000 for messages, _ in seen)
+    assert any('Worker context checkpoint' in str(messages) for messages, _ in seen)
+    assert all(messages[1]['content'].endswith('implement the feature') for messages, _ in seen)
     assert events(mgr)[-1]['status'] == 'finished'

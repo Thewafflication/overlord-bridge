@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -37,6 +38,13 @@ def run(stage: str) -> int:
     if stage == "lint":
         return lint()
     if stage == "build":
+        # setuptools reuses build/lib and can silently package modules removed
+        # by a branch switch. Clear only this generated staging directory.
+        staging = ROOT / "build" / "lib"
+        if staging.exists():
+            if staging.resolve() != ROOT.resolve() / "build" / "lib":
+                raise RuntimeError("Build staging directory resolves outside its expected workspace path")
+            shutil.rmtree(staging)
         command = [
             sys.executable, "-m", "build", "--wheel", "--no-isolation",
             "--outdir", str(ROOT / "out/checks/wheels"),

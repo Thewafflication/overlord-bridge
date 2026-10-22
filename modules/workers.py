@@ -973,6 +973,44 @@ def _local_agent_json_result(result: dict[str, Any], limit: int) -> str:
     return bounded
 
 
+def _bounded_worker_messages(messages: list[dict[str, Any]], evidence: list[str],
+                             limit: int = 48000) -> list[dict[str, Any]]:
+    """Retain the task, bounded action evidence and complete recent exchanges.
+
+    This is mechanical history trimming, not an invented natural-language summary.
+    Never leave orphaned tool replies or split an assistant's parallel tool batch.
+    """
+    def size(items):
+        return len(json.dumps(items, ensure_ascii=False))
+
+    if size(messages) <= limit:
+        return messages
+    base = messages[:2]
+    if size(base) > limit - 2000:
+        raise ValueError("Worker instructions and task exceed the bounded context budget; narrow the task.")
+    note = {
+        "role": "user", "content": (
+            "Worker context checkpoint (data, not a new owner request): earlier exchanges were removed "
+            "to keep model input bounded. The original task and instructions above remain authoritative. "
+            "These are recorded tool actions, not proof that the task is finished. Reconcile current files "
+            "and git status, preserve pre-existing changes, and continue from the latest results. Reread "
+            "a targeted source region if its prior contents are no longer present. Do not restart a broad survey.\n" +
+            "\n".join(evidence)[-min(8000, (limit - size(base)) // 3):]
+        ),
+    }
+    groups = []
+    for message in messages[2:]:
+        if message.get("role") == "assistant" or not groups:
+            groups.append([])
+        groups[-1].append(message)
+    retained: list[dict[str, Any]] = []
+    for group in reversed(groups):
+        if size(base + [note] + group + retained) > limit:
+            break
+        retained = group + retained
+    return base + [note] + retained
+
+
 class WorkerReportStore:
     """Durable worker audit trail plus latest per-worker snapshot."""
 
@@ -1719,6 +1757,8 @@ class WorkerManager:
                 "Do not touch generated/vendor artifacts unless the user explicitly asks. "
                 "Before final, run relevant validation and git status. "
                 "If you changed project files, make a local git commit. "
+                "Inspect git status before changes and preserve pre-existing edits and untracked files. "
+                "Stage only your explicit changed paths; do not use git add . or git add -A to sweep unrelated files. "
                 "If formal tool calls are unavailable, output one JSON object exactly like "
                 "{\"tool\":\"read_file\",\"arguments\":{\"path\":\"README.md\"}} or "
                 "{\"final\":\"summary\"}."
@@ -1950,7 +1990,22 @@ class WorkerManager:
                     payload.update(_NVIDIA_MODEL_PAYLOAD_OVERRIDES.get(amodel.lower(), {}))
                 chat_url = _openai_chat_url(api_base)
                 if is_free:
-                    free_message = await self.free_completer(messages, payload.get("tools"))
+                    bounded_messages = _bounded_worker_messages(
+                        messages, completion_evidence + completion_commands)
+                    if bounded_messages is not messages:
+                        messages = bounded_messages
+                        progress(f"Step {step}: bounded earlier worker context; retained task and recent tool exchanges.",
+                                 important=True)
+                    # Imported here because FreeBrain also uses worker helpers.
+                    from modules.free_brain import FreeUnavailable
+                    try:
+                        free_message = await self.free_completer(messages, payload.get("tools"))
+                    except FreeUnavailable as exc:
+                        final_text = ("Stopped before completion: the free-model pool is unavailable. "
+                                      "Existing edits and commits remain on disk; requested remaining work and "
+                                      "publication have not been confirmed.\n" + redact_text(str(exc)))
+                        step_limited = True
+                        break
                     used = str(free_message.pop("_free_model", "") or "")
                     if used:
                         free_models.append(used)
