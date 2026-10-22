@@ -1,25 +1,25 @@
 # GUI chat continuation
 
-Owner request: mirror Telegram chat in the desktop GUI, accept GUI chat input and mirror GUI-origin messages to Telegram. Finish the actual workflow and validation, then commit/tag/push as requested.
+Owner request: mirror Telegram chat in the desktop GUI, accept GUI chat input and mirror GUI-origin messages to Telegram. Finish and verify the workflow, then commit/tag/push as requested.
 
 ## Current state
 
-This local branch holds partial GUI work from adbb751, 4bbdaf0, 0295b75 and c5fda2f, plus main 1.0.40. The last run repaired the 15 existing test failures, added/started _chat_request_loop, passed the existing 1,194-test suite and canonical checks, then committed. It exhausted its free pool before final review or publication. No focused GUI feature tests were added. The feature remains unreleased.
+This branch preserves partial GUI code and the latest unfinished tests/experiments (3de747a), plus main 1.0.41. The last worker created tests/test_chat_requests.py and scratch tmp_* files but did not finish a fix. Earlier existing tests passed, but new queue tests fail and the GUI feature is unreleased. Do not assume completion from the old suite.
 
-The worker accidentally used git add . and swept pre-existing out/ and tools/_dev_show.ps1 into c5fda2f. Cleanup commit a10ca51 removed only their tracking, preserving the files. Do not stage them again. Preserve wsp and all unrelated edits. Stage explicit owned paths only. Keep this HANDOFF out of main/release integration.
+Main now obtains a validated plan before project actions. Record known remaining steps, keep the plan current, and use targeted reads. Source reads now begin at the start, default to 6,000 characters and return next_line/next_column for continuation. Use python on PATH, run_python(code=...), or shell=powershell for PowerShell syntax. Do not repeatedly survey the repo.
 
-The last continuation attempt ended incomplete at step 292 without editing: it repeatedly lost source context. Main now retains this handoff and supports update_plan. Begin by recording a short plan: add focused queue/GUI tests, repair observed failures, validate, then commit/publish. Keep the plan current; do not repeat a broad source survey. Review feedback was evidence-limited: GUI code does exist, so verify it instead of assuming it must be recreated.
+## Start with queue tests and byte offsets
 
-## Start here: verify behavior, add missing tests
+Read modules/chat_requests.py and tests/test_chat_requests.py. A concrete Windows bug is visible: read_requests opens in text mode, so CRLF becomes LF, then derives a byte offset from re-encoded text. That offset does not match the bytes on disk. Test and repair byte-based consumption, UTF-8 text, partial final records, two rapid messages, truncation and rotation. Keep the offset at the end of complete records and do not silently lose messages.
 
-Do not repeat a broad repository survey. The queue consumer now exists in bridge.py and starts alongside _console_command_loop. Review actual code and test behavior rather than reimplementing it. It skips existing queue bytes at startup, reads requests with offsets, echoes GUI messages once to Telegram and enters normal dispatch. Test startup, partial records, two rapid submissions, processing failures and shutdown; verify no message is silently lost or duplicated.
+The new test_truncate_reset has an incorrect expectation: it empties the file, then expects the old messages to return. Correct the test to expect no messages and offset zero. Do not change production code to fabricate deleted messages. Scratch files tmp_p.jsonl, tmp_size.py, tmp_test_reader.py and tmp_testing.jsonl are experiments, not release assets.
 
-_review point_: _console_command_loop now catches TypeError from _run_console_action(action, payload) and retries the one-argument form. A TypeError inside a handler could cause a second execution. Test/fix this behavior without masking actual failures.
+## Remaining integration verification
 
-modules/chat_requests.py supplies append_request/read_requests. modules/chat_mirror.py supplies ChatMirror append/read_since/iter_all plus a NullChatMirror. tools/overlord_console.py already has chat input, rendering helpers, _send_chat, _read_new_chat and --chat-request. Verify paths agree for the tray-launched console and installed bridge. Test failed queue writes preserve typed input, transcript stays bounded, partial JSONL and rotation handling work, and owner/reply messages mirror exactly once.
+bridge._chat_request_loop exists and starts alongside _console_command_loop. Test queue consumption, startup, processing errors and shutdown. _handle_gui_chat should echo once with mirror=False and dispatch as SOURCE_GUI. Test exactly-once owner/reply mirroring and GUI commands. _console_command_loop currently retries the one-argument action handler after TypeError; a TypeError inside the handler can cause duplicate execution. Fix/test the actual call contract.
 
-TelegramHandler.send now tolerates missing on_send on test fakes; console tag setup tolerates missing chat_text on partial test objects. Preserve typing ownership/refresh behavior. Add real tests for the new queue/GUI workflow instead of relying only on old compatibility tests.
+The console already has chat input, _send_chat, _read_new_chat, formatting and --chat-request. Verify queue/transcript paths agree for the installed bridge and tray-launched console. Test that failed writes retain typed input, transcript remains bounded, partial JSONL and rotation work, and actual Tk construction and send/receive behave correctly. Preserve typing and existing handler compatibility.
 
-## Completion
+## Completion and scope
 
-Use python on PATH for commands (the project .venv interpreter is selected), run_python for Python code, and shell=powershell for PowerShell syntax. Avoid nested shells and Unix tail pipelines on Windows. Main 1.0.40 passed 1,217 tests and one skip. Run focused feature tests, then python tools/check.py all on the final branch. Exercise Tk construction and send/receive behavior before claiming the feature works. Revalidate after final edits, commit explicit paths, and perform requested publication only after the implementation is complete. Do not tag incomplete work.
+Run focused feature tests, then python tools/check.py all on the final branch; main 1.0.41 passed 1,226 tests and one skip. Validate after final edits, commit explicit owned paths and perform requested publication only when the feature works. Keep HANDOFF.md and scratch experiments out of main/release integration. Preserve pre-existing wsp, out/ and tools/_dev_show.ps1. Never sweep them in with git add . or -A.
