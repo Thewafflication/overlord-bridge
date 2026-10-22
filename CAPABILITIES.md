@@ -479,3 +479,6 @@ Worker `list_files` accepts `path` (project-relative directory) and `pattern` (f
 
 
 Background workers now share Telegram typing ownership with foreground turns. Typing refreshes every four seconds and wakes after outbound messages; the final operation releases it on completion, cancellation or failure. Free project workers receive one completion checkpoint after a plain-text ending and must continue with tools or provide an explicit JSON final result. An ignored checkpoint or explicit blocked result reports incomplete; explicit completion remains a model-reported claim.
+
+
+Worker `edit_file` accepts `path`, non-empty `old_text` and `new_text` (empty is allowed for deletion). It requires one exact match in an existing UTF-8 file and preserves CRLF style. Missing/ambiguous/no-op edits fail without writing. It uses write approval, previews the replacement and rechecks the match after approval. Use it for small changes to large files; reserve `write_file` for new files or deliberate complete rewrites. Free tool-enabled responses marked `finish_reason=length` are discarded before tool execution and the pool tries another model.

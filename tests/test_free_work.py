@@ -729,3 +729,31 @@ def test_worker_ignoring_completion_checkpoint_is_incomplete(isolated, tmp_path)
     start(mgr, project)
     assert len(seen) == 2 and events(mgr)[-1]['status'] == 'incomplete'
     assert '✅ Finished' not in sent[-1]
+
+
+@pytest.mark.parametrize('mode, asks', [('all', True), ('commands', False), ('none', False)])
+def test_edit_tool_uses_write_approval_policy_and_preview(tmp_path, mode, asks):
+    gate = Gate(False)
+    work, *_ = make_work(tmp_path, gate=gate, approval=mode)
+    result = run(work.approve(tmp_path, 'edit_file', {'path': 'large.py', 'old_text': 'old', 'new_text': 'new'}))
+    assert (result == 'denied_by_operator') is asks
+    if asks:
+        title, detail, candidates, context = gate.requests[0]
+        assert title == 'Free worker: edit file'
+        assert 'old' in detail and 'new' in detail and candidates == ['large.py']
+        assert context['paths'] == ['large.py']
+    else:
+        assert not gate.requests
+
+
+@pytest.mark.parametrize('message', [
+    {'content': 'Now I will implement the feature'},
+    {'content': '', 'tool_calls': [{'id': 'cut-off', 'function': {'name': 'write_file', 'arguments': '{"path":'}}]},
+])
+def test_truncated_agent_responses_are_discarded_before_fallback(tmp_path, monkeypatch, message):
+    truncated = reply(message)
+    truncated[2]['choices'][0]['finish_reason'] = 'length'
+    pool = make_pool(tmp_path, monkeypatch, [truncated, reply({'content': 'valid fallback'})])
+    result, spec, skipped = run(pool.complete([{'role': 'user', 'content': 'implement it'}], TOOLS))
+    assert spec == NV2 and result['content'] == 'valid fallback'
+    assert not result.get('tool_calls') and 'truncated' in skipped[0]

@@ -193,12 +193,18 @@ class FreeWork:
 
     async def approve(self, folder: Path, tool: str, request: dict[str, Any]) -> str | None:
         """None to proceed, or the reason the operator (or policy) refused."""
-        if self.approval == "none" or (tool == "write_file" and self.approval != "all"):
+        if self.approval == "none" or (tool in {"write_file", "edit_file"} and self.approval != "all"):
             return None
         if tool == "run_command":
             command = request["command"]
             title, detail = "Free worker: run command", f"{command}\n(shell: {request.get('shell', 'default')}; in {folder})"
             candidates, context = [command], {"workspace": str(folder), "request": request}
+        elif tool == "edit_file":
+            old, new = request["old_text"], request["new_text"]
+            title = "Free worker: edit file"
+            detail = f"{request['path']}\n\nReplace:\n{old[:400]}\n\nWith:\n{new[:400]}"
+            candidates = [request["path"]]
+            context = {"workspace": str(folder), "paths": [request["path"]], "request": request}
         else:
             content = request["content"]
             preview = content[:400] + ("…" if len(content) > 400 else "")

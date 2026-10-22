@@ -758,6 +758,12 @@ class FreeBrain(Brain):
             self.limiter.cool_down(spec.key, 600)
             return None, f"HTTP {status}" + suffix
         self._note_rate_headers(spec, headers)
+        choices = body.get("choices") if isinstance(body, dict) else None
+        choice = choices[0] if isinstance(choices, list) and choices and isinstance(choices[0], dict) else {}
+        if tools and choice.get("finish_reason") == "length":
+            self.limiter.cool_down(spec.key, 30)
+            log.warning("Free agent response from %s exhausted its output budget; trying fallback", spec.key)
+            return None, "agent response truncated at output limit"
         try:
             message = dict(body["choices"][0]["message"])
         except (KeyError, IndexError, TypeError, ValueError):

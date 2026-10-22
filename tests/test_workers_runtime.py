@@ -836,3 +836,53 @@ def test_worker_typing_lifecycle_is_balanced(isolated, tmp_path, monkeypatch, ou
                 await invocation
         assert activity == [('begin', 42), ('end', 42)]
     run(scenario())
+
+
+def test_small_edit_preserves_large_file_and_crlf(isolated):
+    project = isolated / 'editing'
+    project.mkdir()
+    path = project / 'large.py'
+    prefix = ('# untouched content\r\n' * 6000).encode('utf-8')
+    path.write_bytes(prefix + b'def feature():\r\n    return 1\r\n' + b'# end\r\n')
+    result = execute('edit_file', {'path': 'large.py', 'old_text': 'def feature():\n    return 1',
+                                   'new_text': 'def feature():\n    return 2'}, project)
+    assert result['ok'] and result['replacements'] == 1
+    assert path.read_bytes() == prefix + b'def feature():\r\n    return 2\r\n# end\r\n'
+    result = execute('edit_file', {'path': 'large.py', 'old_text': '# end\n', 'new_text': ''}, project)
+    assert result['ok'] and path.read_bytes().endswith(b'return 2\r\n')
+
+
+def test_invalid_or_ambiguous_edits_leave_file_unchanged(isolated):
+    project = isolated / 'invalid-edit'
+    project.mkdir()
+    path = project / 'source.py'
+    path.write_bytes(b'repeat\nrepeat\nunique\n')
+    original = path.read_bytes()
+    for old, new in [('repeat', 'x'), ('absent', 'x'), ('', 'x'), ('unique', 'unique'), ('unique', None)]:
+        result = execute('edit_file', {'path': 'source.py', 'old_text': old, 'new_text': new}, project)
+        assert not result['ok'] and path.read_bytes() == original
+    for target in ('.env', '../outside.py', 'missing.py'):
+        assert not execute('edit_file', {'path': target, 'old_text': 'x', 'new_text': 'y'}, project)['ok']
+
+
+def test_edit_rechecks_content_after_approval_and_honours_denial(isolated, tmp_path):
+    project = isolated / 'approval-edit'
+    project.mkdir()
+    path = project / 'source.py'
+    path.write_text('old')
+    manager, _, _ = make_manager(tmp_path)
+    calls = []
+    async def deny(folder, tool, request):
+        calls.append((tool, request))
+        return 'denied_by_operator'
+    manager.tool_approver = deny
+    arguments = {'path': 'source.py', 'old_text': 'old', 'new_text': 'new'}
+    result = run(manager._execute_checked('free', project, 'edit_file', arguments))
+    assert not result['ok'] and path.read_text() == 'old'
+    assert calls[0] == ('edit_file', arguments)
+    async def approve_changed(folder, tool, request):
+        path.write_text('changed by another editor')
+    manager.tool_approver = approve_changed
+    result = run(manager._execute_checked('free', project, 'edit_file', arguments))
+    assert result['error'] == 'edit_old_text_not_found'
+    assert path.read_text() == 'changed by another editor'

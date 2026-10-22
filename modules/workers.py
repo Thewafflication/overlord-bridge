@@ -764,6 +764,34 @@ def _worker_python(folder: Path) -> Path:
     return candidate if candidate.is_file() else Path(sys.executable)
 
 
+def _prepare_worker_edit(folder: Path, arguments: dict[str, Any]) -> tuple[Path | None, str | None, str | None]:
+    """Validate an exact single replacement without changing the file."""
+    path, error = _resolve_worker_relative_path(folder, str(arguments.get("path") or ""))
+    if error or path is None:
+        return None, None, error or "bad_path"
+    denial = _local_agent_path_denial(path, folder, write=True)
+    if denial:
+        return None, None, denial
+    if not path.is_file():
+        return None, None, "file_not_found"
+    old, new = arguments.get("old_text"), arguments.get("new_text")
+    if not isinstance(old, str) or not old or not isinstance(new, str):
+        return None, None, "edit_requires_nonempty_old_text_and_string_new_text"
+    try:
+        text = path.read_bytes().decode("utf-8")
+    except UnicodeDecodeError:
+        return None, None, "edit_requires_utf8_file"
+    newline = "\r\n" if "\r\n" in text else "\n"
+    old = old.replace("\r\n", "\n").replace("\n", newline)
+    new = new.replace("\r\n", "\n").replace("\n", newline)
+    count = text.count(old)
+    if count != 1:
+        return None, None, "edit_old_text_not_found" if count == 0 else "edit_old_text_not_unique"
+    if old == new:
+        return None, None, "edit_would_make_no_change"
+    return path, text.replace(old, new, 1), None
+
+
 def _local_agent_tools() -> list[dict[str, Any]]:
     return [
         {
@@ -823,6 +851,22 @@ def _local_agent_tools() -> list[dict[str, Any]]:
                         "max_chars": {"type": "integer"},
                     },
                     "required": ["path"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "edit_file",
+                "description": "Edit an existing UTF-8 project file with one exact replacement. Read the target region first. old_text must match exactly once; include nearby context to make it unique. new_text may be empty for deletion. Use this for small changes to large files instead of rewriting the entire file. Preserves existing newline style.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string"},
+                        "old_text": {"type": "string"},
+                        "new_text": {"type": "string"},
+                    },
+                    "required": ["path", "old_text", "new_text"],
                 },
             },
         },
@@ -1368,6 +1412,15 @@ class WorkerManager:
                 "truncated": truncated,
             }
 
+        if tool_name == "edit_file":
+            path, updated, error = _prepare_worker_edit(folder, arguments)
+            if error or path is None or updated is None:
+                return {"ok": False, "error": error or "invalid_edit",
+                        "message": "Read the target region and supply old_text that matches exactly once; no file was changed."}
+            path.write_bytes(updated.encode("utf-8"))
+            return {"ok": True, "tool": tool_name, "path": path.relative_to(folder).as_posix(),
+                    "replacements": 1, "bytes": len(updated.encode("utf-8"))}
+
         if tool_name == "write_file":
             path, error = _resolve_worker_relative_path(folder, str(arguments.get("path") or ""))
             if error or path is None:
@@ -1453,6 +1506,11 @@ class WorkerManager:
                 if command and _local_agent_command_denial(command, folder) is None:
                     request = {"command": command, "shell": arguments.get("shell", "default")}
                 tool = "run_command"
+            elif tool == "edit_file":
+                path, updated, error = _prepare_worker_edit(folder, arguments)
+                if not error and path is not None:
+                    request = {"path": path.relative_to(folder.resolve()).as_posix(),
+                               "old_text": arguments["old_text"], "new_text": arguments["new_text"]}
             elif tool == "write_file":
                 path, error = _resolve_worker_relative_path(folder, str(arguments.get("path") or ""))
                 content = arguments.get("content")
@@ -1596,7 +1654,8 @@ class WorkerManager:
                 "answer directly. "
                 "Prefer the suggested starting files and any preloaded file contents before exploring further. "
                 "Prefer targeted commands compatible with the host environment. "
-                "When editing files, read them first and then write complete updated text. "
+                "When editing existing files, read the target region first and use edit_file for exact small replacements. "
+                "Use write_file for new files; do not regenerate a large existing file for a small change. "
                 "Do not touch generated/vendor artifacts unless the user explicitly asks. "
                 "Before final, run relevant validation and git status. "
                 "If you changed project files, make a local git commit. "
@@ -1724,7 +1783,7 @@ class WorkerManager:
 
         async def execute_with_progress(tool_name, arguments, duplicate_result):
             action = worker_action(tool_name, arguments)
-            important = tool_name in {"run_python", "run_command", "run", "bash", "shell", "write_file", "write"}
+            important = tool_name in {"run_python", "run_command", "run", "bash", "shell", "write_file", "write", "edit_file"}
             progress(f"Step {step}: next action — {action}",
                      important=important)
             result = (duplicate_result if duplicate_result is not None
