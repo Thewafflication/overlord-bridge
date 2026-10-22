@@ -519,3 +519,6 @@ Free-model HTTP attempts log model ID, tool availability, input character count,
 
 
 Model-facing worker tool calls reject unknown top-level parameter names and incorrect declared parameter types before approval or execution. Errors return accepted parameter names/types and required fields, without echoing argument values. All advertised tool parameter objects disallow extra properties; the existing cmd alias remains accepted by the run_command runtime. Tool implementations retain their existing path, range and value checks. Malformed formal argument JSON or non-object JSON gets a recoverable argument error instead of crashing the worker. Startup-plan replies use the same boundary. Rejected parameter names/types are logged without their values.
+
+
+Confirmed file mutations retain their own bounded 20-entry metadata ledger across worker context trimming, independent of read/search history. Progress checkpoints and final review use it to reconcile actual edits with potentially stale plans. Release builds validate their requested version against pyproject.toml and modules/version.py FALLBACK_VERSION before staging/signing; use python tools/check_release_version.py <version-or-tag> locally.

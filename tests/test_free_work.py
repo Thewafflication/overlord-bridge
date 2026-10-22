@@ -1254,3 +1254,23 @@ def test_malformed_formal_argument_objects_recover_without_crashing(isolated, tm
 def test_worker_tools_advertise_exact_parameter_names():
     assert all(t['function']['parameters']['additionalProperties'] is False
                for t in workers._local_agent_tools())
+
+
+def test_confirmed_mutations_survive_discovery_and_context_trimming(isolated, tmp_path):
+    project = isolated / 'persistent-mutations'
+    project.mkdir()
+    actions = context_pressure_actions(project)
+    completer, seen = scripted_pool([
+        call('write_file', {'path': 'changed.py', 'content': 'confirmed = True\n'}),
+        *actions,
+        *[call('read_file', {'path': f'missing-{i}.py'}) for i in range(45)],
+        final_result('Reviewed project'),
+    ])
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    payload = json.loads(completer.reviews[0][1]['content'])
+    changes = [json.loads(item) for item in payload['confirmed_file_changes']]
+    assert changes == [{'step': 1, 'tool': 'write_file', 'path': 'changed.py'}]
+    assert any('Recent confirmed file changes' in str(messages) and 'changed.py' in str(messages)
+               for messages, _ in seen)
+    assert all(len(json.dumps(messages, ensure_ascii=False)) <= 48000 for messages, _ in seen)

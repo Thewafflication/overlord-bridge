@@ -1021,7 +1021,8 @@ def _local_agent_json_result(result: dict[str, Any], limit: int) -> str:
 
 def _bounded_worker_messages(messages: list[dict[str, Any]], evidence: list[str],
                              limit: int = 48000, *, prefix_count: int = 2,
-                             plan: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+                             plan: dict[str, Any] | None = None,
+                             mutations: list[str] | None = None) -> list[dict[str, Any]]:
     """Retain the task, bounded action evidence and complete recent exchanges.
 
     This is mechanical history trimming, not an invented natural-language summary.
@@ -1044,14 +1045,16 @@ def _bounded_worker_messages(messages: list[dict[str, Any]], evidence: list[str]
     )
     plan_text = ("\nLatest model-maintained plan (assessment, not verified completion):\n" +
                  json.dumps(plan, ensure_ascii=False)) if plan else ""
-    note = {"role": "user", "content": heading + plan_text}
+    mutation_text = ("\nRecent confirmed file changes (tool evidence, not task completion):\n" +
+                     "\n".join(mutations)) if mutations else ""
+    note = {"role": "user", "content": heading + mutation_text + plan_text}
     if size(base + [note]) > limit:
         raise ValueError("Pinned task, file hints and current plan exceed the worker context budget; narrow the task or hints.")
     evidence_tail = "\n".join(evidence)[-min(8000, max(1, (limit - size(base + [note])) // 3)):]
-    note["content"] = heading + evidence_tail + plan_text
+    note["content"] = heading + evidence_tail + mutation_text + plan_text
     while size(base + [note]) > limit and evidence_tail:
         evidence_tail = evidence_tail[len(evidence_tail) // 2 + 1:]
-        note["content"] = heading + evidence_tail + plan_text
+        note["content"] = heading + evidence_tail + mutation_text + plan_text
     groups = []
     for message in messages[prefix_count:]:
         if message.get("role") == "assistant" or not groups:
@@ -1913,6 +1916,7 @@ class WorkerManager:
         transcript: list[str] = []
         completion_evidence: list[str] = []
         completion_commands: list[str] = []
+        mutation_evidence: list[str] = []
         worker_plan: dict[str, Any] | None = None
         denial_counts: dict[str, int] = {}
         tool_call_counts: dict[str, int] = {}
@@ -2032,6 +2036,10 @@ class WorkerManager:
                 final_review_rejected = False
                 if tool_name == "edit_file" or (tool_name in {"write_file", "write"} and result.get("changed")):
                     last_edit_step = step
+                    mutation_evidence.append(json.dumps({"step": step, "tool": tool_name,
+                        "path": str(result.get("path") or arguments.get("path") or "")[:300]}, ensure_ascii=False))
+                    if len(mutation_evidence) > 20:
+                        del mutation_evidence[0]
                     # The project has changed: reads and validation commands may
                     # legitimately need repeating. No-op writes must not reset this.
                     tool_call_counts.clear()
@@ -2062,6 +2070,9 @@ class WorkerManager:
                 "when evidence is sufficient; do not edit files just to satisfy this checkpoint. Finish required "
                 "validation and commits before claiming completion."
             )
+            if mutation_evidence:
+                checkpoint += ("\nYour plan may be stale. Reconcile these confirmed changes before repeating work; "
+                               "update the plan to reflect actual progress:\n" + "\n".join(mutation_evidence)[-4000:])
             messages.append({"role": "user", "content": checkpoint})
             transcript.append(f"coach[{step}:discovery_checkpoint]: {checkpoint}")
             progress(f"Step {step}: reviewing progress after extended discovery.", important=True)
@@ -2179,7 +2190,7 @@ class WorkerManager:
                 if is_free:
                     bounded_messages = _bounded_worker_messages(
                         messages, completion_evidence + completion_commands,
-                        prefix_count=initial_context_count, plan=worker_plan)
+                        prefix_count=initial_context_count, plan=worker_plan, mutations=mutation_evidence)
                     if bounded_messages is not messages:
                         messages = bounded_messages
                         # Source results may have been evicted. Allow reacquisition
@@ -2303,11 +2314,14 @@ class WorkerManager:
                                     "tag/push/release steps also need evidence. A claim that "
                                     "tests are runnable or pending is not validation. Missing or failed steps mean "
                                     "complete=false; explain what the worker must do next. Read-only tasks need "
-                                    "neither edits nor commits. Do not infer success from the proposed report alone."
+                                    "neither edits nor commits. Do not infer success from the proposed report alone. "
+                                    "Absent evidence does not prove code is absent: request targeted inspection or "
+                                    "validation of existing code rather than assuming it needs to be recreated."
                                 )},
                                 {"role": "user", "content": json.dumps({
                                     "task": task[:8000], "proposed_final": final_text[:6000],
                                     "last_successful_file_edit_step": last_edit_step,
+                                    "confirmed_file_changes": mutation_evidence,
                                     "tool_evidence": "\n".join(completion_evidence)[-16000:] +
                                                      "\nCommand evidence:\n" + "\n".join(completion_commands)[-24000:],
                                 }, ensure_ascii=False)},
