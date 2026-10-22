@@ -64,13 +64,20 @@ def test_a_standby_brain_says_its_session_is_saved_not_running():
 
 
 def _console(tmp_path, command_path):
-    """A console instance without a Tk mainloop, for the file-writing path."""
+    """Exercise command-file writes independently of Tcl/display startup."""
+    class StatusValue:
+        def __init__(self):
+            self.value = ""
+
+        def set(self, value):
+            self.value = value
+
+        def get(self):
+            return self.value
+
     console = MODULE.OverlordConsole.__new__(MODULE.OverlordConsole)
     console.command_path = command_path
-    console.interpreter = MODULE.tk.Tcl()
-    console.action_status = MODULE.tk.StringVar(
-        master=console.interpreter, value=""
-    )
+    console.action_status = StatusValue()
     console.root = type("Root", (), {"after": lambda self, *a: None})()
     return console
 

@@ -984,3 +984,46 @@ def test_worker_loads_bounded_handoff_context_without_explicit_file_hints(isolat
     assert len(context) == 1 and len(context[0]) < 4500
     assert '[truncated]' in context[0] and 'may be stale' in context[0]
     assert 'do not replay side effects automatically' in context[0]
+
+
+def test_default_source_pages_start_at_beginning_and_preserve_all_text(isolated):
+    project = isolated / 'paged-source'
+    project.mkdir()
+    source = 'beginning\n' + 'x' * 15000 + '\n' + ''.join(f'line {i}\n' for i in range(1000))
+    (project / 'source.py').write_text(source, encoding='utf-8')
+    args = {'path': 'source.py'}
+    chunks = []
+    for _ in range(20):
+        result = execute('read_file', args, project)
+        assert result['ok'] and len(result['content']) <= 6000
+        chunks.append(result['content'])
+        if not result['truncated']:
+            break
+        assert (result['next_line'], result['next_column']) != (
+            args.get('start_line', 1), args.get('start_column', 1))
+        args = {'path': 'source.py', 'start_line': result['next_line'],
+                'start_column': result['next_column']}
+    else:
+        raise AssertionError('source paging did not terminate')
+    assert chunks[0].startswith('beginning') and ''.join(chunks) == source
+    assert result['total_lines'] == 1002
+
+
+def test_explicit_large_source_read_and_bad_column(isolated):
+    project = isolated / 'explicit-read'
+    project.mkdir()
+    (project / 'large.py').write_text('x' * 30000)
+    result = execute('read_file', {'path': 'large.py', 'max_chars': 24000}, project)
+    assert len(result['content']) == 24000 and result['next_column'] == 24001
+    for column in ('bad', 40000):
+        assert not execute('read_file', {'path': 'large.py', 'start_column': column}, project)['ok']
+
+
+@pytest.mark.parametrize('tool, wrong, required', [
+    ('run_python', {'command': 'print(1)'}, 'code'),
+    ('run_command', {'code': 'python -m pytest'}, 'command'),
+])
+def test_missing_command_reports_the_actual_parameter(isolated, tool, wrong, required):
+    result = execute(tool, wrong, isolated)
+    assert result['error'] == 'missing_command' and result['required_argument'] == required
+    assert required in result['message']

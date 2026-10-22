@@ -231,13 +231,19 @@ def final_result(text, **extra):
     return {"content": json.dumps({"final": text, "outcome": "finished"}), **extra}
 
 
-def scripted_pool(replies, reviews=None):
+def scripted_pool(replies, reviews=None, plans=None):
     queue = list(replies)
     review_queue = list(reviews or [])
     seen = []
     reviewed = []
+    plan_queue = list(plans or [])
+    planning = []
 
     async def complete(messages, tools):
+        if tools and len(tools) == 1 and tools[0]['function']['name'] == 'update_plan':
+            planning.append(json.loads(json.dumps(messages)))
+            return plan_queue.pop(0) if plan_queue else call('update_plan', {
+                'plan': [{'step': 'Implement requested work and validate results', 'status': 'in_progress'}]})
         if tools is None and messages[0]['content'].startswith('You are the completion reviewer'):
             reviewed.append(json.loads(json.dumps(messages)))
             return review_queue.pop(0) if review_queue else {'content': '{"complete":true,"reason":"Verified"}'}
@@ -247,6 +253,7 @@ def scripted_pool(replies, reviews=None):
         return message
 
     complete.reviews = reviewed
+    complete.planning = planning
     return complete, seen
 
 
@@ -315,6 +322,8 @@ def test_unlimited_free_worker_remains_cancellable(isolated, tmp_path):
     project.mkdir()
     calls = []
     async def complete(messages, tools):
+        if tools and len(tools) == 1 and tools[0]['function']['name'] == 'update_plan':
+            return call('update_plan', {'plan': [{'step': 'Review project', 'status': 'in_progress'}]})
         calls.append(1)
         return call("read_file", {"path": f"file-{len(calls)}.py"}, f"call-{len(calls)}")
     mgr, _, _ = manager(tmp_path, complete)
@@ -343,7 +352,10 @@ def test_worker_announces_specific_actions_before_executing(isolated, tmp_path, 
     ])
     mgr, sent, _ = manager(tmp_path, completer)
     executed = []
+    original_execute = mgr._local_agent_execute_tool
     async def execute(folder, tool, arguments):
+        if tool == 'update_plan':
+            return await original_execute(folder, tool, arguments)
         assert any(worker in message for message in sent
                    for worker in ["Run git status" if tool == "run_command" else "Write src/example.py"])
         executed.append(tool)
@@ -894,6 +906,8 @@ def test_unavailable_completion_review_never_reports_success(isolated, tmp_path)
     replies = [final_result('Done'), final_result('Done')]
 
     async def complete(messages, tools):
+        if tools and len(tools) == 1 and tools[0]['function']['name'] == 'update_plan':
+            return call('update_plan', {'plan': [{'step': 'Implement work', 'status': 'in_progress'}]})
         if tools is None:
             raise RuntimeError('provider unavailable')
         return replies.pop(0)
@@ -1132,3 +1146,51 @@ def test_latest_worker_plan_survives_repeated_context_trimming(isolated, tmp_pat
     assert 'Inspection complete; implement known tests next' in checkpoints[-1]
     assert 'assessment, not verified completion' in checkpoints[-1]
     assert all(len(json.dumps(messages, ensure_ascii=False)) <= 48000 for messages, _ in seen)
+
+
+@pytest.mark.parametrize('plan_reply', [
+    {'content': json.dumps({'plan': [{'step': 'Verify queue behavior', 'status': 'in_progress'}]})},
+    call('functions.update_plan', {'plan': [{'step': 'Verify queue behavior', 'status': 'in_progress'}]}),
+    {'content': json.dumps({'tool': 'update_plan', 'arguments': {
+        'plan': [{'step': 'Verify queue behavior', 'status': 'in_progress'}]}})},
+])
+def test_free_worker_obtains_a_plan_before_project_actions(isolated, tmp_path, plan_reply):
+    project = isolated / 'planning-first'
+    project.mkdir()
+    (project / 'HANDOFF.md').write_text('Known next action: verify queue behavior')
+    completer, seen = scripted_pool([
+        call('write_file', {'path': 'result.txt', 'content': 'done'}), final_result('Wrote result'),
+    ], plans=[plan_reply])
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert len(completer.planning) == 1 and len(seen) == 2
+    assert 'Known next action' in str(completer.planning[0])
+    assert 'Verify queue behavior' in str(seen[0][0])
+    assert (project / 'result.txt').read_text() == 'done'
+    assert events(mgr)[-1]['status'] == 'finished'
+
+
+def test_invalid_planning_cannot_run_file_or_command_tools(isolated, tmp_path):
+    project = isolated / 'rejected-planning'
+    project.mkdir()
+    invalid = call('write_file', {'path': 'must-not-exist.txt', 'content': 'bad'})
+    completer, seen = scripted_pool([], plans=[invalid] * 3)
+    mgr, sent, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert len(completer.planning) == 3 and not seen
+    assert not list(project.iterdir())
+    assert events(mgr)[-1]['status'] == 'incomplete'
+    assert 'valid task plan after three attempts' in sent[-1]
+
+
+def test_invalid_plan_retries_before_any_project_action(isolated, tmp_path):
+    project = isolated / 'plan-retry'
+    project.mkdir()
+    completer, seen = scripted_pool([final_result('Inspected')], plans=[
+        {'content': ''}, {'content': '{"plan":[]}'},
+        call('update_plan', {'plan': [{'step': 'Inspect current state', 'status': 'in_progress'}]}),
+    ])
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert len(completer.planning) == 3 and len(seen) == 1
+    assert events(mgr)[-1]['status'] == 'finished'

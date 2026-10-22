@@ -853,12 +853,13 @@ def _local_agent_tools() -> list[dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "read_file",
-                "description": "Read project text directly without shell quoting. Use start_line and line_count to inspect large files; lines are 1-based. Without a range, oversized files return their tail.",
+                "description": "Read a bounded page of project text without shell quoting. Defaults to the beginning, up to 6000 characters. Use 1-based start_line/line_count; continue with start_line=next_line and start_column=next_column. Returns total_lines and continuation metadata. Prefer targeted ranges after search_file instead of rereading whole files.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "path": {"type": "string"},
                         "start_line": {"type": "integer", "minimum": 1},
+                        "start_column": {"type": "integer", "minimum": 1},
                         "line_count": {"type": "integer", "minimum": 1},
                         "max_chars": {"type": "integer"},
                     },
@@ -1354,7 +1355,11 @@ class WorkerManager:
             if tool_name == "run_python":
                 command = str(arguments.get("code") or "").strip()
             if not command:
-                return {"ok": False, "error": "missing_command"}
+                return {"ok": False, "error": "missing_command",
+                        "message": ("run_python requires Python source in the code argument, not command."
+                                    if tool_name == "run_python" else
+                                    "run_command requires shell text in the command argument, not code."),
+                        "required_argument": "code" if tool_name == "run_python" else "command"}
             shell = arguments.get("shell", "default") if tool_name == "run_command" else "default"
             if shell not in {"default", "powershell"} or (shell == "powershell" and sys.platform != "win32"):
                 return {"ok": False, "error": "unsupported_shell"}
@@ -1519,30 +1524,56 @@ class WorkerManager:
                 return {"ok": False, "error": denial, "path": str(path)}
             if not path.exists() or not path.is_file():
                 return {"ok": False, "error": "file_not_found", "path": str(path)}
-            max_chars = arguments.get("max_chars", DEFAULT_LOCAL_AGENT_TOOL_OUTPUT_CHARS)
+            max_chars = arguments.get("max_chars", 6000)
             try:
                 max_chars_i = max(1, min(int(max_chars), DEFAULT_LOCAL_AGENT_TOOL_OUTPUT_CHARS))
             except (TypeError, ValueError):
-                max_chars_i = DEFAULT_LOCAL_AGENT_TOOL_OUTPUT_CHARS
+                max_chars_i = 6000
             text = path.read_text(encoding="utf-8", errors="replace")
+            lines = text.splitlines(keepends=True)
+            start, count = 1, len(lines)
             if "start_line" in arguments or "line_count" in arguments:
                 try:
                     start = max(1, int(arguments.get("start_line", 1)))
                     count = max(1, min(int(arguments.get("line_count", 200)), 1000))
                 except (TypeError, ValueError):
                     return {"ok": False, "error": "invalid_line_range"}
-                lines = text.splitlines(keepends=True)
-                selected = "".join(lines[start - 1:start - 1 + count])
-                bounded = selected[:max_chars_i]
-                truncated = len(selected) > max_chars_i or start - 1 + count < len(lines)
-            else:
-                bounded, truncated = _bounded_tail(text, max_chars_i)
+            try:
+                column = max(1, int(arguments.get("start_column", 1)))
+            except (TypeError, ValueError):
+                return {"ok": False, "error": "invalid_start_column"}
+            selected_lines = lines[start - 1:start - 1 + count]
+            if selected_lines:
+                if column > len(selected_lines[0]) + 1:
+                    return {"ok": False, "error": "start_column_outside_line"}
+                selected_lines[0] = selected_lines[0][column - 1:]
+            selected = "".join(selected_lines)
+            bounded = selected[:max_chars_i]
+            remaining, next_line, next_column = len(bounded), start, column
+            for line in selected_lines:
+                if remaining < len(line):
+                    next_column += remaining
+                    break
+                remaining -= len(line)
+                next_line, next_column = next_line + 1, 1
+                if not remaining:
+                    break
+            partial = len(bounded) < len(selected) and next_column != 1
+            truncated = len(bounded) < len(selected) or start - 1 + count < len(lines)
             return {
                 "ok": True,
                 "tool": tool_name,
                 "path": path.relative_to(folder).as_posix(),
                 "content": bounded,
                 "truncated": truncated,
+                "start_line": start,
+                "start_column": column,
+                "total_lines": len(lines),
+                "next_line": next_line if truncated else None,
+                "next_column": next_column if truncated else None,
+                "partial_line": partial,
+                "message": ("Continue with start_line=next_line and start_column=next_column."
+                            if truncated else ""),
             }
 
         if tool_name == "edit_file":
@@ -2020,7 +2051,71 @@ class WorkerManager:
             last_edit_step = 0
             last_discovery_checkpoint = 0
             step = 0
+            if is_free and not answer_only:
+                # Tool availability makes planning an explicit bounded phase. No
+                # file or command call in a malformed planning reply is executed.
+                from modules.free_brain import FreeUnavailable
+                plan_tools = [t for t in _local_agent_tools() if t["function"]["name"] == "update_plan"]
+                planning_messages = [*messages, {"role": "user", "content": (
+                    "Before project actions, record a concrete task plan using update_plan. Use the original "
+                    "request and preloaded handoff; keep completed prior work, remaining implementation, "
+                    "focused validation and requested publication clear. Only update_plan is available in "
+                    "this planning phase. Do not run commands or read files yet. If formal calls are unavailable, "
+                    'return JSON {"plan":[{"step":"next concrete action","status":"in_progress"}],'
+                    '"explanation":"known state and next step"}.'
+                )}]
+                for attempt in range(3):
+                    progress(f"Planning task: requesting a concrete plan ({attempt + 1}/3).", important=True)
+                    planning_messages = _bounded_worker_messages(
+                        planning_messages, [], prefix_count=initial_context_count)
+                    try:
+                        planned = await self.free_completer(planning_messages, plan_tools)
+                    except FreeUnavailable as exc:
+                        final_text = ("Stopped before completion: the free-model pool is unavailable during planning. "
+                                      "Existing edits and commits remain on disk; publication have not been confirmed.\n" +
+                                      redact_text(str(exc)))
+                        step_limited = True
+                        break
+                    used = str(planned.get("_free_model") or "")
+                    if used:
+                        free_models.append(used)
+                    calls = planned.get("tool_calls") or []
+                    if not isinstance(calls, list):
+                        calls = [{}]
+                    arguments = {}
+                    if len(calls) == 1 and isinstance(calls[0], dict):
+                        function = calls[0].get("function") or {}
+                        if not isinstance(function, dict):
+                            function = {}
+                        if worker_tool_name(function.get("name")) == "update_plan":
+                            try:
+                                raw = function.get("arguments") or {}
+                                arguments = json.loads(raw) if isinstance(raw, str) else raw
+                            except (TypeError, ValueError):
+                                pass
+                    elif not calls:
+                        data = _extract_json_object(str(planned.get("content") or "")) or {}
+                        arguments = (data.get("arguments", data)
+                                     if worker_tool_name(data.get("tool") or data.get("name") or "update_plan") == "update_plan"
+                                     else {})
+                    if not isinstance(arguments, dict):
+                        arguments = {}
+                    result = await self._local_agent_execute_tool(folder, "update_plan", arguments)
+                    if result.get("ok"):
+                        worker_plan = result["plan"]
+                        messages.append({"role": "user", "content": (
+                            "Current model-maintained plan (assessment, not verified completion):\n" +
+                            json.dumps(worker_plan, ensure_ascii=False))})
+                        transcript.append("initial_plan: " + json.dumps(worker_plan, ensure_ascii=False))
+                        break
+                    planning_messages.append({"role": "user", "content": (
+                        "No project action was executed. Supply a valid update_plan now: " + result["message"])})
+                else:
+                    final_text = "Stopped before completion: the model did not provide a valid task plan after three attempts. No project action was executed."
+                    step_limited = True
             while max_steps == 0 or step < max_steps:
+                if step_limited:
+                    break
                 step += 1
                 # Yield even when a test/local completer returns synchronously,
                 # so an unlimited run stays responsive to cancellation.

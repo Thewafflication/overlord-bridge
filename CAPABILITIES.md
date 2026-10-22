@@ -509,3 +509,10 @@ Canonical wheel checks clear only the generated build/lib staging directory afte
 Free workers now retain initial bounded file hints, including HANDOFF.md, through context trimming. Read/list/search duplicate counters refresh when context is trimmed, allowing evicted source results to be reacquired; identical commands and writes remain protected. Actual successful file changes refresh duplicate counters so validation can be repeated after repairs. Identical write_file content returns changed=false without rewriting the file and does not refresh the guard.
 
 Worker update_plan accepts 1-12 steps with step text (up to 200 characters), status pending/in_progress/completed and optional explanation (up to 1,000 characters). It records model-maintained task state in memory for the current run, with no file writes or approval prompt. The latest plan is carried into trimmed context as an assessment, not verified completion. Initial context and latest plan remain under the same serialized input bound.
+
+
+Free project work now starts with a bounded planning phase exposing only update_plan. Up to three replies are validated before any project action; malformed or unrelated tool calls are never executed during planning. Valid formal or JSON plans seed the existing per-run memory. Planning failure or pool exhaustion reports incomplete. Answer-only work bypasses this phase; configured action-step limits still apply to subsequent project actions.
+
+read_file defaults to a 6,000-character page from the beginning, rather than a 24,000-character tail. Explicit max_chars may still request up to 24,000 characters. Responses include total_lines, next_line and next_column; continue with start_line/start_column to avoid overlap or lost text, including long single lines. Failed command tools distinguish the required code (run_python) and command (run_command) parameters.
+
+Free-model HTTP attempts log model ID, tool availability, input character count, HTTP outcome and elapsed time. Request bodies, keys and provider endpoints are not included in this timing telemetry.
