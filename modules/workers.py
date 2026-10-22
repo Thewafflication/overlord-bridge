@@ -793,7 +793,7 @@ def _prepare_worker_edit(folder: Path, arguments: dict[str, Any]) -> tuple[Path 
 
 
 def _local_agent_tools() -> list[dict[str, Any]]:
-    return [
+    tools = [
         {"type": "function", "function": {
             "name": "update_plan",
             "description": "Record the current task plan and findings in worker memory. Survives context trimming for this run. Update as steps finish or a specific blocker changes the next action. This records your assessment, not verified completion, and changes no project files.",
@@ -914,6 +914,40 @@ def _local_agent_tools() -> list[dict[str, Any]]:
             },
         },
     ]
+    for tool in tools:
+        tool["function"]["parameters"]["additionalProperties"] = False
+    return tools
+
+
+def _worker_argument_error(tool_name: str, arguments: Any) -> dict[str, Any] | None:
+    """Reject misspelled/ill-typed model parameters before approval or action.
+
+    Tool implementations retain their existing value/range/path checks. This
+    boundary prevents an ignored parameter from silently changing a request.
+    """
+    spec = next((t["function"]["parameters"] for t in _local_agent_tools()
+                 if t["function"]["name"] == tool_name), None)
+    if spec is None:
+        return None
+    properties = dict(spec.get("properties", {}))
+    if tool_name == "run_command":
+        properties["cmd"] = {"type": "string"}  # existing legacy command alias
+    invalid_object = not isinstance(arguments, dict) or "__invalid_json_arguments__" in arguments
+    unknown = [] if invalid_object else sorted(str(k) for k in arguments if k not in properties)
+    types = {"string": str, "integer": int, "array": list, "object": dict}
+    wrong_types = [] if invalid_object else [k for k, value in arguments.items()
+        if k in properties and properties[k].get("type") in types
+        and (not isinstance(value, types[properties[k]["type"]])
+             or (properties[k]["type"] == "integer" and isinstance(value, bool)))]
+    if not invalid_object and not unknown and not wrong_types:
+        return None
+    return {"ok": False, "tool": tool_name, "error": "invalid_tool_arguments",
+            "unrecognized_arguments": unknown, "wrong_type_arguments": wrong_types,
+            "accepted_parameters": {key: value.get("type") for key, value in properties.items()},
+            "required_arguments": spec.get("required", []),
+            "message": "No action was executed. Pass one JSON object using these exact parameter names and types. "
+                       "For source ranges use start_line and line_count, not start/end/offset. "
+                       "For Python use code; for shell commands use command."}
 
 
 def _local_agent_command_denial(command: str, folder: Path) -> str | None:
@@ -1666,6 +1700,12 @@ class WorkerManager:
         anyway never reaches the operator's phone.
         """
         tool_name = worker_tool_name(tool_name)
+        argument_error = _worker_argument_error(tool_name, arguments)
+        if argument_error:
+            log.info("Rejected %s tool arguments: unknown=%s, wrong_types=%s", tool_name,
+                     redact_text(str(argument_error["unrecognized_arguments"]))[:200],
+                     redact_text(str(argument_error["wrong_type_arguments"]))[:200])
+            return argument_error
         approver = self.tool_approver if brain == "free" else None
         if approver is not None:
             tool = tool_name
@@ -2100,7 +2140,8 @@ class WorkerManager:
                                      else {})
                     if not isinstance(arguments, dict):
                         arguments = {}
-                    result = await self._local_agent_execute_tool(folder, "update_plan", arguments)
+                    result = (_worker_argument_error("update_plan", arguments) or
+                              await self._local_agent_execute_tool(folder, "update_plan", arguments))
                     if result.get("ok"):
                         worker_plan = result["plan"]
                         messages.append({"role": "user", "content": (
@@ -2218,7 +2259,9 @@ class WorkerManager:
                         try:
                             arguments = json.loads(raw_args) if isinstance(raw_args, str) else dict(raw_args)
                         except (TypeError, ValueError, json.JSONDecodeError):
-                            arguments = {}
+                            arguments = {"__invalid_json_arguments__": True}
+                        if not isinstance(arguments, dict):
+                            arguments = {"__invalid_json_arguments__": True}
                         duplicate_result = repeated_tool_call_result(tool_name, arguments)
                         result = await execute_with_progress(tool_name, arguments, duplicate_result)
                         result_text = _local_agent_json_result(result, DEFAULT_LOCAL_AGENT_TOOL_OUTPUT_CHARS)
