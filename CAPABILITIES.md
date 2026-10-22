@@ -476,3 +476,6 @@ Free workers now prefer an existing project `.venv` for Python execution and com
 
 
 Worker `list_files` accepts `path` (project-relative directory) and `pattern` (filename glob, e.g. `*.py`). Generated/dependency/secret/linked directories are pruned during traversal. Worker command timeouts clean up the owned Windows process tree or POSIX process group before a bounded output drain; timeout cleanup is logged and buffered output is retained when pipes close.
+
+
+Background workers now share Telegram typing ownership with foreground turns. Typing refreshes every four seconds and wakes after outbound messages; the final operation releases it on completion, cancellation or failure. Free project workers receive one completion checkpoint after a plain-text ending and must continue with tools or provide an explicit JSON final result. An ignored checkpoint or explicit blocked result reports incomplete; explicit completion remains a model-reported claim.
