@@ -382,11 +382,17 @@ class TelegramHandler(threading.Thread):
             chat_id=self.owner_chat_id, menu_button=MenuButtonCommands()))
 
     # ------------------------------------------------------------------ outbound
-    def send(self, chat_id: int, text: str) -> None:
-        """Thread-safe: queue a (chunked) reply onto the polling loop."""
+    def send(self, chat_id: int, text: str, *, mirror: bool = True) -> None:
+        """Thread-safe: queue a (chunked) reply onto the polling loop.
+
+        *mirror* is False for a message the caller has already recorded in the
+        shared transcript itself — an owner message typed in the desktop
+        window, for instance, which is echoed to the phone but must not appear
+        in the transcript a second time as an Overlord reply.
+        """
         if not text:
             return
-        if self.on_send is not None:
+        if mirror and self.on_send is not None:
             # Mirrored before delivery so the console shows the reply even if
             # Telegram itself refuses the message.
             try:

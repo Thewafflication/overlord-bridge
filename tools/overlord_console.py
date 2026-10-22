@@ -60,6 +60,11 @@ class OverlordConsole:
         self.signal_mtime = 0
         self.status_mtime = 0
 
+        # Chat mirror is shared with the bridge.
+        self.chat_mirror_path = Path(log_path.parent, "chat-mirror.jsonl")
+        self.chat_offset = 0
+        self.chat_messages = []  # store formatted lines for display
+
         self.root = tk.Tk()
         self.root.title(f"Overlord Console — {self.version}")
         self.root.geometry("1000x620")
@@ -194,6 +199,26 @@ class OverlordConsole:
                   wraplength=900, font=("Segoe UI", 11)).pack(fill="x", pady=(4, 12))
         self.log_toggle = ttk.Button(outer, text="Show detailed logs ▸", command=self.toggle_logs)
         self.log_toggle.pack(anchor="w", pady=(0, 6))
+        # --- Chat pane -----------------------------------------------------
+        self.chat_frame = ttk.Frame(outer, style="Console.TFrame")
+        self.chat_frame.pack(fill="both", expand=True)
+        # Scrollable text widget for chat
+        chat_scrollbar = ttk.Scrollbar(self.chat_frame, orient="vertical")
+        chat_scrollbar.pack(side="right", fill="y")
+        self.chat_text = tk.Text(self.chat_frame, bg="#07101f", fg="#dbeafe", insertbackground="#ffffff",
+                                 wrap="none", font=("Cascadia Mono", 10), yscrollcommand=chat_scrollbar.set)
+        self.chat_text.pack(side="left", fill="both", expand=True)
+        chat_scrollbar.config(command=self.chat_text.yview)
+        self.chat_text.configure(state="disabled")
+        # Input entry and send button
+        chat_input_frame = ttk.Frame(outer, style="Console.TFrame")
+        chat_input_frame.pack(fill="x", pady=(4, 0))
+        self.chat_entry = ttk.Entry(chat_input_frame, style="Console.TEntry")
+        self.chat_entry.pack(side="left", fill="x", expand=True)
+        ttk.Button(chat_input_frame, text="Send", command=self._send_chat).pack(side="right")
+        # Bind Enter key to send
+        self.chat_entry.bind("<Return>", lambda _: self._send_chat())
+
         text_frame = self.log_frame = ttk.Frame(outer, style="Console.TFrame")
         scrollbar = ttk.Scrollbar(text_frame, orient="vertical")
         scrollbar.pack(side="right", fill="y")
@@ -350,6 +375,7 @@ class OverlordConsole:
         self._read_new_log()
         self._check_signal()
         self._read_brain_status()
+        self._read_new_chat()
         self.root.after(POLL_MS, self.poll)
 
     def _write_visibility(self, state: str) -> None:

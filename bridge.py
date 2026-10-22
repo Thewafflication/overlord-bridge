@@ -78,19 +78,11 @@ from modules.chat_mirror import (
     SOURCE_GUI,
     SOURCE_TELEGRAM,
 )
-from modules.chat_mirror import (
-    ChatMirror,
-    ROLE_OWNER,
-    ROLE_OVERLORD,
-    SOURCE_GUI,
-    SOURCE_TELEGRAM,
-)
 from modules.conversation_history import (
     Handoff,
     SharedConversationHistory,
     add_handoff_to_turn,
 )
-
 from modules.telegram_handler import TelegramHandler
 from modules.single_instance import AlreadyRunningError, SingleInstance
 from modules.windows_tray import WindowsTray
@@ -119,9 +111,6 @@ CONSOLE_STATUS_FILE = BASE_DIR / "run" / "brain-status.json"
 CONSOLE_COMMAND_FILE = BASE_DIR / "run" / "console-command.json"
 # The conversation transcript shared with the desktop console: the bridge
 # appends every owner message and every reply, and the console reads it.
-CHAT_MIRROR_FILE = BASE_DIR / "run" / "chat-mirror.jsonl"
-# The conversation transcript shared with the desktop console. The bridge
-# appends every owner message and every reply; the console reads it.
 CHAT_MIRROR_FILE = BASE_DIR / "run" / "chat-mirror.jsonl"
 TELEGRAM_CHOICE_INSTRUCTIONS = (
     "When you need the user to choose among discrete options or answer a short "
@@ -572,7 +561,6 @@ class Bridge:
         self._pending_handoff: Handoff | None = (
             self._conversation_history.handoff_for(self.brain_name)
         )
-        self.chat_mirror = ChatMirror(CHAT_MIRROR_FILE)
         self.tray = WindowsTray(
             self.request_shutdown,
             log_path=CONSOLE_LOG_FILE,
@@ -825,13 +813,18 @@ class Bridge:
             await self.brain.disconnect()
             self.tray.stop()
 
-    async def _dispatch_inbound(self, chat_id: int, text: str) -> None:
+    async def _dispatch_inbound(
+        self, chat_id: int, text: str, *, source: str = SOURCE_TELEGRAM
+    ) -> None:
         """Route one owner message to its command handler or start a turn.
 
         Handlers run on the main loop, so one that raises must not unwind it:
         that would shut the whole bridge down over a single bad command.
+
+        *source* says where the message came from ("telegram" or "gui"), so
+        the shared transcript can show where each message was typed.
         """
-        self.chat_mirror.append(ROLE_OWNER, text, source=SOURCE_TELEGRAM)
+        self.chat_mirror.append(ROLE_OWNER, text, source=source)
         stripped = text.strip()
         if not stripped:
             return
@@ -1245,7 +1238,7 @@ class Bridge:
                 continue
             action = str((payload or {}).get("action") or "").strip().lower()
             try:
-                await self._run_console_action(action)
+                await self._run_console_action(action, payload if isinstance(payload, dict) else {})
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001 - a button must not kill the loop
@@ -1311,7 +1304,13 @@ class Bridge:
         self._write_console_status()
         self.telegram.send(OWNER, "🔑 Settings reloaded from the setup window.")
 
-    async def _run_console_action(self, action: str) -> None:
+    async def _run_console_action(self, action: str, payload: dict | None = None) -> None:
+        """Perform one console action.
+
+        *payload* is the whole console command file, so an action that carries
+        content (a chat message typed in the window) can read it. The action
+        name alone stays supported for the plain button presses.
+        """
         if action == "shutdown":
             log.info("Stop requested from the console")
             self.request_shutdown()
@@ -1337,8 +1336,28 @@ class Bridge:
         elif action == "send_status_all":
             await self._handle_status(OWNER, "/status all")
             log.info("Sent /status all to Telegram from the console")
+        elif action == "chat":
+            await self._handle_gui_chat(payload or {})
         else:
             log.debug("Ignoring unknown console action %r", action)
+
+    async def _handle_gui_chat(self, payload: dict) -> None:
+        """Take one message typed in the desktop console as an owner message.
+
+        It goes through exactly the same door as a Telegram message — same
+        commands, same turn handling — and is then echoed to Telegram so the
+        phone shows the same conversation the window shows.
+        """
+        text = str((payload or {}).get("text") or "").strip()
+        if not text:
+            log.debug("Ignoring an empty console chat message")
+            return
+        log.info("Message from the desktop console: %s", text)
+        # Recorded once, as the owner's message from the window; the echo to
+        # the phone is not mirrored again as an Overlord reply.
+        # Mirror once as owner; the caller will re-add, but we keep the source on the first.
+        self.telegram.send(OWNER, f"🖥️ {text}", mirror=False)
+        await self._dispatch_inbound(OWNER, text, source=SOURCE_GUI)
 
     async def _status_refresh_loop(self) -> None:
         """Keep the cached reading warm so the tray and console stay current."""
