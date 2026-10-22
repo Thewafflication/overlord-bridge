@@ -4,9 +4,11 @@ Owner request: mirror Telegram chat in the desktop GUI, accept GUI chat input an
 
 ## Current state
 
-This local branch holds partial GUI work from adbb751, 4bbdaf0, 0295b75 and c5fda2f, plus main 1.0.39. The last run repaired the 15 existing test failures, added/started _chat_request_loop, passed the existing 1,194-test suite and canonical checks, then committed. It exhausted its free pool before final review or publication. No focused GUI feature tests were added. The feature remains unreleased.
+This local branch holds partial GUI work from adbb751, 4bbdaf0, 0295b75 and c5fda2f, plus main 1.0.40. The last run repaired the 15 existing test failures, added/started _chat_request_loop, passed the existing 1,194-test suite and canonical checks, then committed. It exhausted its free pool before final review or publication. No focused GUI feature tests were added. The feature remains unreleased.
 
 The worker accidentally used git add . and swept pre-existing out/ and tools/_dev_show.ps1 into c5fda2f. Cleanup commit a10ca51 removed only their tracking, preserving the files. Do not stage them again. Preserve wsp and all unrelated edits. Stage explicit owned paths only. Keep this HANDOFF out of main/release integration.
+
+The last continuation attempt ended incomplete at step 292 without editing: it repeatedly lost source context. Main now retains this handoff and supports update_plan. Begin by recording a short plan: add focused queue/GUI tests, repair observed failures, validate, then commit/publish. Keep the plan current; do not repeat a broad source survey. Review feedback was evidence-limited: GUI code does exist, so verify it instead of assuming it must be recreated.
 
 ## Start here: verify behavior, add missing tests
 
@@ -20,4 +22,4 @@ TelegramHandler.send now tolerates missing on_send on test fakes; console tag se
 
 ## Completion
 
-Use python on PATH for commands (the project .venv interpreter is selected), run_python for Python code, and shell=powershell for PowerShell syntax. Avoid nested shells and Unix tail pipelines on Windows. Main 1.0.39 passed 1,203 tests and one skip. Run focused feature tests, then python tools/check.py all on the final branch. Exercise Tk construction and send/receive behavior before claiming the feature works. Revalidate after final edits, commit explicit paths, and perform requested publication only after the implementation is complete. Do not tag incomplete work.
+Use python on PATH for commands (the project .venv interpreter is selected), run_python for Python code, and shell=powershell for PowerShell syntax. Avoid nested shells and Unix tail pipelines on Windows. Main 1.0.40 passed 1,217 tests and one skip. Run focused feature tests, then python tools/check.py all on the final branch. Exercise Tk construction and send/receive behavior before claiming the feature works. Revalidate after final edits, commit explicit paths, and perform requested publication only after the implementation is complete. Do not tag incomplete work.
