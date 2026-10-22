@@ -66,19 +66,27 @@ def read_requests(path: Path, offset: int = 0) -> Tuple[List[str], int]:
     if size == offset:
         return [], offset
     try:
-        with path.open("r", encoding="utf-8", errors="replace") as stream:
-            stream.seek(offset)
-            content = stream.read()
+        # Read raw bytes from the current offset to avoid mis‑counting because
+        # Windows text mode converts CRLF to LF.  We keep the byte offset in the
+        # caller so the same value can be used each iteration.
+        with path.open("rb") as f:
+            f.seek(offset)
+            raw = f.read()
     except OSError:
         return [], offset
-    if not content.endswith("\n"):
-        # Only whole lines are requests; wait for the writer to finish.
-        last_newline = content.rfind("\n")
+    # Decode the bytes we just read.  Use errors='replace' so a truncated
+    # sequence doesn't crash.
+    text = raw.decode("utf-8", errors="replace")
+    # If the read does not end on a newline, the last line is incomplete; we
+    # drop it from the current batch.
+    if not text.endswith("\n"):
+        last_newline = text.rfind("\n")
         if last_newline == -1:
             return [], offset
-        content = content[:last_newline + 1]
+        # Include the newline in the slice to maintain byte length.
+        text = text[:last_newline + 1]
     messages: List[str] = []
-    for line in content.splitlines():
+    for line in text.splitlines():
         line = line.strip()
         if not line:
             continue
@@ -87,10 +95,12 @@ def read_requests(path: Path, offset: int = 0) -> Tuple[List[str], int]:
         except ValueError:
             continue
         if isinstance(payload, dict) and isinstance(payload.get("text"), str):
-            text = payload["text"].strip()
-            if text:
-                messages.append(text)
-    return messages, offset + len(content.encode("utf-8"))
+            txt = payload["text"].strip()
+            if txt:
+                messages.append(txt)
+    # Compute the number of bytes actually consumed.
+    consumed = len(text.encode("utf-8"))
+    return messages, offset + consumed
 
 
 __all__ = ["DEFAULT_REQUEST_FILE", "append_request", "read_requests", "request_id"]

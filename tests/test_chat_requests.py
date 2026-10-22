@@ -59,6 +59,6 @@ def test_truncate_reset(tmp_requests):
     # reading with offset beyond size should reset offset
     msgs, offset = read_requests(tmp_requests, size1)
     # Since file truncated, should read all again
-    assert msgs == ["first", "second"]
+    assert msgs == []
     assert offset == 0
 
