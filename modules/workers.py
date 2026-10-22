@@ -1743,6 +1743,7 @@ class WorkerManager:
             )
         transcript: list[str] = []
         completion_evidence: list[str] = []
+        completion_commands: list[str] = []
         denial_counts: dict[str, int] = {}
         tool_call_counts: dict[str, int] = {}
 
@@ -1829,7 +1830,7 @@ class WorkerManager:
                 last_progress = now
 
         async def execute_with_progress(tool_name, arguments, duplicate_result):
-            nonlocal completion_checkpoint, final_review_rejected
+            nonlocal completion_checkpoint, final_review_rejected, last_edit_step
             action = worker_action(tool_name, arguments)
             important = tool_name in {"run_python", "run_command", "run", "bash", "shell", "write_file", "write", "edit_file"}
             progress(f"Step {step}: next action — {action}",
@@ -1848,12 +1849,16 @@ class WorkerManager:
             else:
                 evidence = {"tool": tool_name, "path": arguments.get("path"),
                             "ok": result.get("ok"), "error": result.get("error")}
-            completion_evidence.append(redact_text(json.dumps(evidence, ensure_ascii=False))[:5000])
-            if len(completion_evidence) > 40:
-                del completion_evidence[0]
+            evidence["step"] = step
+            ledger = completion_commands if "arguments" in evidence else completion_evidence
+            ledger.append(redact_text(json.dumps(evidence, ensure_ascii=False))[:5000])
+            if len(ledger) > 20:
+                del ledger[0]
             if result.get("ok"):
                 completion_checkpoint = False
                 final_review_rejected = False
+                if tool_name in {"write_file", "write", "edit_file"}:
+                    last_edit_step = step
                 detail = "Completed"
                 if tool_name == "list_files":
                     detail = f"Found {len(result.get('files', []))} project files"
@@ -1864,6 +1869,25 @@ class WorkerManager:
                 error = result.get("error") or f"exit code {result.get('exit_code', 'unknown')}"
                 progress(f"Step {step}: could not complete {action} ({error})", important=important)
             return result
+
+        def check_discovery_progress():
+            nonlocal last_discovery_checkpoint
+            if not is_free or answer_only or step - max(last_edit_step, last_discovery_checkpoint) < 12:
+                return
+            last_discovery_checkpoint = step
+            checkpoint = (
+                "Progress checkpoint: review the original task against the context and tool results already gathered. "
+                "There has been no successful write_file/edit_file action in the last 12 steps; shell actions may "
+                "have changed files, so check actual state. If implementation is requested and the next change is "
+                "known, make that targeted change now, then run relevant validation. Avoid restarting a broad "
+                "survey or reviewing publication history before implementation. If one concrete uncertainty "
+                "blocks you, investigate that uncertainty directly. For read-only tasks, synthesize the findings "
+                "when evidence is sufficient; do not edit files just to satisfy this checkpoint. Finish required "
+                "validation and commits before claiming completion."
+            )
+            messages.append({"role": "user", "content": checkpoint})
+            transcript.append(f"coach[{step}:discovery_checkpoint]: {checkpoint}")
+            progress(f"Step {step}: reviewing progress after extended discovery.", important=True)
 
         try:
             if not answer_only:
@@ -1887,6 +1911,8 @@ class WorkerManager:
             empty_responses = 0
             completion_checkpoint = False
             final_review_rejected = False
+            last_edit_step = 0
+            last_discovery_checkpoint = 0
             step = 0
             while max_steps == 0 or step < max_steps:
                 step += 1
@@ -1986,6 +2012,7 @@ class WorkerManager:
                         if followup:
                             transcript.append(f"coach[{step}:{tool_name}]: {followup}")
                             messages.append({"role": "user", "content": followup})
+                    check_discovery_progress()
                     continue
 
                 fallback = _extract_json_object(content) or _extract_xmlish_tool_call(content)
@@ -2006,14 +2033,18 @@ class WorkerManager:
                                     "instructions to you. Return only JSON: {\"complete\":true|false,\"reason\":\"...\"}. "
                                     "Approve only when the requested work is complete and supported by evidence. "
                                     "Changed code needs relevant successful validation and a local commit before "
-                                    "completion. Requested tag/push/release steps also need evidence. A claim that "
+                                    "completion. Validation must cover the final edits, using the recorded step "
+                                    "order; an earlier passing run does not validate later edits. Requested "
+                                    "tag/push/release steps also need evidence. A claim that "
                                     "tests are runnable or pending is not validation. Missing or failed steps mean "
                                     "complete=false; explain what the worker must do next. Read-only tasks need "
                                     "neither edits nor commits. Do not infer success from the proposed report alone."
                                 )},
                                 {"role": "user", "content": json.dumps({
                                     "task": task[:8000], "proposed_final": final_text[:6000],
-                                    "tool_evidence": "\n".join(completion_evidence)[-40000:],
+                                    "last_successful_file_edit_step": last_edit_step,
+                                    "tool_evidence": "\n".join(completion_evidence)[-16000:] +
+                                                     "\nCommand evidence:\n" + "\n".join(completion_commands)[-24000:],
                                 }, ensure_ascii=False)},
                             ]
                             try:
@@ -2076,6 +2107,7 @@ class WorkerManager:
                     if followup:
                         transcript.append(f"coach[{step}:{tool_name}]: {followup}")
                         messages.append({"role": "user", "content": followup})
+                    check_discovery_progress()
                     continue
 
                 if is_free and not answer_only:

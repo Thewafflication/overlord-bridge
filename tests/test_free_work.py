@@ -901,3 +901,53 @@ def test_unavailable_completion_review_never_reports_success(isolated, tmp_path)
     start(mgr, project)
     assert events(mgr)[-1]['status'] == 'incomplete'
     assert 'Completion review unavailable' in sent[-1]
+
+
+@pytest.mark.parametrize('fallback', [False, True])
+def test_extended_discovery_gets_targeted_progress_checkpoint(isolated, tmp_path, fallback):
+    project = isolated / 'discovery'
+    project.mkdir()
+    (project / 'source.py').write_text('original')
+    actions = []
+    for step in range(13):
+        args = {'path': 'source.py', 'start_line': step + 1}
+        actions.append({'content': json.dumps({'tool': 'read_file', 'arguments': args})}
+                       if fallback else call('read_file', args, f'read-{step}'))
+    completer, seen = scripted_pool([*actions, final_result('Inspected source')])
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert 'Progress checkpoint' not in str(seen[11][0])
+    assert 'Progress checkpoint' in str(seen[12][0])
+    assert 'do not edit files just to satisfy' in str(seen[12][0])
+    assert (project / 'source.py').read_text() == 'original'
+    assert events(mgr)[-1]['status'] == 'finished'
+
+
+def test_successful_edit_delays_discovery_checkpoint(isolated, tmp_path):
+    project = isolated / 'discovery-reset'
+    project.mkdir()
+    reads = [call('read_file', {'path': f'absent-{i}.py'}) for i in range(11)]
+    completer, seen = scripted_pool([
+        *reads, call('write_file', {'path': 'new.py', 'content': 'created = True'}),
+        call('read_file', {'path': 'new.py'}), final_result('Created file'),
+    ])
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert 'Progress checkpoint' not in str(seen[-1][0])
+    assert json.loads(completer.reviews[0][1]['content'])['last_successful_file_edit_step'] == 12
+
+
+def test_command_evidence_survives_later_discovery(isolated, tmp_path):
+    project = isolated / 'persistent-command-evidence'
+    project.mkdir()
+    completer, _ = scripted_pool([
+        call('run_python', {'code': 'print("validation-marker")'}),
+        *[call('read_file', {'path': f'missing-{i}.py'}) for i in range(45)],
+        final_result('Reviewed project'),
+    ])
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    evidence = json.loads(completer.reviews[0][1]['content'])['tool_evidence']
+    assert 'validation-marker' in evidence and '"step": 1' in evidence
+    assert 'missing-0.py' not in evidence
+    assert events(mgr)[-1]['status'] == 'finished'
