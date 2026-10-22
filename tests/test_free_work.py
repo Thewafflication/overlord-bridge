@@ -1382,3 +1382,70 @@ def test_progress_plan_pool_failure_preserves_edits_and_reports_incomplete(isola
     assert (project / 'saved.py').read_text() == 'saved = True'
     assert events(mgr)[-1]['status'] == 'incomplete'
     assert 'provider rate limited' in sent[-1]
+
+
+@pytest.mark.parametrize('action', [
+    call('read_file', {'path': 'source.py'}),
+    call('search_file', {'path': 'source.py', 'query': 'original'}),
+    call('list_files', {'path': '.'}),
+    call('update_plan', {'plan': [{'step': 'Still inspecting', 'status': 'in_progress'}]}),
+    call('write_file', {'path': 'source.py', 'content': 'original'}),
+])
+@pytest.mark.parametrize('reviewed', [False, True])
+def test_reads_and_metadata_do_not_erase_unconfirmed_completion(isolated, tmp_path, action, reviewed):
+    project = isolated / 'no-completion-reset'
+    project.mkdir()
+    (project / 'source.py').write_text('original')
+    ending = final_result('Done') if reviewed else {'content': 'I will do it next.'}
+    completer, seen = scripted_pool([ending, action, ending, final_result('Unsupported')],
+        reviews=[{'content': '{"complete":false,"reason":"No validation evidence."}'}] * 2)
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert len(seen) == 3 and events(mgr)[-1]['status'] == 'incomplete'
+    if reviewed:
+        assert len(completer.reviews) == 2
+
+
+def test_read_only_completion_can_be_approved_after_additional_inspection(isolated, tmp_path):
+    project = isolated / 'read-only-review'
+    project.mkdir()
+    (project / 'source.py').write_text('answer = 42')
+    completer, _ = scripted_pool([
+        final_result('Found answer'), call('read_file', {'path': 'source.py'}), final_result('Answer is 42'),
+    ], reviews=[{'content': '{"complete":false,"reason":"Inspect source first."}'},
+                {'content': '{"complete":true,"reason":"Source evidence supports answer."}'}])
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert len(completer.reviews) == 2 and events(mgr)[-1]['status'] == 'finished'
+
+
+def test_successful_commands_allow_new_completion_reviews(isolated, tmp_path):
+    project = isolated / 'new-validation-evidence'
+    project.mkdir()
+    completer, _ = scripted_pool([
+        final_result('Done'), call('run_python', {'code': 'print("validation one")'}),
+        final_result('Done'), call('run_python', {'code': 'print("validation two")'}), final_result('Validated'),
+    ], reviews=[{'content': '{"complete":false,"reason":"More validation required."}'}] * 2 +
+                [{'content': '{"complete":true,"reason":"Validated."}'}])
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert len(completer.reviews) == 3 and events(mgr)[-1]['status'] == 'finished'
+
+
+def test_completion_feedback_survives_compaction_and_plan_phase(isolated, tmp_path):
+    project = isolated / 'pinned-completion-feedback'
+    project.mkdir()
+    pressure = context_pressure_actions(project)
+    completer, seen = scripted_pool([
+        final_result('Done'), *pressure, final_result('Inspection supports answer'),
+    ], reviews=[{'content': '{"complete":false,"reason":"Verify the specific queue path before concluding."}'},
+                {'content': '{"complete":true,"reason":"Evidence now sufficient."}'}])
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    checkpoints = [m['content'] for m in seen[-1][0]
+                   if m.get('content', '').startswith('Worker context checkpoint')]
+    assert checkpoints and 'Verify the specific queue path' in checkpoints[-1]
+    assert 'Unresolved completion feedback' in checkpoints[-1]
+    assert len(completer.planning) == 2
+    assert all(len(json.dumps(messages, ensure_ascii=False)) <= 48000 for messages, _ in seen)
+    assert events(mgr)[-1]['status'] == 'finished'

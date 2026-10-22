@@ -526,3 +526,5 @@ Confirmed file mutations retain their own bounded 20-entry metadata ledger acros
 - Worker formal call wrappers are validated as a whole before execution/history: malformed batches return explicit retry guidance, and valid siblings in an invalid batch do not execute. No tool is guessed from arguments.
 
 - After 12 steps without a confirmed file edit, free workers enter a bounded plan-only progress phase. A nonempty model-authored explanation records findings and the next action; the refreshed plan survives context trimming. Three invalid replies or an unavailable pool leave the task incomplete and preserve existing files. Read-only tasks need no artificial writes.
+
+- Completion challenges survive reads, searches, listings, plan updates and unchanged writes. Confirmed edits or successful commands reset them; valid final reports still receive review, including read-only work. Unresolved feedback is pinned across context trimming and progress planning.

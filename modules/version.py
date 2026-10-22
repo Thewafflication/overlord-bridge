@@ -31,7 +31,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 # Last resort only, for a build with neither metadata nor a source tree. Bump
 # it with pyproject.toml — test_version.py fails if the two drift apart, which
 # is how 0.1.0 once survived four tagged releases.
-FALLBACK_VERSION = "1.0.45"
+FALLBACK_VERSION = "1.0.46"
 
 
 def _from_metadata() -> str | None:

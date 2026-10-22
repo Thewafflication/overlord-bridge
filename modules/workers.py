@@ -1043,7 +1043,8 @@ def _worker_call_envelope_error(calls: Any) -> str | None:
 def _bounded_worker_messages(messages: list[dict[str, Any]], evidence: list[str],
                              limit: int = 48000, *, prefix_count: int = 2,
                              plan: dict[str, Any] | None = None,
-                             mutations: list[str] | None = None) -> list[dict[str, Any]]:
+                             mutations: list[str] | None = None,
+                             completion_feedback: str = "") -> list[dict[str, Any]]:
     """Retain the task, bounded action evidence and complete recent exchanges.
 
     This is mechanical history trimming, not an invented natural-language summary.
@@ -1068,14 +1069,16 @@ def _bounded_worker_messages(messages: list[dict[str, Any]], evidence: list[str]
                  json.dumps(plan, ensure_ascii=False)) if plan else ""
     mutation_text = ("\nRecent confirmed file changes (tool evidence, not task completion):\n" +
                      "\n".join(mutations)) if mutations else ""
-    note = {"role": "user", "content": heading + mutation_text + plan_text}
+    review_text = ("\nUnresolved completion feedback (assessment, not an owner request):\n" +
+                   completion_feedback[:1800]) if completion_feedback else ""
+    note = {"role": "user", "content": heading + mutation_text + plan_text + review_text}
     if size(base + [note]) > limit:
         raise ValueError("Pinned task, file hints and current plan exceed the worker context budget; narrow the task or hints.")
     evidence_tail = "\n".join(evidence)[-min(8000, max(1, (limit - size(base + [note])) // 3)):]
-    note["content"] = heading + evidence_tail + mutation_text + plan_text
+    note["content"] = heading + evidence_tail + mutation_text + plan_text + review_text
     while size(base + [note]) > limit and evidence_tail:
         evidence_tail = evidence_tail[len(evidence_tail) // 2 + 1:]
-        note["content"] = heading + evidence_tail + mutation_text + plan_text
+        note["content"] = heading + evidence_tail + mutation_text + plan_text + review_text
     groups = []
     for message in messages[prefix_count:]:
         if message.get("role") == "assistant" or not groups:
@@ -1938,6 +1941,7 @@ class WorkerManager:
         completion_evidence: list[str] = []
         completion_commands: list[str] = []
         mutation_evidence: list[str] = []
+        completion_feedback = ""
         worker_plan: dict[str, Any] | None = None
         denial_counts: dict[str, int] = {}
         tool_call_counts: dict[str, int] = {}
@@ -2026,6 +2030,7 @@ class WorkerManager:
                 last_progress = now
 
         async def execute_with_progress(tool_name, arguments, duplicate_result):
+            nonlocal completion_feedback
             nonlocal completion_checkpoint, final_review_rejected, last_edit_step, worker_plan
             action = worker_action(tool_name, arguments)
             important = tool_name in {"run_python", "run_command", "run", "bash", "shell", "write_file", "write", "edit_file"}
@@ -2053,8 +2058,14 @@ class WorkerManager:
             if result.get("ok"):
                 if tool_name == "update_plan":
                     worker_plan = result["plan"]
-                completion_checkpoint = False
-                final_review_rejected = False
+                confirmed_edit = tool_name == "edit_file" or (tool_name == "write_file" and result.get("changed"))
+                successful_command = tool_name in {"run_command", "run_python"} and result.get("exit_code") == 0
+                if confirmed_edit or successful_command:
+                    # Reads, metadata and no-op writes cannot erase an unanswered
+                    # completion challenge. Valid final reports still get reviewed.
+                    completion_checkpoint = False
+                    final_review_rejected = False
+                    completion_feedback = ""
                 if tool_name == "edit_file" or (tool_name in {"write_file", "write"} and result.get("changed")):
                     last_edit_step = step
                     mutation_evidence.append(json.dumps({"step": step, "tool": tool_name,
@@ -2086,7 +2097,8 @@ class WorkerManager:
                     progress(f"{phase}: requesting a concrete plan ({attempt + 1}/3).", important=True)
                 planning_messages = _bounded_worker_messages(
                     planning_messages, completion_evidence + completion_commands, limit=46000,
-                    prefix_count=initial_context_count, plan=worker_plan, mutations=mutation_evidence)
+                    prefix_count=initial_context_count, plan=worker_plan, mutations=mutation_evidence,
+                    completion_feedback=completion_feedback)
                 planning_messages.append({"role": "user", "content": prompt})
                 try:
                     planned = await self.free_completer(planning_messages, plan_tools)
@@ -2228,7 +2240,8 @@ class WorkerManager:
                 if is_free:
                     bounded_messages = _bounded_worker_messages(
                         messages, completion_evidence + completion_commands,
-                        prefix_count=initial_context_count, plan=worker_plan, mutations=mutation_evidence)
+                        prefix_count=initial_context_count, plan=worker_plan, mutations=mutation_evidence,
+                    completion_feedback=completion_feedback)
                     if bounded_messages is not messages:
                         messages = bounded_messages
                         # Source results may have been evicted. Allow reacquisition
@@ -2396,6 +2409,7 @@ class WorkerManager:
                                     step_limited = True
                                     break
                                 final_review_rejected = True
+                                completion_feedback = "Completion review rejected this result: " + reason
                                 messages.append({"role": "assistant", "content": content})
                                 messages.append({"role": "user", "content": (
                                     "Completion review rejected this result: " + reason +
@@ -2453,6 +2467,7 @@ class WorkerManager:
                             "If you cannot complete it, return the same JSON with outcome=blocked and explain "
                             "the concrete blocker. Do not claim edits, tests, commits or pushes you did not do."
                         )
+                        completion_feedback = checkpoint
                         messages.append({"role": "user", "content": checkpoint})
                         transcript.append(f"coach[{step}:completion_checkpoint]: {checkpoint}")
                         progress(f"Step {step}: checking completion; worker may continue with tools.", important=True)
