@@ -528,3 +528,5 @@ Confirmed file mutations retain their own bounded 20-entry metadata ledger acros
 - After 12 steps without a confirmed file edit, free workers enter a bounded plan-only progress phase. A nonempty model-authored explanation records findings and the next action; the refreshed plan survives context trimming. Three invalid replies or an unavailable pool leave the task incomplete and preserve existing files. Read-only tasks need no artificial writes.
 
 - Completion challenges survive reads, searches, listings, plan updates and unchanged writes. Confirmed edits or successful commands reset them; valid final reports still receive review, including read-only work. Unresolved feedback is pinned across context trimming and progress planning.
+
+- Plan repair retries retain the latest structured correction after trimming, alongside a valid argument example. Nested validation names constraints without submitted values; bounded rejection diagnostics and the final exhausted-retry report identify the specific failure.

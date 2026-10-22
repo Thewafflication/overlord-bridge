@@ -1397,17 +1397,26 @@ class WorkerManager:
         if tool_name == "update_plan":
             plan = arguments.get("plan")
             explanation = arguments.get("explanation", "")
-            valid = isinstance(explanation, str) and len(explanation) <= 1000
-            valid = valid and isinstance(plan, list) and 1 <= len(plan) <= 12
-            if valid:
-                valid = all(isinstance(item, dict) and isinstance(item.get("step"), str)
-                            and 1 <= len(item["step"].strip()) <= 200
-                            and isinstance(item.get("status"), str)
-                            and item["status"] in {"pending", "in_progress", "completed"}
-                            for item in plan)
-            if not valid:
-                return {"ok": False, "error": "invalid_plan",
-                        "message": "Supply 1-12 steps (step text <=200 characters; status pending/in_progress/completed) and optional explanation <=1000 characters."}
+            issues = []
+            if not isinstance(explanation, str) or len(explanation) > 1000:
+                issues.append("explanation must be a string of at most 1000 characters")
+            if not isinstance(plan, list) or not 1 <= len(plan) <= 12:
+                issues.append("plan must be an array containing 1-12 step objects")
+            else:
+                for index, item in enumerate(plan):
+                    prefix = f"plan[{index}]"
+                    if not isinstance(item, dict):
+                        issues.append(prefix + " must be an object with step and status")
+                        continue
+                    if not isinstance(item.get("step"), str) or not 1 <= len(item["step"].strip()) <= 200:
+                        issues.append(prefix + ".step must be a nonempty string of at most 200 characters")
+                    if not isinstance(item.get("status"), str) or item["status"] not in {"pending", "in_progress", "completed"}:
+                        issues.append(prefix + ".status must be pending, in_progress or completed")
+                    if set(item) - {"step", "status"}:
+                        issues.append(prefix + " allows only step and status fields")
+            if issues:
+                return {"ok": False, "error": "invalid_plan", "issues": issues,
+                        "message": "; ".join(issues)}
             return {"ok": True, "tool": tool_name, "plan": {"explanation": explanation,
                     "plan": [{"step": item["step"], "status": item["status"]} for item in plan]}}
 
@@ -2092,14 +2101,18 @@ class WorkerManager:
             from modules.free_brain import FreeUnavailable
             plan_tools = [t for t in _local_agent_tools() if t["function"]["name"] == "update_plan"]
             planning_messages = list(messages)
+            correction = None
+            diagnostic = ""
             for attempt in range(3):
                 if phase == "Planning task" or attempt:
                     progress(f"{phase}: requesting a concrete plan ({attempt + 1}/3).", important=True)
                 planning_messages = _bounded_worker_messages(
-                    planning_messages, completion_evidence + completion_commands, limit=46000,
+                    planning_messages, completion_evidence + completion_commands, limit=43000,
                     prefix_count=initial_context_count, plan=worker_plan, mutations=mutation_evidence,
                     completion_feedback=completion_feedback)
                 planning_messages.append({"role": "user", "content": prompt})
+                if correction:
+                    planning_messages.append({"role": "user", "content": correction})
                 try:
                     planned = await self.free_completer(planning_messages, plan_tools)
                 except FreeUnavailable as exc:
@@ -2135,7 +2148,7 @@ class WorkerManager:
                 result = (_worker_argument_error("update_plan", arguments) or
                           await self._local_agent_execute_tool(folder, "update_plan", arguments))
                 if result.get("ok") and phase == "Progress checkpoint" and not result["plan"]["explanation"].strip():
-                    result = {"ok": False, "message": "Supply a nonempty explanation with confirmed findings, "
+                    result = {"ok": False, "error": "missing_progress_explanation", "message": "Supply a nonempty explanation with confirmed findings, "
                               "remaining uncertainty and the next concrete action. Do not just repeat the initial plan."}
                 if result.get("ok"):
                     worker_plan = result["plan"]
@@ -2144,10 +2157,30 @@ class WorkerManager:
                         json.dumps(worker_plan, ensure_ascii=False))})
                     transcript.append(phase + ": " + json.dumps(worker_plan, ensure_ascii=False))
                     return True
-                planning_messages.append({"role": "user", "content": (
-                    "No project action was executed. Supply a valid update_plan now: " + result["message"])})
+                # Keep the latest correction after trimming and after the phase
+                # prompt, rather than burying or discarding structured errors.
+                details = {"error": result.get("error", "invalid_plan")}
+                if result.get("issues"):
+                    details["issues"] = result["issues"][:8]
+                else:
+                    details["message"] = result.get("message", "Supply valid plan arguments.")[:500]
+                for key in ("unrecognized_arguments", "wrong_type_arguments"):
+                    if result.get(key):
+                        details[key] = [redact_text(str(item))[:80] for item in result[key][:10]]
+                diagnostic = redact_text(json.dumps(details, ensure_ascii=False))[:2000]
+                correction = json.dumps({
+                    "instruction": "No project action was executed. Correct these fields and resubmit update_plan. "
+                                   "The plan must be an array, not a JSON string, prose or an object. "
+                                   "Replace the example with findings and steps for the actual task.",
+                    "validation": details,
+                    "example_arguments": {"explanation": "Confirmed finding and location; remaining uncertainty; next action.",
+                        "plan": [{"step": "Next concrete action", "status": "in_progress"}]},
+                }, ensure_ascii=False)
+                log.info("Worker plan rejected: phase=%s attempt=%s details=%s", phase, attempt + 1, diagnostic)
+                transcript.append(f"plan_validation[{phase}:{attempt + 1}]: {diagnostic}")
             final_text = ("Stopped before completion: the model did not provide a valid task plan after three attempts. "
-                          "No project action was executed during this planning phase; existing work remains on disk.")
+                          "No project action was executed during this planning phase; existing work remains on disk. "
+                          "Last plan error: " + diagnostic)
             step_limited = True
             return False
 
