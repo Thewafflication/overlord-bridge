@@ -1,20 +1,21 @@
 # GUI chat continuation
 
-Owner request: mirror Telegram chat in the desktop GUI, allow messages to be typed in the GUI, and mirror GUI-origin messages to Telegram. Finish implementation and validation, then commit, tag and push as requested.
+Owner request: mirror Telegram chat in the desktop GUI, accept GUI chat input, and mirror GUI-origin messages to Telegram. Finish implementation and validation, then commit, tag and push as requested. Do not claim completion with tests pending.
 
 ## Current state
 
-This branch contains incomplete GUI work preserved in adbb751 and 4bbdaf0, plus current main (1.0.37). No need to restart a broad repository survey. Main's worker checkpoint guard was fixed: successful tool work resets the checkpoint, so planning messages separated by real progress can continue. Typing visibility was confirmed by the owner. The GUI feature itself has not been validated or released.
+This branch preserves partial GUI work from adbb751, 4bbdaf0 and 0295b75, plus main 1.0.38. No broad repository survey is needed. Main now reviews free-worker final claims against tool evidence; validation and commits must actually happen. Typing visibility was confirmed by the owner. GUI work remains unvalidated and unreleased.
 
-## Start here
+## Start here: missing queue consumer
 
-- tools/overlord_console.py: chat widgets and chat_mirror_path/chat_offset exist. _build_ui references self._send_chat, but that method is missing. poll calls self._read_new_chat, which is also missing. Finish these methods first; the window can currently fail during construction/polling. Check the Console.TEntry style reference against existing styles.
-- modules/chat_mirror.py: ChatMirror.append(role, text, source), read_since(offset) returning (records, next_offset), and iter_all already exist. Review and test partial-line/offset/truncation handling rather than designing a second transcript mechanism.
-- bridge.py: _dispatch_inbound accepts source; _handle_gui_chat reads payload['text'], echoes to Telegram with mirror=False, then dispatches as SOURCE_GUI. _run_console_action handles action='chat'. Check that _console_command_loop forwards the whole payload. Review duplicate owner/reply mirroring and command behavior.
-- modules/telegram_handler.py: send has an on_send callback and mirror=False for GUI owner echoes. Test compatibility with existing fake handlers that bypass __init__, and preserve typing ownership/refresh behavior.
+The last worker claimed it wired a chat polling loop but did not. bridge.py imports read_requests and sets _chat_request_path, but never defines or starts _chat_request_loop. Implement and start the consumer alongside existing bridge tasks. Reuse _handle_gui_chat so GUI messages echo to Telegram once with mirror=False and enter normal _dispatch_inbound as SOURCE_GUI. Test lifecycle, offsets, two rapid submissions, and shutdown. Existing _console_command_loop still handles buttons; preserve it.
+
+modules/chat_requests.py now has append_request and read_requests; inspect actual signatures. tools/overlord_console.py now implements _send_chat, _read_new_chat and formatting helpers, plus --chat-request. Verify default queue paths match the installed bridge and tray-launched console. Test failed writes preserve typed input and transcript rendering stays bounded. Do not duplicate these methods.
+
+modules/chat_mirror.py already supplies ChatMirror.append, read_since and iter_all. Test partial JSONL lines and truncation/rotation. bridge._dispatch_inbound already records owner messages, and TelegramHandler.send already has on_send/mirror hooks. Verify exactly-once mirroring for owner messages and replies, GUI commands, and compatibility with existing fake Telegram handlers that bypass __init__. Preserve typing behavior.
 
 ## Validation and completion
 
-Add focused tests for transcript rendering, GUI submission payloads, exactly-once owner/reply mirroring and normal dispatch of GUI commands. Preserve typed input if command submission fails. Keep the transcript widget bounded and test polling of partial/new JSONL records. Check two rapid submissions are not silently lost.
+No GUI feature tests were written in the last attempt. Add focused tests for queue consumption, GUI submission, transcript formatting, exactly-once mirroring, partial records, two rapid messages and failure recovery. Run them, fix failures, then use .venv/Scripts/python.exe tools/check.py all. Main 1.0.38 passed 1,194 tests and one skip; this branch has not passed full validation. Syntax checks alone do not verify Tk construction or sending/receiving chat.
 
-Use the project .venv interpreter. Main's full offline suite passed for 1.0.37. After targeted tests pass, run .venv/Scripts/python.exe tools/check.py all for the final branch state. A syntax-only check does not establish that the Tk window can construct and send/receive chat. Finish remaining methods and verify the user workflow before declaring completion. Preserve unrelated wsp/out/tools changes.
+Finish the actual user workflow, run validation, and commit changes before final. Requested tags/pushes must be supported by actual command results; do not tag an incomplete feature. Preserve unrelated wsp/out/tools changes. Keep HANDOFF.md out of main/release integration (it is intentionally tracked only on this continuation branch).
