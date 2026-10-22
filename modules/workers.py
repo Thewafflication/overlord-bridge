@@ -1477,7 +1477,8 @@ class WorkerManager:
 
         return {"ok": False, "error": f"unknown_tool:{tool_name}",
                 "available_tools": [tool["function"]["name"] for tool in _local_agent_tools()],
-                "message": "Choose an available tool and follow its parameter schema."}
+                "message": "Use an available tool name exactly and follow its parameter schema. "
+                           "Tools can be reused; only repeated identical requests are limited."}
 
     async def _execute_checked(
         self, brain: str, folder: Path, tool_name: str, arguments: dict[str, Any]
