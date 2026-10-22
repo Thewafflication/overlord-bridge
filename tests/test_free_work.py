@@ -1003,3 +1003,132 @@ def test_live_worker_context_is_bounded_during_long_file_inspection(isolated, tm
     assert any('Worker context checkpoint' in str(messages) for messages, _ in seen)
     assert all(messages[1]['content'].endswith('implement the feature') for messages, _ in seen)
     assert events(mgr)[-1]['status'] == 'finished'
+
+
+def context_pressure_actions(project):
+    (project / 'large.py').write_text(('source line ' * 40 + '\n') * 400)
+    return [call('read_file', {'path': 'large.py', 'start_line': i * 25 + 1, 'line_count': 25}, f'large-{i}')
+            for i in range(12)]
+
+
+def final_tool_result(seen, call_id):
+    return next(json.loads(m['content']) for m in seen[-1][0]
+                if m['role'] == 'tool' and m['tool_call_id'] == call_id)
+
+
+def test_compaction_preserves_initial_handoff_and_allows_rereading_source(isolated, tmp_path):
+    project = isolated / 'reread-after-compaction'
+    project.mkdir()
+    (project / 'HANDOFF.md').write_text('persistent handoff: add queue tests before completion')
+    (project / 'target.py').write_text('target contents')
+    completer, seen = scripted_pool([
+        call('read_file', {'path': 'target.py'}, 'target-1'),
+        call('read_file', {'path': 'target.py'}, 'target-2'),
+        *context_pressure_actions(project),
+        call('read_file', {'path': 'target.py'}, 'target-again'), final_result('Inspected project'),
+    ])
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert all('persistent handoff' in messages[2]['content'] for messages, _ in seen)
+    assert any('Worker context checkpoint' in str(messages) for messages, _ in seen)
+    assert final_tool_result(seen, 'target-again')['content'] == 'target contents'
+    assert all(len(json.dumps(messages, ensure_ascii=False)) <= 48000 for messages, _ in seen)
+
+
+def test_compaction_does_not_reset_identical_command_protection(isolated, tmp_path):
+    project = isolated / 'command-after-compaction'
+    project.mkdir()
+    args = {'code': 'print("command marker")'}
+    completer, seen = scripted_pool([
+        call('run_python', args, 'command-1'), call('run_python', args, 'command-2'),
+        *context_pressure_actions(project), call('run_python', args, 'command-again'), final_result('Inspected'),
+    ])
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert final_tool_result(seen, 'command-again')['error'] == 'duplicate_tool_call_blocked'
+
+
+def test_real_edit_allows_repeating_reads_and_validation(isolated, tmp_path):
+    project = isolated / 'validate-after-edit'
+    project.mkdir()
+    (project / 'target.py').write_text('old contents')
+    args = {'code': 'print("validation")'}
+    completer, seen = scripted_pool([
+        call('read_file', {'path': 'target.py'}, 'read-1'),
+        call('read_file', {'path': 'target.py'}, 'read-2'),
+        call('run_python', args, 'test-1'), call('run_python', args, 'test-2'),
+        call('edit_file', {'path': 'target.py', 'old_text': 'old', 'new_text': 'new'}),
+        call('read_file', {'path': 'target.py'}, 'read-again'),
+        call('run_python', args, 'test-again'), final_result('Validated latest edit'),
+    ])
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert final_tool_result(seen, 'read-again')['content'] == 'new contents'
+    assert final_tool_result(seen, 'test-again')['ok']
+
+
+def test_noop_writes_do_not_bypass_duplicate_guard(isolated, tmp_path):
+    project = isolated / 'noop-write'
+    project.mkdir()
+    target = project / 'target.py'
+    target.write_text('unchanged\n', encoding='utf-8')
+    before = target.stat().st_mtime_ns
+    args = {'path': 'target.py', 'content': 'unchanged\n'}
+    completer, seen = scripted_pool([
+        call('write_file', args, 'write-1'), call('write_file', args, 'write-2'),
+        call('write_file', args, 'write-3'), final_result('No changes'),
+    ])
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert final_tool_result(seen, 'write-1')['changed'] is False
+    assert final_tool_result(seen, 'write-3')['error'] == 'duplicate_tool_call_blocked'
+    assert target.stat().st_mtime_ns == before
+
+
+@pytest.mark.parametrize('args', [
+    {}, {'plan': []}, {'plan': [{'step': 'test', 'status': []}]},
+    {'plan': [{'step': '', 'status': 'pending'}]},
+    {'plan': [{'step': 'x' * 201, 'status': 'pending'}]},
+    {'plan': [{'step': 'test', 'status': 'unknown'}]},
+    {'plan': [{'step': 'test', 'status': 'pending'}] * 13},
+    {'plan': [{'step': 'test', 'status': 'pending'}], 'explanation': 'x' * 1001},
+])
+def test_invalid_worker_plans_are_rejected(tmp_path, args):
+    mgr, _, _ = manager(tmp_path, None)
+    assert run(mgr._local_agent_execute_tool(tmp_path, 'update_plan', args))['error'] == 'invalid_plan'
+
+
+def test_plan_metadata_does_not_write_files_or_request_approval(tmp_path):
+    async def approve(*args):
+        raise AssertionError('plan metadata needs no command or file approval')
+    mgr, _, _ = manager(tmp_path, None, approver=approve)
+    before = set(tmp_path.iterdir())
+    result = run(mgr._execute_checked('free', tmp_path, 'update_plan', {
+        'plan': [{'step': 'Add queue tests', 'status': 'in_progress'}], 'explanation': 'Known next action'}))
+    assert result['ok'] and result['plan']['explanation'] == 'Known next action'
+    assert set(tmp_path.iterdir()) == before
+
+
+def test_latest_worker_plan_survives_repeated_context_trimming(isolated, tmp_path):
+    project = isolated / 'plan-memory'
+    project.mkdir()
+    pressure = context_pressure_actions(project)
+    completer, seen = scripted_pool([
+        call('update_plan', {'plan': [{'step': 'Inspect queue code', 'status': 'in_progress'}]}),
+        *pressure,
+        call('update_plan', {'plan': [
+            {'step': 'Inspect queue code', 'status': 'completed'},
+            {'step': 'Add queue behavior regression tests', 'status': 'in_progress'}],
+            'explanation': 'Inspection complete; implement known tests next'}),
+        *[call('read_file', {'path': 'large.py', 'start_line': i * 15 + 1, 'line_count': 25}, f'next-{i}')
+          for i in range(12)],
+        final_result('Inspection finished'),
+    ])
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    checkpoints = [m['content'] for m in seen[-1][0]
+                   if m.get('content', '').startswith('Worker context checkpoint')]
+    assert checkpoints and 'Add queue behavior regression tests' in checkpoints[-1]
+    assert 'Inspection complete; implement known tests next' in checkpoints[-1]
+    assert 'assessment, not verified completion' in checkpoints[-1]
+    assert all(len(json.dumps(messages, ensure_ascii=False)) <= 48000 for messages, _ in seen)
