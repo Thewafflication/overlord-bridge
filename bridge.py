@@ -78,6 +78,7 @@ from modules.chat_mirror import (
     SOURCE_GUI,
     SOURCE_TELEGRAM,
 )
+from modules.chat_requests import read_requests
 from modules.conversation_history import (
     Handoff,
     SharedConversationHistory,
@@ -109,6 +110,10 @@ CONSOLE_STATUS_FILE = BASE_DIR / "run" / "brain-status.json"
 # by writing this file; the bridge watches its mtime. One-way and file-based on
 # purpose: no socket to secure, and a stale file is simply ignored.
 CONSOLE_COMMAND_FILE = BASE_DIR / "run" / "console-command.json"
+# Messages typed in the desktop console arrive here. It is an append-only
+# queue rather than a single slot, so two quick messages cannot overwrite
+# each other on the way to the bridge.
+CONSOLE_CHAT_FILE = BASE_DIR / "run" / "console-chat.jsonl"
 # The conversation transcript shared with the desktop console: the bridge
 # appends every owner message and every reply, and the console reads it.
 CHAT_MIRROR_FILE = BASE_DIR / "run" / "chat-mirror.jsonl"
@@ -566,6 +571,7 @@ class Bridge:
             log_path=CONSOLE_LOG_FILE,
             status_path=CONSOLE_STATUS_FILE,
             command_path=CONSOLE_COMMAND_FILE,
+            # Windows tray is not responsible for chat requests; ignore.
         )
         self._write_console_status()
         self._thread_report_unsupported_logged = False
@@ -778,6 +784,7 @@ class Bridge:
             self.gate.permission_level,
         )
         self.tray.start(self.brain.name)
+        self._chat_request_path = CONSOLE_CHAT_FILE
         approve_note = f"\nPermission level: {self.gate.permission_level}."
         if self._conversation_history.persistence_note:
             approve_note += "\n⚠️ " + self._conversation_history.persistence_note
@@ -1211,14 +1218,6 @@ class Bridge:
         self.telegram.send(chat_id, format_status(status))
 
     async def _console_command_loop(self) -> None:
-        """Act on button presses from the Tk console.
-
-        The console runs as its own process and cannot call into the bridge, so
-        it drops a small JSON file and this loop picks it up. Every action is
-        read-only with respect to the conversation — refreshing status or
-        re-sending it to Telegram — so an unexpected or stale file can never do
-        anything destructive.
-        """
         # Ignore whatever is already on disk from a previous run.
         try:
             self._console_command_mtime = self._console_command_file.stat().st_mtime_ns
@@ -1353,9 +1352,8 @@ class Bridge:
             log.debug("Ignoring an empty console chat message")
             return
         log.info("Message from the desktop console: %s", text)
-        # Recorded once, as the owner's message from the window; the echo to
-        # the phone is not mirrored again as an Overlord reply.
-        # Mirror once as owner; the caller will re-add, but we keep the source on the first.
+        # The echo to the phone is not mirrored again: _dispatch_inbound below
+        # records this message once, as the owner's message from the window.
         self.telegram.send(OWNER, f"🖥️ {text}", mirror=False)
         await self._dispatch_inbound(OWNER, text, source=SOURCE_GUI)
 
