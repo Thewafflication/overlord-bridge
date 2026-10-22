@@ -974,7 +974,7 @@ def _local_agent_json_result(result: dict[str, Any], limit: int) -> str:
 
 
 def _bounded_worker_messages(messages: list[dict[str, Any]], evidence: list[str],
-                             limit: int = 48000) -> list[dict[str, Any]]:
+                             limit: int = 48000, *, prefix_count: int = 2) -> list[dict[str, Any]]:
     """Retain the task, bounded action evidence and complete recent exchanges.
 
     This is mechanical history trimming, not an invented natural-language summary.
@@ -985,7 +985,7 @@ def _bounded_worker_messages(messages: list[dict[str, Any]], evidence: list[str]
 
     if size(messages) <= limit:
         return messages
-    base = messages[:2]
+    base = messages[:prefix_count]
     if size(base) > limit - 2000:
         raise ValueError("Worker instructions and task exceed the bounded context budget; narrow the task.")
     note = {
@@ -999,7 +999,7 @@ def _bounded_worker_messages(messages: list[dict[str, Any]], evidence: list[str]
         ),
     }
     groups = []
-    for message in messages[2:]:
+    for message in messages[prefix_count:]:
         if message.get("role") == "assistant" or not groups:
             groups.append([])
         groups[-1].append(message)
@@ -1528,13 +1528,17 @@ class WorkerManager:
             content = arguments.get("content")
             if not isinstance(content, str):
                 return {"ok": False, "error": "content_must_be_string"}
+            encoded = content.replace("\n", os.linesep).encode("utf-8")
+            changed = not path.exists() or path.stat().st_size != len(encoded) or path.read_bytes() != encoded
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(content, encoding="utf-8")
+            if changed:
+                path.write_text(content, encoding="utf-8")
             return {
                 "ok": True,
                 "tool": tool_name,
                 "path": path.relative_to(folder).as_posix(),
                 "bytes": len(content.encode("utf-8")),
+                "changed": changed,
             }
 
         if tool_name == "list_files":
@@ -1796,6 +1800,7 @@ class WorkerManager:
                     ),
                 }
             )
+        initial_context_count = len(messages)
         transcript: list[str] = []
         completion_evidence: list[str] = []
         completion_commands: list[str] = []
@@ -1860,7 +1865,8 @@ class WorkerManager:
                 "tool": tool_name,
                 "error": "duplicate_tool_call_blocked",
                 "message": (
-                    "You have already made this same tool call multiple times. "
+                    "You have already made this same tool call multiple times without a file change "
+                    "or relevant context refresh. "
                     "Do not repeat it again; choose a different approach."
                 ),
             }
@@ -1912,8 +1918,12 @@ class WorkerManager:
             if result.get("ok"):
                 completion_checkpoint = False
                 final_review_rejected = False
-                if tool_name in {"write_file", "write", "edit_file"}:
+                if tool_name == "edit_file" or (tool_name in {"write_file", "write"} and result.get("changed")):
                     last_edit_step = step
+                    # The project has changed: reads and validation commands may
+                    # legitimately need repeating. No-op writes must not reset this.
+                    tool_call_counts.clear()
+                    tool_call_counts[json.dumps({"tool": tool_name, "arguments": arguments}, sort_keys=True)] = 1
                 detail = "Completed"
                 if tool_name == "list_files":
                     detail = f"Found {len(result.get('files', []))} project files"
@@ -1991,9 +2001,15 @@ class WorkerManager:
                 chat_url = _openai_chat_url(api_base)
                 if is_free:
                     bounded_messages = _bounded_worker_messages(
-                        messages, completion_evidence + completion_commands)
+                        messages, completion_evidence + completion_commands,
+                        prefix_count=initial_context_count)
                     if bounded_messages is not messages:
                         messages = bounded_messages
+                        # Source results may have been evicted. Allow reacquisition
+                        # without clearing repeated command/write protection.
+                        for fingerprint in list(tool_call_counts):
+                            if json.loads(fingerprint)["tool"] in {"read_file", "list_files", "search_file"}:
+                                del tool_call_counts[fingerprint]
                         progress(f"Step {step}: bounded earlier worker context; retained task and recent tool exchanges.",
                                  important=True)
                     # Imported here because FreeBrain also uses worker helpers.
