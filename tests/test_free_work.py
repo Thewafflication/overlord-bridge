@@ -1449,3 +1449,46 @@ def test_completion_feedback_survives_compaction_and_plan_phase(isolated, tmp_pa
     assert len(completer.planning) == 2
     assert all(len(json.dumps(messages, ensure_ascii=False)) <= 48000 for messages, _ in seen)
     assert events(mgr)[-1]['status'] == 'finished'
+
+
+def test_progress_plan_repair_keeps_structured_feedback_after_trimming(isolated, tmp_path, caplog):
+    import logging
+    project = isolated / 'plan-repair'
+    project.mkdir()
+    pressure = context_pressure_actions(project)
+    valid = call('update_plan', {'plan': [{'step': 'Inspect queue', 'status': 'in_progress'}],
+                                 'explanation': 'queue.py:12 inspected; verify byte offsets next.'})
+    invalid = call('update_plan', {'plan': 'PRIVATE-PLAN-VALUE'})
+    completer, _ = scripted_pool([*pressure, final_result('Inspected')], plans=[valid, invalid, valid])
+    mgr, _, _ = manager(tmp_path, completer)
+    with caplog.at_level(logging.INFO, logger='overlord.workers'):
+        start(mgr, project)
+    assert len(completer.planning) == 3
+    correction = json.loads(completer.planning[2][-1]['content'])
+    assert correction['validation']['wrong_type_arguments'] == ['plan']
+    assert isinstance(correction['example_arguments']['plan'], list)
+    assert correction['example_arguments']['plan'][0]['status'] == 'in_progress'
+    assert 'Worker plan rejected' in caplog.text and 'PRIVATE-PLAN-VALUE' not in caplog.text
+    assert all(len(json.dumps(messages, ensure_ascii=False)) <= 48000 for messages in completer.planning)
+    assert events(mgr)[-1]['status'] == 'finished'
+
+
+def test_plan_validation_names_nested_fields_without_values(tmp_path):
+    mgr, _, _ = manager(tmp_path, None)
+    result = run(mgr._local_agent_execute_tool(tmp_path, 'update_plan', {
+        'plan': [{'step': 'inspect', 'status': 'PRIVATE-STATUS', 'extra': 'PRIVATE-VALUE'}]}))
+    assert result['error'] == 'invalid_plan'
+    assert 'plan[0].status' in result['message'] and 'only step and status' in result['message']
+    assert 'PRIVATE' not in json.dumps(result)
+
+
+def test_exhausted_plan_retries_report_specific_field_error(isolated, tmp_path):
+    project = isolated / 'plan-error-report'
+    project.mkdir()
+    invalid = call('update_plan', {'plan': [{'step': 'inspect', 'status': 'PRIVATE-STATUS'}]})
+    completer, _ = scripted_pool([], plans=[invalid] * 3)
+    mgr, sent, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert events(mgr)[-1]['status'] == 'incomplete'
+    assert 'Last plan error' in sent[-1] and 'plan[0].status' in sent[-1]
+    assert 'PRIVATE-STATUS' not in sent[-1]
