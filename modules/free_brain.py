@@ -729,13 +729,20 @@ class FreeBrain(Brain):
             await self._sleep(wait)
         self.limiter.record(spec)
         url = self.bases[spec.provider].rstrip("/") + "/chat/completions"
+        started = time.monotonic()
+        log.info("Free model request started: %s (tools=%s, input_chars=%s)",
+                 spec.key, bool(tools), len(json.dumps(messages, ensure_ascii=False)))
         try:
             status, headers, body = await _post(
                 url, self._payload(spec, messages, tools, max_tokens=max_tokens), self.keys[spec.provider], self.timeout
             )
         except (OSError, TimeoutError, urllib.error.URLError) as exc:
+            log.info("Free model request failed: %s (%s, %.2fs)",
+                     spec.key, type(exc).__name__, time.monotonic() - started)
             self.limiter.cool_down(spec.key, 30)
             return None, f"unreachable ({exc})"
+        log.info("Free model request completed: %s (HTTP %s, %.2fs)",
+                 spec.key, status, time.monotonic() - started)
         if status == 429:
             seconds = _parse_duration(headers.get("retry-after")) or 60.0
             self.limiter.cool_down(spec.key, min(seconds, 86_400.0))
