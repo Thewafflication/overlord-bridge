@@ -20,12 +20,31 @@ def test_offline_network_access_fails_before_connecting():
             connection.connect(("192.0.2.1", 1))
 
 
-def test_missing_build_tool_is_not_a_success(monkeypatch):
+def test_missing_build_tool_is_not_a_success(monkeypatch, tmp_path):
     def missing(*args, **kwargs):
         return SimpleNamespace(returncode=1)
 
     monkeypatch.setattr(CHECKS.subprocess, "run", missing)
+    monkeypatch.setattr(CHECKS, "ROOT", tmp_path)
     assert CHECKS.run("build") == 1
+
+
+def test_build_drops_stale_modules_before_packaging(monkeypatch, tmp_path):
+    staging = tmp_path / 'build' / 'lib' / 'modules'
+    staging.mkdir(parents=True)
+    (staging / 'removed_on_this_branch.py').write_text('stale = True')
+    source = tmp_path / 'modules'
+    source.mkdir()
+    (source / 'current.py').write_text('current = True')
+    monkeypatch.setattr(CHECKS, 'ROOT', tmp_path)
+
+    def build(command, **kwargs):
+        assert not staging.exists()
+        assert (source / 'current.py').exists()
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(CHECKS.subprocess, 'run', build)
+    assert CHECKS.run('build') == 0
 
 
 def test_all_checks_stop_on_failure(monkeypatch):
