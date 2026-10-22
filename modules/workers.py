@@ -58,7 +58,7 @@ import uuid
 from modules import shared_job
 from modules.command_activity import log_command, redact_text
 from modules.host_context import host_instructions
-from modules.output_text import OUTPUT_INSTRUCTIONS, worker_action
+from modules.output_text import OUTPUT_INSTRUCTIONS, worker_action, worker_tool_name
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -1272,16 +1272,7 @@ class WorkerManager:
         tool_name: str,
         arguments: dict[str, Any],
     ) -> dict[str, Any]:
-        aliases = {
-            "run": "run_command",
-            "bash": "run_command",
-            "shell": "run_command",
-            "read": "read_file",
-            "search": "search_file",
-            "write": "write_file",
-            "list": "list_files",
-        }
-        tool_name = aliases.get(tool_name, tool_name)
+        tool_name = worker_tool_name(tool_name)
 
         if tool_name in {"run_command", "run_python"}:
             command = str(arguments.get("command") or arguments.get("cmd") or "").strip()
@@ -1496,10 +1487,10 @@ class WorkerManager:
         Calls the built-in denial rules first, so an action that would be refused
         anyway never reaches the operator's phone.
         """
+        tool_name = worker_tool_name(tool_name)
         approver = self.tool_approver if brain == "free" else None
         if approver is not None:
-            tool = {"run": "run_command", "bash": "run_command", "shell": "run_command",
-                    "write": "write_file"}.get(tool_name, tool_name)
+            tool = tool_name
             request: dict[str, Any] | None = None
             if tool in {"run_command", "run_python"}:
                 command = str((arguments.get("code") or "") if tool == "run_python" else (arguments.get("command") or arguments.get("cmd") or "")).strip()
@@ -1897,7 +1888,8 @@ class WorkerManager:
                     )
                     for call in tool_calls:
                         fn = (call.get("function") or {}) if isinstance(call, dict) else {}
-                        tool_name = str(fn.get("name") or "").strip()
+                        tool_name = worker_tool_name(fn.get("name") or "")
+                        fn["name"] = tool_name
                         raw_args = fn.get("arguments") or "{}"
                         try:
                             arguments = json.loads(raw_args) if isinstance(raw_args, str) else dict(raw_args)
@@ -1939,6 +1931,7 @@ class WorkerManager:
                         or fallback.get("action")
                         or ""
                     ).strip()
+                    tool_name = worker_tool_name(tool_name)
                     arguments = fallback.get("arguments")
                     if not isinstance(arguments, dict):
                         arguments = {

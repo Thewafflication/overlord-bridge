@@ -48,9 +48,20 @@ def activity_summary(line: str) -> str:
     return message.strip()[:300]
 
 
+def worker_tool_name(raw: str) -> str:
+    """Normalize only known mechanical function-name wrappers and aliases."""
+    name = str(raw or "").strip()
+    head, marker, channel = name.partition("<|channel|>")
+    if marker and channel.strip() in {"analysis", "commentary"}:
+        name = head.strip()
+    name = name.removeprefix("functions.")
+    return {"run": "run_command", "bash": "run_command", "shell": "run_command",
+            "read": "read_file", "search": "search_file", "write": "write_file",
+            "list": "list_files"}.get(name, name)
+
+
 def worker_action(tool: str, arguments: dict) -> str:
-    tool = {"run": "run_command", "bash": "run_command", "shell": "run_command",
-            "write": "write_file"}.get(tool, tool)
+    tool = worker_tool_name(tool)
     if tool in {"search_file", "search"}:
         return f"Search {arguments.get('path', '(unspecified file)')} for {arguments.get('query', '(unspecified query)')}"
     if tool == "read_file":

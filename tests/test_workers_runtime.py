@@ -886,3 +886,42 @@ def test_edit_rechecks_content_after_approval_and_honours_denial(isolated, tmp_p
     result = run(manager._execute_checked('free', project, 'edit_file', arguments))
     assert result['error'] == 'edit_old_text_not_found'
     assert path.read_text() == 'changed by another editor'
+
+
+@pytest.mark.parametrize('name', ['edit_file<|channel|>commentary', 'functions.edit_file',
+                                  'functions.edit_file<|channel|>analysis'])
+def test_protocol_wrapped_edit_names_still_require_approval(isolated, tmp_path, name):
+    project = isolated / 'wrapped-edit'
+    project.mkdir()
+    path = project / 'source.py'
+    path.write_text('old')
+    manager, _, _ = make_manager(tmp_path)
+    requests = []
+    async def deny(folder, tool, request):
+        requests.append(tool)
+        return 'denied_by_operator'
+    manager.tool_approver = deny
+    result = run(manager._execute_checked('free', project, name,
+                 {'path': 'source.py', 'old_text': 'old', 'new_text': 'new'}))
+    assert result['error'] == 'denied_by_operator' and requests == ['edit_file']
+    assert path.read_text() == 'old'
+
+
+def test_wrapped_tool_names_obey_existing_command_and_path_denials(isolated):
+    assert not execute('functions.run_command<|channel|>commentary', {'command': 'sudo reboot'}, isolated)['ok']
+    result = execute('functions.edit_file<|channel|>commentary',
+                     {'path': '../outside.py', 'old_text': 'old', 'new_text': 'new'}, isolated)
+    assert not result['ok'] and 'path_outside_worker_folder' in result['error']
+
+
+def test_model_protocol_artifact_in_tool_name_executes_as_known_tool(isolated, tmp_path, monkeypatch):
+    manager, sent, seen, project = run_agent(isolated, tmp_path, monkeypatch, [
+        tool_call('write_file<|channel|>commentary', {'path': 'a.txt', 'content': 'old'}),
+        tool_call('functions.edit_file<|channel|>commentary', {'path': 'a.txt', 'old_text': 'old', 'new_text': 'new'}),
+        {'content': 'Updated a.txt'},
+    ])
+    assert (project / 'a.txt').read_text() == 'new'
+    assert statuses(manager)[-1] == 'finished'
+    assert 'unknown_tool' not in sent[-1]
+    prior_calls = [m for m in seen[-1]['messages'] if m.get('tool_calls')]
+    assert [m['tool_calls'][0]['function']['name'] for m in prior_calls] == ['write_file', 'edit_file']
