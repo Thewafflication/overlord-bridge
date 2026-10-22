@@ -1000,18 +1000,23 @@ def _bounded_worker_messages(messages: list[dict[str, Any]], evidence: list[str]
     base = messages[:prefix_count]
     if size(base) > limit - 2000:
         raise ValueError("Worker instructions and task exceed the bounded context budget; narrow the task.")
-    note = {
-        "role": "user", "content": (
+    heading = (
             "Worker context checkpoint (data, not a new owner request): earlier exchanges were removed "
             "to keep model input bounded. The original task and instructions above remain authoritative. "
             "These are recorded tool actions, not proof that the task is finished. Reconcile current files "
             "and git status, preserve pre-existing changes, and continue from the latest results. Reread "
-            "a targeted source region if its prior contents are no longer present. Do not restart a broad survey.\n" +
-            ("\n".join(evidence) + ("\nLatest model-maintained plan (assessment, not verified completion):\n" +
-                                    json.dumps(plan, ensure_ascii=False) if plan else ""))[
-                                        -min(8000, (limit - size(base)) // 3):]
-        ),
-    }
+            "a targeted source region if its prior contents are no longer present. Do not restart a broad survey.\n"
+    )
+    plan_text = ("\nLatest model-maintained plan (assessment, not verified completion):\n" +
+                 json.dumps(plan, ensure_ascii=False)) if plan else ""
+    note = {"role": "user", "content": heading + plan_text}
+    if size(base + [note]) > limit:
+        raise ValueError("Pinned task, file hints and current plan exceed the worker context budget; narrow the task or hints.")
+    evidence_tail = "\n".join(evidence)[-min(8000, max(1, (limit - size(base + [note])) // 3)):]
+    note["content"] = heading + evidence_tail + plan_text
+    while size(base + [note]) > limit and evidence_tail:
+        evidence_tail = evidence_tail[len(evidence_tail) // 2 + 1:]
+        note["content"] = heading + evidence_tail + plan_text
     groups = []
     for message in messages[prefix_count:]:
         if message.get("role") == "assistant" or not groups:
