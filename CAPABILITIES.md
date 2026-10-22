@@ -514,3 +514,5 @@ Worker update_plan accepts 1-12 steps with step text (up to 200 characters), sta
 Free project work now starts with a bounded planning phase exposing only update_plan. Up to three replies are validated before any project action; malformed or unrelated tool calls are never executed during planning. Valid formal or JSON plans seed the existing per-run memory. Planning failure or pool exhaustion reports incomplete. Answer-only work bypasses this phase; configured action-step limits still apply to subsequent project actions.
 
 read_file defaults to a 6,000-character page from the beginning, rather than a 24,000-character tail. Explicit max_chars may still request up to 24,000 characters. Responses include total_lines, next_line and next_column; continue with start_line/start_column to avoid overlap or lost text, including long single lines. Failed command tools distinguish the required code (run_python) and command (run_command) parameters.
+
+Free-model HTTP attempts log model ID, tool availability, input character count, HTTP outcome and elapsed time. Request bodies, keys and provider endpoints are not included in this timing telemetry.
