@@ -488,3 +488,9 @@ Worker function names normalize the known `functions.` prefix and `<|channel|>co
 
 
 Free project workers use a separate per-request response budget: `OVERLORD_FREE_WORK_MAX_TOKENS` defaults to 8192 and is clamped to 64–32768; model-specific caps still apply. Chat keeps `OVERLORD_FREE_MAX_TOKENS` (2048 by default), with no shared-pool mutation. `search_file` now accepts a file, directory or omitted root path and an optional filename `pattern`. It reports matching paths/line numbers, scanned/skipped files and truncation; directory scans reuse discovery exclusions and cap candidate count, file bytes, aggregate searchable bytes and returned matches. Narrow path/pattern if scope is incomplete.
+
+
+Completion checkpoints reset after a successful worker tool action; they limit consecutive unconfirmed endings rather than the total number of planning messages across productive tool work. Failed tools do not reset them. Empty-response recovery likewise counts consecutive empty responses. The owner live-verified Telegram typing visibility on 1.0.36. Latest partial GUI progress is saved locally as `4bbdaf0` on `codex/gui-worker-attempt-20261021`; continuation still needs to finish console methods and validation.
+
+
+If present and allowed by worker file restrictions, project `HANDOFF.md` is preloaded alongside explicit file hints, with the existing 4,000-character/file and eight-file bounds. Prior notes are labelled as possibly stale context; current task and source must be reconciled and side effects must not be replayed automatically. The saved GUI branch includes a targeted continuation handoff rather than requiring a fresh repository survey.

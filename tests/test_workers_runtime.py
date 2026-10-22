@@ -958,3 +958,16 @@ def test_directory_search_bounds_file_count_and_skips_oversized_binary_files(iso
     result = execute('search_file', {'query': 'absent', 'pattern': '*.py'}, project)
     assert result['files_truncated'] and result['truncated']
     assert result['files_scanned'] <= 500
+
+
+def test_worker_loads_bounded_handoff_context_without_explicit_file_hints(isolated, tmp_path, monkeypatch):
+    project = isolated / 'handoff'
+    project.mkdir()
+    (project / 'HANDOFF.md').write_text('Previous attempt: console callbacks are unfinished.\n' + 'context\n' * 2000)
+    seen = script_model(monkeypatch, {'content': 'Reviewed handoff'})
+    manager, _, _ = make_manager(tmp_path, nvidia_api_key='k')
+    run(start_and_wait(manager, project, brain='nvidia', task='continue implementation')())
+    context = [m['content'] for m in seen[0]['messages'] if 'FILE: HANDOFF.md' in m['content']]
+    assert len(context) == 1 and len(context[0]) < 4500
+    assert '[truncated]' in context[0] and 'may be stale' in context[0]
+    assert 'do not replay side effects automatically' in context[0]

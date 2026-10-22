@@ -780,3 +780,47 @@ def test_project_work_passes_its_budget_without_mutating_shared_pool(tmp_path):
     result = run(work.complete([], TOOLS))
     assert result['_free_model'] == NV.key
     assert calls == [{'patience': 120.0, 'max_tokens': 12000}]
+
+
+def test_completion_checkpoint_resets_after_successful_tool_progress(isolated, tmp_path):
+    project = isolated / 'multi-stage'
+    project.mkdir()
+    completer, seen = scripted_pool([
+        {'content': 'First I will implement the module.'},
+        call('write_file', {'path': 'module.py', 'content': 'feature = True'}),
+        {'content': 'Now I need to add its test.'},
+        call('write_file', {'path': 'test_module.py', 'content': 'assert True'}),
+        final_result('Created module and test'),
+    ])
+    mgr, sent, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert events(mgr)[-1]['status'] == 'finished' and len(seen) == 5
+    assert (project / 'module.py').exists() and (project / 'test_module.py').exists()
+    checkpoints = [m for m in seen[-1][0] if m['role'] == 'user' and 'Completion checkpoint' in m['content']]
+    assert len(checkpoints) == 2
+
+
+def test_failed_tool_does_not_reset_ignored_completion_checkpoint(isolated, tmp_path):
+    project = isolated / 'failed-progress'
+    project.mkdir()
+    completer, seen = scripted_pool([
+        {'content': 'I will implement it.'},
+        call('read_file', {'path': 'missing.py'}),
+        {'content': 'I will implement it later.'},
+    ])
+    mgr, sent, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert len(seen) == 3 and events(mgr)[-1]['status'] == 'incomplete'
+
+
+def test_empty_response_guard_counts_consecutive_failures(isolated, tmp_path):
+    project = isolated / 'intermittent-empty'
+    project.mkdir()
+    completer, seen = scripted_pool([
+        {'content': ''}, call('write_file', {'path': 'one.txt', 'content': 'one'}),
+        {'content': ''}, call('write_file', {'path': 'two.txt', 'content': 'two'}),
+        {'content': ''}, final_result('Wrote both files'),
+    ])
+    mgr, sent, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert len(seen) == 6 and events(mgr)[-1]['status'] == 'finished'
