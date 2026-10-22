@@ -2076,7 +2076,70 @@ class WorkerManager:
                 progress(f"Step {step}: could not complete {action} ({error})", important=important)
             return result
 
-        def check_discovery_progress():
+        async def record_worker_plan(prompt: str, phase: str) -> bool:
+            nonlocal worker_plan, final_text, step_limited
+            from modules.free_brain import FreeUnavailable
+            plan_tools = [t for t in _local_agent_tools() if t["function"]["name"] == "update_plan"]
+            planning_messages = list(messages)
+            for attempt in range(3):
+                if phase == "Planning task" or attempt:
+                    progress(f"{phase}: requesting a concrete plan ({attempt + 1}/3).", important=True)
+                planning_messages = _bounded_worker_messages(
+                    planning_messages, completion_evidence + completion_commands, limit=46000,
+                    prefix_count=initial_context_count, plan=worker_plan, mutations=mutation_evidence)
+                planning_messages.append({"role": "user", "content": prompt})
+                try:
+                    planned = await self.free_completer(planning_messages, plan_tools)
+                except FreeUnavailable as exc:
+                    final_text = ("Stopped before completion: the free-model pool is unavailable during plan recording. "
+                                  "Existing edits and commits remain on disk; publication have not been confirmed.\n" +
+                                  redact_text(str(exc)))
+                    step_limited = True
+                    return False
+                used = str(planned.get("_free_model") or "")
+                if used:
+                    free_models.append(used)
+                calls = planned.get("tool_calls") or []
+                if not isinstance(calls, list):
+                    calls = [{}]
+                arguments = {}
+                if len(calls) == 1 and isinstance(calls[0], dict):
+                    function = calls[0].get("function") or {}
+                    if not isinstance(function, dict):
+                        function = {}
+                    if worker_tool_name(function.get("name")) == "update_plan":
+                        try:
+                            raw = function.get("arguments") or {}
+                            arguments = json.loads(raw) if isinstance(raw, str) else raw
+                        except (TypeError, ValueError):
+                            pass
+                elif not calls:
+                    data = _extract_json_object(str(planned.get("content") or "")) or {}
+                    arguments = (data.get("arguments", data)
+                                 if worker_tool_name(data.get("tool") or data.get("name") or "update_plan") == "update_plan"
+                                 else {})
+                if not isinstance(arguments, dict):
+                    arguments = {}
+                result = (_worker_argument_error("update_plan", arguments) or
+                          await self._local_agent_execute_tool(folder, "update_plan", arguments))
+                if result.get("ok") and phase == "Progress checkpoint" and not result["plan"]["explanation"].strip():
+                    result = {"ok": False, "message": "Supply a nonempty explanation with confirmed findings, "
+                              "remaining uncertainty and the next concrete action. Do not just repeat the initial plan."}
+                if result.get("ok"):
+                    worker_plan = result["plan"]
+                    messages.append({"role": "user", "content": (
+                        "Current model-maintained plan (assessment, not verified completion):\n" +
+                        json.dumps(worker_plan, ensure_ascii=False))})
+                    transcript.append(phase + ": " + json.dumps(worker_plan, ensure_ascii=False))
+                    return True
+                planning_messages.append({"role": "user", "content": (
+                    "No project action was executed. Supply a valid update_plan now: " + result["message"])})
+            final_text = ("Stopped before completion: the model did not provide a valid task plan after three attempts. "
+                          "No project action was executed during this planning phase; existing work remains on disk.")
+            step_limited = True
+            return False
+
+        async def check_discovery_progress():
             nonlocal last_discovery_checkpoint
             if not is_free or answer_only or step - max(last_edit_step, last_discovery_checkpoint) < 12:
                 return
@@ -2097,6 +2160,15 @@ class WorkerManager:
             messages.append({"role": "user", "content": checkpoint})
             transcript.append(f"coach[{step}:discovery_checkpoint]: {checkpoint}")
             progress(f"Step {step}: reviewing progress after extended discovery.", important=True)
+            await record_worker_plan(
+                "Record what you learned using update_plan before more project actions. Put confirmed findings "
+                "and relevant file/line locations in explanation, identify any unresolved uncertainty and the "
+                "next concrete action. Reconcile previous completed work and remaining validation/publication. "
+                "Only update_plan is available; reads, commands and writes will not execute in this phase. "
+                "A read-only task may conclude from sufficient evidence; do not manufacture edits. "
+                'If formal calls are unavailable return JSON {"plan":[{"step":"next action",'
+                '"status":"in_progress"}],"explanation":"findings, uncertainty and next action"}.',
+                "Progress checkpoint")
 
         try:
             if not answer_only:
@@ -2124,68 +2196,13 @@ class WorkerManager:
             last_discovery_checkpoint = 0
             step = 0
             if is_free and not answer_only:
-                # Tool availability makes planning an explicit bounded phase. No
-                # file or command call in a malformed planning reply is executed.
-                from modules.free_brain import FreeUnavailable
-                plan_tools = [t for t in _local_agent_tools() if t["function"]["name"] == "update_plan"]
-                planning_messages = [*messages, {"role": "user", "content": (
+                await record_worker_plan(
                     "Before project actions, record a concrete task plan using update_plan. Use the original "
                     "request and preloaded handoff; keep completed prior work, remaining implementation, "
                     "focused validation and requested publication clear. Only update_plan is available in "
                     "this planning phase. Do not run commands or read files yet. If formal calls are unavailable, "
                     'return JSON {"plan":[{"step":"next concrete action","status":"in_progress"}],'
-                    '"explanation":"known state and next step"}.'
-                )}]
-                for attempt in range(3):
-                    progress(f"Planning task: requesting a concrete plan ({attempt + 1}/3).", important=True)
-                    planning_messages = _bounded_worker_messages(
-                        planning_messages, [], prefix_count=initial_context_count)
-                    try:
-                        planned = await self.free_completer(planning_messages, plan_tools)
-                    except FreeUnavailable as exc:
-                        final_text = ("Stopped before completion: the free-model pool is unavailable during planning. "
-                                      "Existing edits and commits remain on disk; publication have not been confirmed.\n" +
-                                      redact_text(str(exc)))
-                        step_limited = True
-                        break
-                    used = str(planned.get("_free_model") or "")
-                    if used:
-                        free_models.append(used)
-                    calls = planned.get("tool_calls") or []
-                    if not isinstance(calls, list):
-                        calls = [{}]
-                    arguments = {}
-                    if len(calls) == 1 and isinstance(calls[0], dict):
-                        function = calls[0].get("function") or {}
-                        if not isinstance(function, dict):
-                            function = {}
-                        if worker_tool_name(function.get("name")) == "update_plan":
-                            try:
-                                raw = function.get("arguments") or {}
-                                arguments = json.loads(raw) if isinstance(raw, str) else raw
-                            except (TypeError, ValueError):
-                                pass
-                    elif not calls:
-                        data = _extract_json_object(str(planned.get("content") or "")) or {}
-                        arguments = (data.get("arguments", data)
-                                     if worker_tool_name(data.get("tool") or data.get("name") or "update_plan") == "update_plan"
-                                     else {})
-                    if not isinstance(arguments, dict):
-                        arguments = {}
-                    result = (_worker_argument_error("update_plan", arguments) or
-                              await self._local_agent_execute_tool(folder, "update_plan", arguments))
-                    if result.get("ok"):
-                        worker_plan = result["plan"]
-                        messages.append({"role": "user", "content": (
-                            "Current model-maintained plan (assessment, not verified completion):\n" +
-                            json.dumps(worker_plan, ensure_ascii=False))})
-                        transcript.append("initial_plan: " + json.dumps(worker_plan, ensure_ascii=False))
-                        break
-                    planning_messages.append({"role": "user", "content": (
-                        "No project action was executed. Supply a valid update_plan now: " + result["message"])})
-                else:
-                    final_text = "Stopped before completion: the model did not provide a valid task plan after three attempts. No project action was executed."
-                    step_limited = True
+                    '"explanation":"known state and next step"}.', "Planning task")
             while max_steps == 0 or step < max_steps:
                 if step_limited:
                     break
@@ -2323,7 +2340,7 @@ class WorkerManager:
                         if followup:
                             transcript.append(f"coach[{step}:{tool_name}]: {followup}")
                             messages.append({"role": "user", "content": followup})
-                    check_discovery_progress()
+                    await check_discovery_progress()
                     continue
 
                 fallback = _extract_json_object(content) or _extract_xmlish_tool_call(content)
@@ -2421,7 +2438,7 @@ class WorkerManager:
                     if followup:
                         transcript.append(f"coach[{step}:{tool_name}]: {followup}")
                         messages.append({"role": "user", "content": followup})
-                    check_discovery_progress()
+                    await check_discovery_progress()
                     continue
 
                 if is_free and not answer_only:

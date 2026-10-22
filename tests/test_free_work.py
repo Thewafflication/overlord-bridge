@@ -243,7 +243,8 @@ def scripted_pool(replies, reviews=None, plans=None):
         if tools and len(tools) == 1 and tools[0]['function']['name'] == 'update_plan':
             planning.append(json.loads(json.dumps(messages)))
             return plan_queue.pop(0) if plan_queue else call('update_plan', {
-                'plan': [{'step': 'Implement requested work and validate results', 'status': 'in_progress'}]})
+                'plan': [{'step': 'Implement requested work and validate results', 'status': 'in_progress'}],
+                'explanation': 'Review gathered evidence and continue with the next targeted action.'})
         if tools is None and messages[0]['content'].startswith('You are the completion reviewer'):
             reviewed.append(json.loads(json.dumps(messages)))
             return review_queue.pop(0) if review_queue else {'content': '{"complete":true,"reason":"Verified"}'}
@@ -323,15 +324,19 @@ def test_unlimited_free_worker_remains_cancellable(isolated, tmp_path):
     calls = []
     async def complete(messages, tools):
         if tools and len(tools) == 1 and tools[0]['function']['name'] == 'update_plan':
-            return call('update_plan', {'plan': [{'step': 'Review project', 'status': 'in_progress'}]})
+            return call('update_plan', {'plan': [{'step': 'Review project', 'status': 'in_progress'}],
+                                        'explanation': 'Continue bounded read-only review.'})
         calls.append(1)
         return call("read_file", {"path": f"file-{len(calls)}.py"}, f"call-{len(calls)}")
     mgr, _, _ = manager(tmp_path, complete)
     async def scenario():
         mgr._accept({"name": "Free-app", "folder": str(project), "task": "review", "brain": "free"})
         task = mgr._running["Free-app"]
-        while len(calls) < 35:
-            await asyncio.sleep(0)
+        async def wait_for_steps():
+            while len(calls) < 35 and not task.done():
+                await asyncio.sleep(0)
+        await asyncio.wait_for(wait_for_steps(), timeout=5)
+        assert len(calls) >= 35
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
         assert task.cancelled()
@@ -1137,7 +1142,9 @@ def test_latest_worker_plan_survives_repeated_context_trimming(isolated, tmp_pat
         *[call('read_file', {'path': 'large.py', 'start_line': i * 15 + 1, 'line_count': 25}, f'next-{i}')
           for i in range(12)],
         final_result('Inspection finished'),
-    ])
+    ], plans=[call('update_plan', {'plan': [{'step': 'Add queue behavior regression tests',
+                                          'status': 'in_progress'}],
+                 'explanation': 'Inspection complete; implement known tests next'})] * 3)
     mgr, _, _ = manager(tmp_path, completer)
     start(mgr, project)
     checkpoints = [m['content'] for m in seen[-1][0]
@@ -1313,3 +1320,65 @@ def test_invalid_parallel_batch_does_not_execute_valid_siblings(isolated, tmp_pa
     assert not (project / 'unexpected').exists()
     assert 'No call in this response was executed' in str(seen[-1][0])
     assert not any(m['role'] == 'tool' for m in seen[-1][0])
+
+
+def test_progress_phase_records_findings_before_next_project_action(isolated, tmp_path):
+    project = isolated / 'progress-findings'
+    project.mkdir()
+    pressure = context_pressure_actions(project)
+    initial = call('update_plan', {'plan': [{'step': 'Inspect queue', 'status': 'in_progress'}]})
+    refreshed = call('update_plan', {'plan': [
+        {'step': 'Inspect queue', 'status': 'completed'},
+        {'step': 'Validate raw-byte consumption', 'status': 'in_progress'}],
+        'explanation': 'queue.py:42 re-encodes decoded bytes; add malformed UTF-8 regression next.'})
+    completer, seen = scripted_pool([*pressure, final_result('Read-only assessment')], plans=[initial, refreshed])
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert len(completer.planning) == 2
+    assert 'confirmed findings' in completer.planning[1][-1]['content']
+    assert 'queue.py:42' in str(seen[-1][0])
+    assert 'assessment, not verified completion' in str(seen[-1][0])
+    assert all(len(json.dumps(messages, ensure_ascii=False)) <= 48000 for messages in completer.planning)
+    assert events(mgr)[-1]['status'] == 'finished'
+
+
+@pytest.mark.parametrize('invalid', [
+    call('write_file', {'path': 'forbidden.txt', 'content': 'not a plan'}),
+    call('update_plan', {'plan': [{'step': 'Repeat inspection', 'status': 'in_progress'}]}),
+])
+def test_progress_phase_cannot_run_actions_or_continue_without_findings(isolated, tmp_path, invalid):
+    project = isolated / 'invalid-progress'
+    project.mkdir()
+    initial = call('update_plan', {'plan': [{'step': 'Inspect project', 'status': 'in_progress'}]})
+    completer, seen = scripted_pool([
+        *[call('read_file', {'path': f'missing-{i}.py'}) for i in range(12)],
+        call('write_file', {'path': 'after.txt', 'content': 'must not execute'}),
+    ], plans=[initial, invalid, invalid, invalid])
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert len(completer.planning) == 4 and len(seen) == 12
+    assert not (project / 'forbidden.txt').exists() and not (project / 'after.txt').exists()
+    assert events(mgr)[-1]['status'] == 'incomplete'
+
+
+def test_progress_plan_pool_failure_preserves_edits_and_reports_incomplete(isolated, tmp_path):
+    project = isolated / 'progress-pool-failure'
+    project.mkdir()
+    base, seen = scripted_pool([
+        call('write_file', {'path': 'saved.py', 'content': 'saved = True'}),
+        *[call('read_file', {'path': f'missing-{i}.py'}) for i in range(12)],
+    ])
+    plan_calls = 0
+    async def complete(messages, tools):
+        nonlocal plan_calls
+        if tools and len(tools) == 1 and tools[0]['function']['name'] == 'update_plan':
+            plan_calls += 1
+            if plan_calls > 1:
+                raise FreeUnavailable(['provider rate limited'], 60)
+        return await base(messages, tools)
+    mgr, sent, _ = manager(tmp_path, complete)
+    start(mgr, project)
+    assert plan_calls == 2 and len(seen) == 13
+    assert (project / 'saved.py').read_text() == 'saved = True'
+    assert events(mgr)[-1]['status'] == 'incomplete'
+    assert 'provider rate limited' in sent[-1]
