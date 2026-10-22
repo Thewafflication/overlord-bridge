@@ -781,9 +781,13 @@ class FreeBrain(Brain):
         calls = message.get("tool_calls")
         if not message["content"] and not (isinstance(calls, list) and calls):
             usage = body.get("usage") if isinstance(body, dict) else None
+            completion_tokens = usage.get("completion_tokens") if isinstance(usage, dict) else None
+            finish_reason = choice.get("finish_reason")
+            if finish_reason not in ("stop", "length", "tool_calls", "function_call", "content_filter", None):
+                finish_reason = "other"
             log.warning("Free model returned no text or tool call: %s (finish_reason=%s, completion_tokens=%s)",
-                        spec.key, choice.get("finish_reason"),
-                        usage.get("completion_tokens") if isinstance(usage, dict) else None)
+                        spec.key, finish_reason,
+                        completion_tokens if isinstance(completion_tokens, int) else None)
             self.limiter.cool_down(spec.key, 30)
             return None, "empty reply"
         usage = body.get("usage") if isinstance(body, dict) else None
