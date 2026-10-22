@@ -482,3 +482,9 @@ Background workers now share Telegram typing ownership with foreground turns. Ty
 
 
 Worker `edit_file` accepts `path`, non-empty `old_text` and `new_text` (empty is allowed for deletion). It requires one exact match in an existing UTF-8 file and preserves CRLF style. Missing/ambiguous/no-op edits fail without writing. It uses write approval, previews the replacement and rechecks the match after approval. Use it for small changes to large files; reserve `write_file` for new files or deliberate complete rewrites. Free tool-enabled responses marked `finish_reason=length` are discarded before tool execution and the pool tries another model.
+
+
+Worker function names normalize the known `functions.` prefix and `<|channel|>commentary` / `<|channel|>analysis` suffixes before approvals, restrictions, duplicate detection, execution and model history. Unknown names remain errors. Tool reuse is allowed; repeated identical requests are limited. The incomplete GUI chat attempt is preserved locally on `codex/gui-worker-attempt-20261021` (commit `adbb751`) for review/continuation; it is not merged into main.
+
+
+Free project workers use a separate per-request response budget: `OVERLORD_FREE_WORK_MAX_TOKENS` defaults to 8192 and is clamped to 64–32768; model-specific caps still apply. Chat keeps `OVERLORD_FREE_MAX_TOKENS` (2048 by default), with no shared-pool mutation. `search_file` now accepts a file, directory or omitted root path and an optional filename `pattern`. It reports matching paths/line numbers, scanned/skipped files and truncation; directory scans reuse discovery exclusions and cap candidate count, file bytes, aggregate searchable bytes and returned matches. Narrow path/pattern if scope is incomplete.

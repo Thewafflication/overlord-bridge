@@ -42,3 +42,12 @@ def test_emoji_chunks_preserve_text_and_fit_telegram_limits():
     chunks = list(_chunks(text))
     assert "".join(chunks) == text
     assert all(len(chunk.encode("utf-16-le")) // 2 <= MAX_MESSAGE_LEN for chunk in chunks)
+
+
+def test_worker_tool_name_normalization_is_limited_to_known_protocol_wrappers():
+    from modules.output_text import worker_tool_name
+    assert worker_tool_name('functions.edit_file<|channel|>commentary') == 'edit_file'
+    assert worker_tool_name('shell<|channel|>analysis') == 'run_command'
+    assert worker_tool_name('edit_file<|channel|>unexpected') == 'edit_file<|channel|>unexpected'
+    assert worker_tool_name('please edit_file') == 'please edit_file'
+    assert worker_tool_name('unknown<|channel|>commentary') == 'unknown'

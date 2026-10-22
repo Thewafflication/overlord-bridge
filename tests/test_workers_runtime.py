@@ -886,3 +886,75 @@ def test_edit_rechecks_content_after_approval_and_honours_denial(isolated, tmp_p
     result = run(manager._execute_checked('free', project, 'edit_file', arguments))
     assert result['error'] == 'edit_old_text_not_found'
     assert path.read_text() == 'changed by another editor'
+
+
+@pytest.mark.parametrize('name', ['edit_file<|channel|>commentary', 'functions.edit_file',
+                                  'functions.edit_file<|channel|>analysis'])
+def test_protocol_wrapped_edit_names_still_require_approval(isolated, tmp_path, name):
+    project = isolated / 'wrapped-edit'
+    project.mkdir()
+    path = project / 'source.py'
+    path.write_text('old')
+    manager, _, _ = make_manager(tmp_path)
+    requests = []
+    async def deny(folder, tool, request):
+        requests.append(tool)
+        return 'denied_by_operator'
+    manager.tool_approver = deny
+    result = run(manager._execute_checked('free', project, name,
+                 {'path': 'source.py', 'old_text': 'old', 'new_text': 'new'}))
+    assert result['error'] == 'denied_by_operator' and requests == ['edit_file']
+    assert path.read_text() == 'old'
+
+
+def test_wrapped_tool_names_obey_existing_command_and_path_denials(isolated):
+    assert not execute('functions.run_command<|channel|>commentary', {'command': 'sudo reboot'}, isolated)['ok']
+    result = execute('functions.edit_file<|channel|>commentary',
+                     {'path': '../outside.py', 'old_text': 'old', 'new_text': 'new'}, isolated)
+    assert not result['ok'] and 'path_outside_worker_folder' in result['error']
+
+
+def test_model_protocol_artifact_in_tool_name_executes_as_known_tool(isolated, tmp_path, monkeypatch):
+    manager, sent, seen, project = run_agent(isolated, tmp_path, monkeypatch, [
+        tool_call('write_file<|channel|>commentary', {'path': 'a.txt', 'content': 'old'}),
+        tool_call('functions.edit_file<|channel|>commentary', {'path': 'a.txt', 'old_text': 'old', 'new_text': 'new'}),
+        {'content': 'Updated a.txt'},
+    ])
+    assert (project / 'a.txt').read_text() == 'new'
+    assert statuses(manager)[-1] == 'finished'
+    assert 'unknown_tool' not in sent[-1]
+    prior_calls = [m for m in seen[-1]['messages'] if m.get('tool_calls')]
+    assert [m['tool_calls'][0]['function']['name'] for m in prior_calls] == ['write_file', 'edit_file']
+
+
+def test_search_accepts_directories_or_omitted_path_and_filename_filter(isolated):
+    project = isolated / 'directory-search'
+    for name, content in [('src/main.py', 'first\nPending request\n'),
+                          ('src/readme.md', 'pending docs'), ('tests/test_main.py', 'pending test'),
+                          ('build/generated.py', 'pending generated'), ('.venv/dependency.py', 'pending dependency')]:
+        path = project / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+    result = execute('search_file', {'query': 'PENDING', 'pattern': '*.py'}, project)
+    assert result['ok']
+    assert {m['path'] for m in result['matches']} == {'src/main.py', 'tests/test_main.py'}
+    result = execute('search_file', {'path': 'src', 'query': 'pending', 'pattern': '*.py'}, project)
+    assert [(m['path'], m['line']) for m in result['matches']] == [('src/main.py', 2)]
+    assert result['files_scanned'] == 1
+
+
+def test_directory_search_bounds_file_count_and_skips_oversized_binary_files(isolated):
+    project = isolated / 'search-limits'
+    project.mkdir()
+    (project / 'binary.bin').write_bytes(b'pending\x00data')
+    (project / 'large.txt').write_bytes(b'pending' * 100000)
+    (project / 'small.py').write_text('pending\n' * 200)
+    result = execute('search_file', {'query': 'pending'}, project)
+    assert result['files_skipped'] == 2 and result['truncated']
+    assert len(result['matches']) <= 100
+    assert len(json.dumps(result)) < workers.DEFAULT_LOCAL_AGENT_TOOL_OUTPUT_CHARS
+    for i in range(505):
+        (project / f'file-{i}.py').write_text('no matches')
+    result = execute('search_file', {'query': 'absent', 'pattern': '*.py'}, project)
+    assert result['files_truncated'] and result['truncated']
+    assert result['files_scanned'] <= 500

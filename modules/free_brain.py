@@ -673,10 +673,11 @@ class FreeBrain(Brain):
         return None
 
     def _payload(self, spec: ModelSpec, messages: list[dict[str, Any]],
-                 tools: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+                 tools: list[dict[str, Any]] | None = None, *, max_tokens: int | None = None) -> dict[str, Any]:
+        limit = self.max_tokens if max_tokens is None else max(64, min(int(max_tokens), 32768))
         payload: dict[str, Any] = {
             "model": spec.model, "messages": messages, "temperature": 0.7,
-            "max_tokens": self.max_tokens,
+            "max_tokens": limit,
         }
         if tools:
             payload["tools"] = tools
@@ -684,7 +685,7 @@ class FreeBrain(Brain):
             payload["temperature"] = 0.2  # steadier tool use
         if spec.provider == "nvidia":
             override = dict(_NVIDIA_MODEL_PAYLOAD_OVERRIDES.get(spec.model.lower(), {}))
-            override["max_tokens"] = min(int(override.get("max_tokens", self.max_tokens)), self.max_tokens)
+            override["max_tokens"] = min(int(override.get("max_tokens", limit)), limit)
             payload.update(override)
             if spec.model == "nvidia/nemotron-3-super-120b-a12b":
                 # The free pool's short output budget must leave room for a
@@ -715,6 +716,7 @@ class FreeBrain(Brain):
     async def _attempt(
         self, spec: ModelSpec, messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
+        *, max_tokens: int | None = None,
     ) -> tuple[dict[str, Any] | None, str]:
         """(assistant message, why-not). Records usage and cooldowns as a side effect."""
         wait, reason = self.limiter.availability(spec)
@@ -729,7 +731,7 @@ class FreeBrain(Brain):
         url = self.bases[spec.provider].rstrip("/") + "/chat/completions"
         try:
             status, headers, body = await _post(
-                url, self._payload(spec, messages, tools), self.keys[spec.provider], self.timeout
+                url, self._payload(spec, messages, tools, max_tokens=max_tokens), self.keys[spec.provider], self.timeout
             )
         except (OSError, TimeoutError, urllib.error.URLError) as exc:
             self.limiter.cool_down(spec.key, 30)
@@ -779,7 +781,7 @@ class FreeBrain(Brain):
 
     async def complete(
         self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None,
-        *, patience: float = 0.0,
+        *, patience: float = 0.0, max_tokens: int | None = None,
     ) -> tuple[dict[str, Any], ModelSpec, list[str]]:
         """One assistant message from the first model that can answer.
 
@@ -793,7 +795,7 @@ class FreeBrain(Brain):
         while True:
             skipped: list[str] = []
             for spec in self._order():
-                message, why = await self._attempt(spec, messages, tools)
+                message, why = await self._attempt(spec, messages, tools, max_tokens=max_tokens)
                 if message is not None:
                     return message, spec, skipped
                 skipped.append(f"{spec.key} ({why})")

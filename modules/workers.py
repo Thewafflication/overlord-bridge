@@ -58,7 +58,7 @@ import uuid
 from modules import shared_job
 from modules.command_activity import log_command, redact_text
 from modules.host_context import host_instructions
-from modules.output_text import OUTPUT_INSTRUCTIONS, worker_action
+from modules.output_text import OUTPUT_INSTRUCTIONS, worker_action, worker_tool_name
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -826,14 +826,15 @@ def _local_agent_tools() -> list[dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "search_file",
-                "description": "Search a project text file for a literal string, case-insensitively. Returns matching 1-based line numbers and text, without shell quoting. Use list_files to find paths, then read_file ranges for context.",
+                "description": "Search project text for a case-insensitive literal query. path may be a file or directory and defaults to the project root. For directories, pattern optionally filters filenames, e.g. *.py. Returns paths, 1-based line numbers, text and scan/truncation counts. Generated/dependency/secret directories are excluded. Narrow path/pattern when truncated; use read_file ranges for context.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "path": {"type": "string"},
+                        "pattern": {"type": "string"},
                         "query": {"type": "string"},
                     },
-                    "required": ["path", "query"],
+                    "required": ["query"],
                 },
             },
         },
@@ -1272,16 +1273,7 @@ class WorkerManager:
         tool_name: str,
         arguments: dict[str, Any],
     ) -> dict[str, Any]:
-        aliases = {
-            "run": "run_command",
-            "bash": "run_command",
-            "shell": "run_command",
-            "read": "read_file",
-            "search": "search_file",
-            "write": "write_file",
-            "list": "list_files",
-        }
-        tool_name = aliases.get(tool_name, tool_name)
+        tool_name = worker_tool_name(tool_name)
 
         if tool_name in {"run_command", "run_python"}:
             command = str(arguments.get("command") or arguments.get("cmd") or "").strip()
@@ -1357,7 +1349,76 @@ class WorkerManager:
                 "stderr_truncated": stderr_truncated,
             }
 
-        if tool_name in {"read_file", "search_file"}:
+        if tool_name == "search_file":
+            query = arguments.get("query")
+            if not isinstance(query, str) or not query.strip():
+                return {"ok": False, "error": "missing_search_query"}
+            path, error = _resolve_worker_relative_path(folder, str(arguments.get("path") or "."))
+            if error or path is None:
+                return {"ok": False, "error": error or "bad_path"}
+            denial = _local_agent_path_denial(path, folder, write=False)
+            if denial:
+                return {"ok": False, "error": denial}
+            files_truncated = False
+            if path.is_dir():
+                listing = await self._local_agent_execute_tool(folder, "list_files", {
+                    "path": str(path), "pattern": arguments.get("pattern", "*"), "max_files": 500,
+                })
+                if not listing.get("ok"):
+                    return listing
+                candidates = listing["files"]
+                files_truncated = listing["truncated"]
+            elif path.is_file():
+                candidates = [path.relative_to(folder).as_posix()]
+            else:
+                return {"ok": False, "error": "file_not_found"}
+            matches = []
+            size = scanned = skipped = bytes_read = 0
+            truncated = files_truncated
+            limit_reached = False
+            needle = query.casefold()
+            for relative in candidates:
+                candidate, error = _resolve_worker_relative_path(folder, relative)
+                if error or candidate is None or _local_agent_path_denial(candidate, folder, write=False):
+                    skipped += 1
+                    continue
+                if candidate.suffix.lower() in {".log", ".mkv", ".mp4", ".pkl", ".db", ".faiss"}:
+                    skipped += 1
+                    continue
+                try:
+                    with candidate.open("rb") as stream:
+                        raw = stream.read(512 * 1024 + 1)
+                    if len(raw) > 512 * 1024 or b"\0" in raw:
+                        skipped += 1
+                        continue
+                    text = raw.decode("utf-8")
+                except (OSError, UnicodeDecodeError):
+                    skipped += 1
+                    continue
+                bytes_read += len(raw)
+                if bytes_read > 8 * 1024 * 1024:
+                    truncated = True
+                    break
+                scanned += 1
+                for number, line in enumerate(text.splitlines(), 1):
+                    if needle not in line.casefold():
+                        continue
+                    match = {"path": relative, "line": number, "text": line[:1000]}
+                    cost = len(json.dumps(match, ensure_ascii=False))
+                    if len(matches) >= 100 or size + cost > DEFAULT_LOCAL_AGENT_TOOL_OUTPUT_CHARS // 2:
+                        truncated = limit_reached = True
+                        break
+                    matches.append(match)
+                    size += cost
+                    truncated = truncated or len(line) > 1000
+                if limit_reached:
+                    break
+            return {"ok": True, "tool": tool_name, "path": path.relative_to(folder).as_posix(),
+                    "matches": matches, "truncated": truncated or skipped > 0, "files_scanned": scanned,
+                    "files_skipped": skipped, "files_truncated": files_truncated,
+                    "message": "Narrow path/pattern if truncated; skipped files were not searched completely."}
+
+        if tool_name == "read_file":
             path, error = _resolve_worker_relative_path(folder, str(arguments.get("path") or ""))
             if error or path is None:
                 return {"ok": False, "error": error or "bad_path"}
@@ -1372,26 +1433,6 @@ class WorkerManager:
             except (TypeError, ValueError):
                 max_chars_i = DEFAULT_LOCAL_AGENT_TOOL_OUTPUT_CHARS
             text = path.read_text(encoding="utf-8", errors="replace")
-            if tool_name == "search_file":
-                query = arguments.get("query")
-                if not isinstance(query, str) or not query.strip():
-                    return {"ok": False, "error": "missing_search_query",
-                            "message": "Provide path and a non-empty literal query to search_file."}
-                matches = []
-                size = 0
-                truncated = False
-                for number, line in enumerate(text.splitlines(), 1):
-                    if query.casefold() not in line.casefold():
-                        continue
-                    if len(matches) >= 100 or size >= DEFAULT_LOCAL_AGENT_TOOL_OUTPUT_CHARS // 2:
-                        truncated = True
-                        break
-                    snippet = line[:1000]
-                    truncated = truncated or len(line) > 1000
-                    matches.append({"line": number, "text": snippet})
-                    size += len(snippet)
-                return {"ok": True, "tool": tool_name, "path": path.relative_to(folder).as_posix(),
-                        "matches": matches, "truncated": truncated}
             if "start_line" in arguments or "line_count" in arguments:
                 try:
                     start = max(1, int(arguments.get("start_line", 1)))
@@ -1486,7 +1527,8 @@ class WorkerManager:
 
         return {"ok": False, "error": f"unknown_tool:{tool_name}",
                 "available_tools": [tool["function"]["name"] for tool in _local_agent_tools()],
-                "message": "Choose an available tool and follow its parameter schema."}
+                "message": "Use an available tool name exactly and follow its parameter schema. "
+                           "Tools can be reused; only repeated identical requests are limited."}
 
     async def _execute_checked(
         self, brain: str, folder: Path, tool_name: str, arguments: dict[str, Any]
@@ -1496,10 +1538,10 @@ class WorkerManager:
         Calls the built-in denial rules first, so an action that would be refused
         anyway never reaches the operator's phone.
         """
+        tool_name = worker_tool_name(tool_name)
         approver = self.tool_approver if brain == "free" else None
         if approver is not None:
-            tool = {"run": "run_command", "bash": "run_command", "shell": "run_command",
-                    "write": "write_file"}.get(tool_name, tool_name)
+            tool = tool_name
             request: dict[str, Any] | None = None
             if tool in {"run_command", "run_python"}:
                 command = str((arguments.get("code") or "") if tool == "run_python" else (arguments.get("command") or arguments.get("cmd") or "")).strip()
@@ -1897,7 +1939,8 @@ class WorkerManager:
                     )
                     for call in tool_calls:
                         fn = (call.get("function") or {}) if isinstance(call, dict) else {}
-                        tool_name = str(fn.get("name") or "").strip()
+                        tool_name = worker_tool_name(fn.get("name") or "")
+                        fn["name"] = tool_name
                         raw_args = fn.get("arguments") or "{}"
                         try:
                             arguments = json.loads(raw_args) if isinstance(raw_args, str) else dict(raw_args)
@@ -1939,6 +1982,7 @@ class WorkerManager:
                         or fallback.get("action")
                         or ""
                     ).strip()
+                    tool_name = worker_tool_name(tool_name)
                     arguments = fallback.get("arguments")
                     if not isinstance(arguments, dict):
                         arguments = {

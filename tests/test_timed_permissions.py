@@ -10,7 +10,8 @@ from types import SimpleNamespace
 from bridge import Bridge
 
 
-def test_telegram_full_sixty_releases_pending_worker_permission():
+def test_telegram_full_sixty_releases_pending_worker_permission(monkeypatch):
+    monkeypatch.setattr(brain, "time", SimpleNamespace(monotonic=lambda: 100.0))
     from tests.test_telegram_handler_edges import make_handler, update
 
     async def scenario():
@@ -88,7 +89,8 @@ def test_audit_failure_cannot_enable_timed_access():
     assert not gate.full_access_remaining()
 
 
-def test_owner_command_defaults_to_ten_minutes_and_supports_revoke():
+def test_owner_command_defaults_to_ten_minutes_and_supports_revoke(monkeypatch):
+    monkeypatch.setattr(brain, "time", SimpleNamespace(monotonic=lambda: 100.0))
     telegram = FakeTelegram()
     gate = PermissionGate(telegram, 42, 1)
     bridge = SimpleNamespace(gate=gate, telegram=telegram)
