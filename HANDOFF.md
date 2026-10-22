@@ -6,7 +6,9 @@ Owner request: mirror Telegram chat in the desktop GUI, accept GUI input and mir
 
 Partial GUI code, queue tests and scratch files are preserved. cd3953c changed queue reading to bytes and corrected the truncate test. Worker tag v1.0.42 used source versions 1.0.41; it remains a prerelease, not completed GUI functionality. Never reuse it.
 
-Main 1.0.46 is merged here (canonical checks: 1,274 passed, one skip; excludes GUI branch additions). The last 1.0.45 run completed plan checkpoints but made no edits, repeated reads, malformed plans/searches and unconfirmed endings. Its canonical check passed. It ended naturally incomplete at step 66 after pool exhaustion. No GUI completion was established.
+Main 1.0.47 is merged here (canonical checks: 1,277 passed, one skip; excludes GUI additions). The last 1.0.46 run ended incomplete at step 12 after three invalid progress-plan replies, with no edits. No GUI completion was established.
+
+Plan repair now preserves structured field errors and a valid example at the end of retries after trimming. Nested validation names constraints without submitted values; logs/final failure report the specific error. Use the example shape with actual task findings, not its placeholder text.
 
 The harness retains completion challenges across reads/searches/listings, plan updates and unchanged writes; confirmed edits or successful commands reset them. Feedback survives trimming and progress planning. Valid final reports still receive review, including read-only work.
 
