@@ -1194,3 +1194,83 @@ def test_invalid_plan_retries_before_any_project_action(isolated, tmp_path):
     start(mgr, project)
     assert len(completer.planning) == 3 and len(seen) == 1
     assert events(mgr)[-1]['status'] == 'finished'
+
+
+def test_bad_range_names_fail_instead_of_silently_reading_wrong_source(tmp_path):
+    project = tmp_path / 'range-contract'
+    project.mkdir()
+    (project / 'source.py').write_text(''.join(f'line {n}\n' for n in range(1, 11)))
+    mgr, _, _ = manager(tmp_path, None)
+    bad = run(mgr._execute_checked('free', project, 'read_file', {
+        'path': 'source.py', 'start': 5, 'end': 6}))
+    assert bad['error'] == 'invalid_tool_arguments'
+    assert bad['unrecognized_arguments'] == ['end', 'start']
+    assert bad['accepted_parameters']['start_line'] == 'integer' and 'content' not in bad
+    corrected = run(mgr._execute_checked('free', project, 'read_file', {
+        'path': 'source.py', 'start_line': 5, 'line_count': 2}))
+    assert corrected['content'] == 'line 5\nline 6\n'
+
+
+def test_unknown_write_parameter_never_reaches_approval_or_filesystem(tmp_path):
+    project = tmp_path / 'write-contract'
+    project.mkdir()
+    async def approve(*args):
+        raise AssertionError('invalid arguments must be rejected before approval')
+    mgr, _, _ = manager(tmp_path, None, approver=approve)
+    result = run(mgr._execute_checked('free', project, 'write_file', {
+        'path': 'new.py', 'content': 'value = 1', 'cwd': 'elsewhere'}))
+    assert result['error'] == 'invalid_tool_arguments' and not (project / 'new.py').exists()
+
+
+@pytest.mark.parametrize('tool, args, wrong', [
+    ('read_file', {'path': ['source.py']}, 'path'),
+    ('read_file', {'path': 'source.py', 'start_line': True}, 'start_line'),
+    ('read_file', {'path': 'source.py', 'line_count': '20'}, 'line_count'),
+    ('write_file', {'path': 'new.py', 'content': {'value': 1}}, 'content'),
+    ('run_python', {'code': ['print(1)']}, 'code'),
+])
+def test_wrong_argument_types_are_reported_before_execution(tmp_path, tool, args, wrong):
+    mgr, _, _ = manager(tmp_path, None)
+    result = run(mgr._execute_checked('free', tmp_path, tool, args))
+    assert result['error'] == 'invalid_tool_arguments' and wrong in result['wrong_type_arguments']
+
+
+@pytest.mark.parametrize('raw', ['[]', '42', 'null', '{"code":'])
+def test_malformed_formal_argument_objects_recover_without_crashing(isolated, tmp_path, raw):
+    project = isolated / 'bad-argument-envelope'
+    project.mkdir()
+    malformed = {'content': '', 'tool_calls': [{'id': 'bad-call', 'function': {
+        'name': 'run_python', 'arguments': raw}}]}
+    completer, seen = scripted_pool([
+        malformed, call('run_python', {'code': 'print("recovered")'}, 'good-call'), final_result('Recovered'),
+    ])
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert final_tool_result(seen, 'bad-call')['error'] == 'invalid_tool_arguments'
+    assert final_tool_result(seen, 'good-call')['stdout'].strip() == 'recovered'
+    assert events(mgr)[-1]['status'] == 'finished'
+
+
+def test_worker_tools_advertise_exact_parameter_names():
+    assert all(t['function']['parameters']['additionalProperties'] is False
+               for t in workers._local_agent_tools())
+
+
+def test_confirmed_mutations_survive_discovery_and_context_trimming(isolated, tmp_path):
+    project = isolated / 'persistent-mutations'
+    project.mkdir()
+    actions = context_pressure_actions(project)
+    completer, seen = scripted_pool([
+        call('write_file', {'path': 'changed.py', 'content': 'confirmed = True\n'}),
+        *actions,
+        *[call('read_file', {'path': f'missing-{i}.py'}) for i in range(45)],
+        final_result('Reviewed project'),
+    ])
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    payload = json.loads(completer.reviews[0][1]['content'])
+    changes = [json.loads(item) for item in payload['confirmed_file_changes']]
+    assert changes == [{'step': 1, 'tool': 'write_file', 'path': 'changed.py'}]
+    assert any('Recent confirmed file changes' in str(messages) and 'changed.py' in str(messages)
+               for messages, _ in seen)
+    assert all(len(json.dumps(messages, ensure_ascii=False)) <= 48000 for messages, _ in seen)

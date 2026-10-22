@@ -516,3 +516,9 @@ Free project work now starts with a bounded planning phase exposing only update_
 read_file defaults to a 6,000-character page from the beginning, rather than a 24,000-character tail. Explicit max_chars may still request up to 24,000 characters. Responses include total_lines, next_line and next_column; continue with start_line/start_column to avoid overlap or lost text, including long single lines. Failed command tools distinguish the required code (run_python) and command (run_command) parameters.
 
 Free-model HTTP attempts log model ID, tool availability, input character count, HTTP outcome and elapsed time. Request bodies, keys and provider endpoints are not included in this timing telemetry.
+
+
+Model-facing worker tool calls reject unknown top-level parameter names and incorrect declared parameter types before approval or execution. Errors return accepted parameter names/types and required fields, without echoing argument values. All advertised tool parameter objects disallow extra properties; the existing cmd alias remains accepted by the run_command runtime. Tool implementations retain their existing path, range and value checks. Malformed formal argument JSON or non-object JSON gets a recoverable argument error instead of crashing the worker. Startup-plan replies use the same boundary. Rejected parameter names/types are logged without their values.
+
+
+Confirmed file mutations retain their own bounded 20-entry metadata ledger across worker context trimming, independent of read/search history. Progress checkpoints and final review use it to reconcile actual edits with potentially stale plans. Release builds validate their requested version against pyproject.toml and modules/version.py FALLBACK_VERSION before staging/signing; use python tools/check_release_version.py <version-or-tag> locally.
