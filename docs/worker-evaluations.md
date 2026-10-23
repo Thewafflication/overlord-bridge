@@ -1,5 +1,13 @@
 # Live worker evaluations
 
+## 2026-10-23: atomic store and failure-path test on 1.0.59
+
+The fresh isolated fixture `out/evals/atomic-store-20261023` (seed `272f06a`, no remote) asked `Atomic-store-eval` to reproduce failures, implement atomic JSON replacement with Unicode and parent creation, preserve three original tests, add a replacement-failure test, run unittest and commit. The baseline had one failed test, one error and one pass. The worker initially hid subprocess stderr inside a Python wrapper, then recovered by running the requested test command directly and observed exit 1.
+
+The worker edited store.py, added test_replace_failure.py, ran all four tests successfully, committed both as `0952c12`, and submitted native finish_task. LLM evidence review accepted completion after 10 steps in about 76 seconds. Independent verification passed all four tests, confirmed the original test_store.py unchanged and the fixture tree clean. The added test actually mocks os.replace failure, asserts exception propagation, compares original target bytes and checks no temporary file remains. Installed local control confirms idle.
+
+Code review limits: the generated temporary-name helper checks existence then writes without exclusive creation; concurrent collision safety has not been verified. Its comment that write_text flushes to disk is inaccurate (no fsync). The requested fixture checks do not establish crash durability or concurrent-writer guarantees. These are generated-project limitations, not a demonstrated bridge command-execution regression. No product source change or release was forced. Preserve this completed fixture and use a separate explicit follow-up task if evaluating these stronger guarantees.
+
 ## 2026-10-23: package CLI implementation on installed 1.0.59
 
 A fresh isolated Git fixture at `out/evals/package-cli-20261023` tested a two-file Python package, module CLI, stdin, Unicode output, exact decimal aggregation and invalid/non-finite amount handling. Seed `85f816e` had four failing tests and one passing test when run from the fixture directory. `Package-cli-eval` received the README, both implementation files and five existing tests, with instructions to preserve tests, validate the CLI and commit locally. No remote is configured.
