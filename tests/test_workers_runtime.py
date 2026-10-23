@@ -1001,7 +1001,8 @@ def test_edit_rechecks_content_after_approval_and_honours_denial(isolated, tmp_p
 
 
 @pytest.mark.parametrize('name', ['edit_file<|channel|>commentary', 'functions.edit_file',
-                                  'functions.edit_file<|channel|>analysis'])
+                                  'functions.edit_file<|channel|>analysis',
+                                  'functions.edit_file<|channel|>json'])
 def test_protocol_wrapped_edit_names_still_require_approval(isolated, tmp_path, name):
     project = isolated / 'wrapped-edit'
     project.mkdir()
@@ -1021,9 +1022,29 @@ def test_protocol_wrapped_edit_names_still_require_approval(isolated, tmp_path, 
 
 def test_wrapped_tool_names_obey_existing_command_and_path_denials(isolated):
     assert not execute('functions.run_command<|channel|>commentary', {'command': 'sudo reboot'}, isolated)['ok']
+    assert not execute('run_python<|channel|>json', {'code': 'sudo reboot'}, isolated)['ok']
     result = execute('functions.edit_file<|channel|>commentary',
                      {'path': '../outside.py', 'old_text': 'old', 'new_text': 'new'}, isolated)
     assert not result['ok'] and 'path_outside_worker_folder' in result['error']
+
+
+def test_observed_json_wrapped_python_call_requires_approval_and_executes(isolated, tmp_path):
+    manager, _, _ = make_manager(tmp_path)
+    requested = []
+    async def deny(folder, tool, arguments):
+        requested.append(tool)
+        return 'denied_by_operator'
+    manager.tool_approver = deny
+    args = {'code': "print('observed wrapper recovered')"}
+    result = run(manager._execute_checked('free', isolated, 'run_python<|channel|>json', args))
+    assert result['error'] == 'denied_by_operator' and requested == ['run_command']
+    async def approve(folder, tool, arguments):
+        requested.append(tool)
+        return None
+    manager.tool_approver = approve
+    result = run(manager._execute_checked('free', isolated, 'run_python<|channel|>json', args))
+    assert result['ok'] and result['stdout'] == 'observed wrapper recovered'
+    assert requested == ['run_command', 'run_command']
 
 
 def test_model_protocol_artifact_in_tool_name_executes_as_known_tool(isolated, tmp_path, monkeypatch):

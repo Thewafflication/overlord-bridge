@@ -52,7 +52,7 @@ def worker_tool_name(raw: str) -> str:
     """Normalize only known mechanical function-name wrappers and aliases."""
     name = str(raw or "").strip()
     head, marker, channel = name.partition("<|channel|>")
-    if marker and channel.strip() in {"analysis", "commentary"}:
+    if marker and channel.strip() in {"analysis", "commentary", "json"}:
         name = head.strip()
     name = name.removeprefix("functions.")
     return {"run": "run_command", "bash": "run_command", "shell": "run_command",
