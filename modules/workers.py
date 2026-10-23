@@ -857,7 +857,7 @@ def _local_agent_tools() -> list[dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "run_command",
-                "description": "Run a command in the project folder (already the working directory). Default shell is cmd.exe on Windows, /bin/sh elsewhere. Select shell=powershell on Windows for PowerShell syntax. Do not mix shell dialects or use Bash heredocs on Windows.",
+                "description": "Run a noninteractive command in the project folder (already the working directory). Stdin is closed: supply arguments or unattended flags instead of answering prompts. Default shell is cmd.exe on Windows, /bin/sh elsewhere. Select shell=powershell on Windows for PowerShell syntax. Do not mix shell dialects or use Bash heredocs on Windows.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -873,7 +873,7 @@ def _local_agent_tools() -> list[dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "run_python",
-                "description": "Execute Python code using the existing project .venv Python interpreter (bridge interpreter fallback) in the project folder. Pass multiline code directly; no shell quoting, heredocs, or python PATH lookup needed. Uses the same command restrictions as run_command.",
+                "description": "Execute Python code using the existing project .venv Python interpreter (bridge interpreter fallback) in the project folder. Pass multiline code directly; no shell quoting, heredocs, or python PATH lookup needed. Stdin is closed: pass values in code instead of using input(). Uses the same command restrictions as run_command.",
                 "parameters": {
                     "type": "object",
                     "properties": {"code": {"type": "string"}, "timeout_seconds": {"type": "integer"}},
@@ -1502,7 +1502,8 @@ class WorkerManager:
             environment["PYTHONIOENCODING"] = "utf-8"
             interpreter = _worker_python(folder)
             environment["PATH"] = str(interpreter.parent) + os.pathsep + environment.get("PATH", "")
-            options = dict(cwd=str(folder), stdout=asyncio.subprocess.PIPE,
+            options = dict(cwd=str(folder), stdin=asyncio.subprocess.DEVNULL,
+                           stdout=asyncio.subprocess.PIPE,
                            stderr=asyncio.subprocess.PIPE, env=environment)
             if os.name != "nt":
                 options["start_new_session"] = True
@@ -1560,6 +1561,8 @@ class WorkerManager:
                 result["python_interpreter"] = str(interpreter)
                 result["recovery_hint"] = (
                     "Read stderr/stdout to distinguish command syntax from a program/test failure. "
+                    "Commands are noninteractive and stdin is closed; use explicit arguments or "
+                    "unattended flags instead of input prompts. "
                     "The project interpreter directory is already first on PATH: use run_command with "
                     "command='python -m pytest ...' or command='python tools/check.py all'. "
                     "Use run_python for Python code. On Windows, run_command defaults to cmd.exe; "

@@ -3,6 +3,7 @@
 import asyncio
 import json
 import sys
+import subprocess
 import urllib.error
 from email.message import Message
 from pathlib import Path
@@ -698,6 +699,44 @@ def test_python_commands_preserve_unicode_stdout_and_stderr(isolated, monkeypatc
     # Child encoding policy does not change the bridge's own environment.
     import os
     assert os.environ['PYTHONIOENCODING'] == 'cp1252'
+
+
+@pytest.mark.parametrize('tool,shell', [
+    ('run_python', None), ('run_command', 'default'),
+    pytest.param('run_command', 'powershell', marks=pytest.mark.skipif(
+        sys.platform != 'win32', reason='Windows PowerShell'))])
+def test_worker_cannot_consume_parent_console_input(isolated, tool, shell):
+    code = 'import sys; print(repr(sys.stdin.read()))'
+    args = {'code': code} if tool == 'run_python' else {
+        'command': f'python -c "{code}"', 'shell': shell}
+    script = f'''import asyncio,json,sys
+from pathlib import Path
+sys.path.insert(0, {str(Path(workers.__file__).resolve().parents[1])!r})
+from modules import workers
+p=Path({str(isolated)!r});workers._ALLOWED_ROOTS=(p,)
+m=workers.WorkerManager(send=lambda *a:None,owner=42,dispatch_dir=p/'dispatch',report_dir=p/'reports')
+r=asyncio.run(m._local_agent_execute_tool(p,{tool!r},{args!r}))
+print(json.dumps({{'result':r,'parent_input':sys.stdin.read()}}))
+'''
+    parent = subprocess.run([sys.executable, '-c', script], input='owner input\n',
+                            text=True, capture_output=True, timeout=30)
+    assert parent.returncode == 0, parent.stderr
+    result = json.loads(parent.stdout)
+    assert result['parent_input'] == 'owner input\n'
+    assert result['result']['ok'] and result['result']['stdout'] == "''"
+
+
+def test_worker_input_prompt_fails_without_waiting_for_timeout(isolated):
+    result = execute('run_python', {'code': "input('value: ')", 'timeout_seconds': 5}, isolated)
+    assert not result['ok'] and not result['timed_out']
+    assert 'EOFError' in result['stderr'] and result['stdout'] == 'value:'
+    assert 'stdin is closed' in result['recovery_hint']
+
+
+def test_worker_command_can_still_supply_explicit_pipeline_input(isolated):
+    result = execute('run_command', {
+        'command': 'echo supplied | python -c "import sys; print(sys.stdin.read().strip())"'}, isolated)
+    assert result['ok'] and result['stdout'] == 'supplied'
 
 
 def test_read_file_line_ranges(isolated):
