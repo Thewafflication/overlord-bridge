@@ -1,35 +1,31 @@
 # GUI chat continuation
 
-Owner request: mirror Telegram chat in the desktop GUI, accept GUI input and mirror GUI-origin messages to Telegram. Finish and verify, then commit/tag/push as requested.
+Owner request: mirror Telegram chat in the GUI, accept GUI input and mirror GUI-origin messages to Telegram. Finish and verify, then commit/tag/push as requested.
 
 ## Current state
 
-Partial GUI code, queue tests and scratch files are preserved. cd3953c changed queue reading to bytes and corrected the truncate test. Worker tag v1.0.42 used source versions 1.0.41; it remains a prerelease, not completed GUI functionality. Never reuse it.
+Main 1.0.49 is merged here (canonical: 1,291 passed, one skip; excludes GUI additions). Partial GUI code, queue tests and scratch files are preserved. GUI completion remains unverified.
 
-Main 1.0.49 is merged here (canonical: 1,291 passed, one skip; excludes GUI additions). The last 1.0.47 run repaired its first oversized explanation, but ended incomplete at step 48 after repeated plan-shape/size failures. It made no edits. No GUI completion was established.
+Latest worker commit c13eafd changed consumption to len(raw), passed existing tests and was pushed with v1.0.50. Release staging failed correctly: source versions remain 1.0.49. Preserve the tag. After rejected completion the worker repeated discovery for roughly 40 steps; the supervisor stopped it locally and confirmed idle. Do not publish this as a completed GUI feature.
 
-Plans now support 24 steps and 4,000 explanation characters under the existing 48,000-character input budget. Shape errors differ from count errors; size diagnostics give actual counts. Repair feedback and a valid example survive trimming. Record actual findings/locations and the next action, not example placeholders.
+## Reproduced regression: fix first
 
-The harness retains completion challenges across reads/searches/listings, plan updates and unchanged writes; confirmed edits or successful commands reset them. Feedback survives trimming and progress planning. Valid final reports still receive review, including read-only work.
+In modules/chat_requests.py, len(raw) counts an incomplete suffix as consumed. Repro: write b'{"text":"one"}\n' then b'{"text":"two"}' without newline. First read returns one but advances to 29 bytes instead of 15. Append newline: the next read loses two. Derive consumption from the raw end of complete newline-terminated records BEFORE decoding, not all bytes read or re-encoded decoded text. Add a regression that proves the second message survives completion.
 
-After 12 steps without a confirmed edit, a bounded plan-only phase requires findings, file/line locations, uncertainty and next action in explanation. Three invalid plans or pool exhaustion stop incomplete. No file/command action executes in that phase. Do not manufacture edits. Continue from known code rather than rediscovering broadly.
+Also test exact offsets for Unicode, malformed UTF-8, CRLF, partial records, rapid messages, truncation and rotation. Consume complete records without silent loss. The truncate test correctly expects no messages and offset zero after emptying the file.
 
-Use run_python(code=...), python on PATH, or shell=powershell for PowerShell. read_file uses start_line/line_count, not start/end. Arguments contain only schema fields: ok is tool RESULT metadata, never a search argument.
+## Remaining integration verification
 
-Supervisor local status/stop is owner-authorized via python -m modules.local_control. Installed 1.0.49 confirms cleanup and stays online; no manual Telegram /stop is needed for the monitoring loop. Workers should finish their task rather than self-stop.
+Test bridge._chat_request_loop startup, consumption, processing errors and shutdown. It skips existing bytes on startup and advances offset before dispatch: verify intended delivery and prevent silent loss. _handle_gui_chat must echo once with mirror=False and dispatch SOURCE_GUI. Test exactly-once owner/reply mirroring and commands.
 
-## Queue offsets first
+_console_command_loop retries a one-argument handler after a two-argument TypeError; internal errors can duplicate side effects. Fix/test its call contract without treating internal TypeError as a signature mismatch.
 
-Read modules/chat_requests.py and tests/test_chat_requests.py. Binary reading fixes CRLF conversion, but consumption still re-encodes decoded text. Invalid UTF-8 replacement can change byte length. Test exact raw-byte offsets for Unicode, malformed bytes, CRLF, partial records, rapid messages, truncation/rotation. Consume complete records without silent loss. The truncate test correctly expects no messages and offset zero after emptying the file.
+Verify installed/tray queue and transcript paths agree. Test failed writes retain input, bounded transcript, partial JSONL/rotation and actual Tk send/receive. Preserve typing and handler compatibility. Existing tests passing alone do not verify this feature.
 
-## Integration verification
+## Harness and workflow
 
-Test bridge._chat_request_loop startup, consumption, processing errors and shutdown. It skips existing bytes on startup and advances offset before dispatch: verify intended delivery and avoid silent loss. _handle_gui_chat must echo once with mirror=False and dispatch SOURCE_GUI. Test exactly-once owner/reply mirroring and commands.
+Plan memory accepts 24 steps and 4,000 explanation characters under the 48,000-character input budget. Required progress phases record findings/locations, uncertainty and next action. Repair feedback includes specific fields and an example: replace placeholders with actual task state. Completion feedback survives reads and plan updates; confirmed edits or successful commands reset it. Read-only work needs no artificial edits.
 
-_console_command_loop retries a one-argument handler after a two-argument TypeError; internal errors can duplicate side effects. Fix/test its call contract without catching internal TypeError as a signature mismatch.
+Use run_python(code=...), python on PATH, or shell=powershell for PowerShell. read_file uses start_line/line_count. Only pass schema fields: ok is RESULT metadata, never a search argument. The supervisor has owner-authorized local status/stop control; manual Telegram /stop is unnecessary. Workers should finish the task, not self-stop as completion.
 
-The console has input, _send_chat, _read_new_chat, formatting and --chat-request. Verify installed/tray queue and transcript paths agree. Test failed writes retain input, bounded transcript, partial JSONL/rotation and actual Tk send/receive. Preserve typing and handler compatibility. Old tests passing alone do not verify this feature.
-
-## Completion
-
-Run focused feature tests, then python tools/check.py all after final edits. Verify the owner-visible workflow and commit explicit owned paths; publish when functionality works. Keep HANDOFF.md and tmp_* experiments out of main/release integration. Preserve pre-existing wsp, out/ and tools/_dev_show.ps1; never git add . or -A. tmp_requests.jsonl is a saved reproduction fixture (13166be), not a release asset.
+Run focused feature tests, then python tools/check.py all after final edits. Verify the owner-visible workflow and commit explicit owned paths before reporting done. Keep HANDOFF.md and tmp_* experiments out of main/release integration. Preserve pre-existing wsp, out/ and tools/_dev_show.ps1; never git add . or -A. tmp_requests.jsonl is a reproduction fixture, not a release asset. Older v1.0.42 remains a prerelease with mismatched source versions; do not reuse its version.
