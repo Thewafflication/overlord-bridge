@@ -171,6 +171,10 @@ def test_worker_reports_survive_upgrade_and_reinstall_state_round_trips(tmp_path
 $state = Join-Path (Split-Path -Parent $Root) 'persistent-state'
 $replacement = Join-Path (Split-Path -Parent $Root) 'replacement'
 $reinstalled = Join-Path (Split-Path -Parent $Root) 'reinstalled'
+if ($IsWindows) {
+    $pin = Get-Item -LiteralPath (Join-Path $Root '.session.free') -Force
+    $pin.Attributes = $pin.Attributes -bor [IO.FileAttributes]::Hidden
+}
 Copy-PersistentState -From $Root -To $state
 Copy-PersistentState -From $state -To $replacement
 # A subsequent state save/restore must merge at the same paths, not nest

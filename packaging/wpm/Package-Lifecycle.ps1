@@ -49,7 +49,7 @@ function Copy-PersistentState {
             Copy-Item -LiteralPath $source -Destination (Join-Path $To $name) -Force
         }
     }
-    foreach ($session in @(Get-ChildItem -LiteralPath $From -Filter '.session.*' -File -ErrorAction SilentlyContinue)) {
+    foreach ($session in @(Get-ChildItem -LiteralPath $From -Filter '.session.*' -File -Force -ErrorAction SilentlyContinue)) {
         Copy-Item -LiteralPath $session.FullName -Destination (Join-Path $To $session.Name) -Force
     }
     # Latest reports contain the worker/session mapping needed for resumption;
