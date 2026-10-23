@@ -2,6 +2,9 @@ import asyncio
 import json
 import time
 import uuid
+import os
+import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -119,6 +122,52 @@ def test_control_unavailable_and_invalid_action_do_not_start_a_brain(tmp_path):
     assert local_control.request(tmp_path, 'status')['error'] == 'control_unavailable'
     assert local_control.request(tmp_path, 'execute')['error'] == 'invalid_control_request'
     assert local_control.main(['status', '--run-dir', str(tmp_path)]) == 2
+
+
+def test_exited_service_returns_unavailable_without_submitting_request(tmp_path):
+    child = subprocess.Popen([sys.executable, '-c', 'pass'])
+    child.wait(timeout=15)
+    root = tmp_path / 'local-control'
+    local_control._write(root / 'service.json', {
+        'protocol': 1, 'instance': 'exited', 'pid': child.pid})
+    for action in ('status', 'stop'):
+        result = local_control.request(tmp_path, action, 1)
+        assert result['error'] == 'control_unavailable' and not result['ok']
+        assert 'exited' in result['message']
+    assert not list((root / 'requests').glob('*.json'))
+
+
+def test_service_exit_while_waiting_removes_request(tmp_path):
+    with subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(.5)']) as child:
+        root = tmp_path / 'local-control'
+        local_control._write(root / 'service.json', {
+            'protocol': 1, 'instance': 'exiting', 'pid': child.pid})
+        # POSIX reaps the child while probing, so a zombie is not mistaken for
+        # a running process. Windows uses the actual process query API.
+        original = local_control._process_running
+        from unittest.mock import patch
+        def probe(pid):
+            child.poll()
+            return original(pid)
+        with patch.object(local_control, '_process_running', side_effect=probe):
+            result = local_control.request(tmp_path, 'stop', 5)
+        assert result['error'] == 'control_unavailable'
+        assert not list((root / 'requests').glob('*.json'))
+
+
+def test_live_or_unknown_pid_never_substitutes_for_acknowledgement(tmp_path, monkeypatch):
+    root = tmp_path / 'local-control'
+    local_control._write(root / 'service.json', {
+        'protocol': 1, 'instance': 'unresponsive', 'pid': os.getpid()})
+    assert local_control._process_running(os.getpid()) is True
+    for value in (None, 0, -1, True, '123', 2**40):
+        assert local_control._process_running(value) is None
+    result = local_control.request(tmp_path, 'status', .1)
+    assert result['error'] == 'control_timeout'
+    assert 'status is unavailable' in result['message']
+    monkeypatch.setattr(local_control, '_process_running', lambda pid: None)
+    result = local_control.request(tmp_path, 'stop', .1)
+    assert result['error'] == 'control_timeout' and 'stop is not confirmed' in result['message']
 
 
 def test_local_stop_cleans_up_real_worker_command_tree(tmp_path):

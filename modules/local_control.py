@@ -14,6 +14,49 @@ from typing import Awaitable, Callable
 ACTIONS = {"status", "stop"}
 
 
+def _process_running(pid: object) -> bool | None:
+    """Return False only when the recorded process is known to have exited.
+
+    Access restrictions leave liveness unknown; only the protocol response can
+    establish that a live process is the matching, responsive bridge instance.
+    Windows os.kill(pid, 0) can terminate a process, so use a query handle there.
+    """
+    if type(pid) is not int or not 0 < pid <= 0xFFFFFFFF:
+        return None
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel.OpenProcess.restype = wintypes.HANDLE
+        kernel.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+        kernel.GetExitCodeProcess.restype = wintypes.BOOL
+        kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel.CloseHandle.restype = wintypes.BOOL
+        handle = kernel.OpenProcess(0x1000, False, pid)
+        if not handle:
+            return False if ctypes.get_last_error() == 87 else None
+        try:
+            code = wintypes.DWORD()
+            if not kernel.GetExitCodeProcess(handle, ctypes.byref(code)):
+                return None
+            return code.value == 259  # STILL_ACTIVE
+        finally:
+            kernel.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except (OSError, OverflowError):
+        return None
+    return True
+
+
+def _offline_result() -> dict:
+    return {"ok": False, "error": "control_unavailable",
+            "message": "The recorded bridge process has exited; start Overlord and retry."}
+
+
 def _write(path: Path, value: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + "." + uuid.uuid4().hex + ".tmp")
@@ -44,6 +87,8 @@ def request(run_dir: Path, action: str, timeout: float = 30) -> dict:
             raise ValueError("invalid service metadata")
     except (OSError, ValueError, KeyError, TypeError):
         return {"ok": False, "error": "control_unavailable", "message": "No compatible local control service; start an updated bridge."}
+    if _process_running(service.get("pid")) is False:
+        return _offline_result()
     identity = uuid.uuid4().hex
     inbox = root / "requests" / (identity + ".json")
     reply = root / "responses" / (identity + ".json")
@@ -51,6 +96,7 @@ def request(run_dir: Path, action: str, timeout: float = 30) -> dict:
         _write(inbox, {"id": identity, "instance": instance, "action": action,
                        "expires_at": time.time() + timeout})
         deadline = time.monotonic() + timeout
+        next_probe = time.monotonic() + 0.25
         while time.monotonic() < deadline:
             try:
                 result = json.loads(reply.read_text(encoding="utf-8"))
@@ -60,8 +106,14 @@ def request(run_dir: Path, action: str, timeout: float = 30) -> dict:
                     return result
             except (OSError, ValueError):
                 pass
+            if time.monotonic() >= next_probe:
+                if _process_running(service.get("pid")) is False:
+                    return _offline_result()
+                next_probe = time.monotonic() + 0.25
             time.sleep(0.05)
-        return {"ok": False, "error": "control_timeout", "message": "No acknowledgement; stop is not confirmed."}
+        message = ("No acknowledgement; stop is not confirmed." if action == "stop"
+                   else "No acknowledgement; bridge status is unavailable.")
+        return {"ok": False, "error": "control_timeout", "message": message}
     except OSError as exc:
         return {"ok": False, "error": "control_io_error", "message": str(exc)}
     finally:
