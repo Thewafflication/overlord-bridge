@@ -682,6 +682,24 @@ def test_failed_command_reports_shell_and_recovery_context(isolated):
     assert result['python_interpreter'] == str(workers._worker_python(folder))
 
 
+@pytest.mark.parametrize('tool', ['run_python', 'run_command'])
+@pytest.mark.parametrize('exit_code', [0, 7])
+def test_python_commands_preserve_unicode_stdout_and_stderr(isolated, monkeypatch, tool, exit_code):
+    folder = isolated / 'unicode-command'
+    folder.mkdir()
+    monkeypatch.setenv('PYTHONIOENCODING', 'cp1252')
+    text = 'caf\u00e9 \u4e16\u754c \U0001f642'
+    code = ("import sys; print('caf\\u00e9 \\u4e16\\u754c \\U0001f642'); "
+            f"print('caf\\u00e9 \\u4e16\\u754c \\U0001f642', file=sys.stderr); sys.exit({exit_code})")
+    args = {'code': code} if tool == 'run_python' else {'command': f'python -c "{code}"'}
+    result = execute(tool, args, folder)
+    assert result['exit_code'] == exit_code and result['ok'] == (exit_code == 0)
+    assert result['stdout'] == text and result['stderr'] == text
+    # Child encoding policy does not change the bridge's own environment.
+    import os
+    assert os.environ['PYTHONIOENCODING'] == 'cp1252'
+
+
 def test_read_file_line_ranges(isolated):
     folder = isolated / 'app'
     folder.mkdir()

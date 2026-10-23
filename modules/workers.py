@@ -1450,6 +1450,10 @@ class WorkerManager:
                 timeout_i = DEFAULT_LOCAL_AGENT_COMMAND_TIMEOUT
             log_command("worker", "started", command, folder)
             environment = os.environ.copy()
+            # Tool results are decoded as UTF-8 below. Redirected Python on
+            # Windows otherwise uses the legacy code page, corrupting output
+            # or crashing while printing Unicode filenames and test results.
+            environment["PYTHONIOENCODING"] = "utf-8"
             interpreter = _worker_python(folder)
             environment["PATH"] = str(interpreter.parent) + os.pathsep + environment.get("PATH", "")
             options = dict(cwd=str(folder), stdout=asyncio.subprocess.PIPE,
