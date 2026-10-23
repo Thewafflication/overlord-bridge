@@ -410,6 +410,52 @@ def _bounded_tail(text: str, max_chars: int) -> tuple[str, bool]:
     return f"[... {omitted} chars omitted ...]\n{cleaned[-max_chars:]}", True
 
 
+class _CommandTail:
+    """Keep enough UTF-8 bytes for the final character-limited tool result."""
+
+    def __init__(self, max_chars: int):
+        self.max_chars = max_chars
+        self.limit = max_chars * 4
+        self.data = bytearray()
+        self.dropped = 0
+
+    def append(self, chunk: bytes) -> None:
+        self.data.extend(chunk)
+        excess = len(self.data) - self.limit
+        if excess > 0:
+            del self.data[:excess]
+            self.dropped += excess
+
+    def result(self) -> tuple[str, bool]:
+        raw = bytes(self.data)
+        if self.dropped:
+            # Discard the incomplete leading line. It can start inside a UTF-8
+            # character or a credential whose redaction prefix was discarded.
+            newline = raw.find(b"\n")
+            raw = raw[newline + 1:] if newline >= 0 else b""
+        text, truncated = _bounded_tail(raw.decode(errors="replace"), self.max_chars)
+        if self.dropped:
+            text = f"[... {self.dropped} earlier output bytes and partial line omitted ...]\n" + text
+        return text, truncated or bool(self.dropped)
+
+
+async def _capture_command_output(proc, stdout: _CommandTail, stderr: _CommandTail) -> None:
+    async def drain(stream, tail):
+        while chunk := await stream.read(8192):
+            tail.append(chunk)
+
+    tasks = [asyncio.create_task(drain(proc.stdout, stdout)),
+             asyncio.create_task(drain(proc.stderr, stderr)),
+             asyncio.create_task(proc.wait())]
+    try:
+        await asyncio.gather(*tasks)
+    finally:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
 def _safe_report_name(name: str) -> str:
     safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", name).strip("._")
     return (safe or "worker")[:80]
@@ -1468,9 +1514,11 @@ class WorkerManager:
                     "powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded, **options)
             else:
                 proc = await asyncio.create_subprocess_shell(command, **options)
-            communication = asyncio.create_task(proc.communicate())
+            stdout_capture = _CommandTail(DEFAULT_LOCAL_AGENT_TOOL_OUTPUT_CHARS)
+            stderr_capture = _CommandTail(DEFAULT_LOCAL_AGENT_TOOL_OUTPUT_CHARS)
+            communication = asyncio.create_task(_capture_command_output(proc, stdout_capture, stderr_capture))
             try:
-                out, err = await asyncio.wait_for(asyncio.shield(communication), timeout=timeout_i)
+                await asyncio.wait_for(asyncio.shield(communication), timeout=timeout_i)
                 timed_out = False
             except asyncio.CancelledError:
                 await self._terminate_worker_process(proc, process_group=os.name != "nt")
@@ -1483,19 +1531,17 @@ class WorkerManager:
                 except (OSError, asyncio.TimeoutError):
                     log.warning("Worker command cleanup did not finish for PID %s", proc.pid)
                 try:
-                    out, err = await asyncio.wait_for(asyncio.shield(communication), timeout=5)
+                    await asyncio.wait_for(asyncio.shield(communication), timeout=5)
                 except asyncio.TimeoutError:
-                    out, err = b"", b"Command timed out; output pipes did not close after process cleanup."
+                    stderr_capture.append(b"\nCommand timed out; output pipes did not close after process cleanup.")
             finally:
                 if not communication.done():
                     communication.cancel()
                     await asyncio.gather(communication, return_exceptions=True)
             log_command("worker", "timed out" if timed_out else "completed", command, folder,
                         exit_code=proc.returncode)
-            stdout = (out or b"").decode(errors="replace")
-            stderr = (err or b"").decode(errors="replace")
-            stdout_tail, stdout_truncated = _bounded_tail(stdout, DEFAULT_LOCAL_AGENT_TOOL_OUTPUT_CHARS)
-            stderr_tail, stderr_truncated = _bounded_tail(stderr, DEFAULT_LOCAL_AGENT_TOOL_OUTPUT_CHARS)
+            stdout_tail, stdout_truncated = stdout_capture.result()
+            stderr_tail, stderr_truncated = stderr_capture.result()
             result = {
                 "ok": proc.returncode == 0 and not timed_out,
                 "tool": tool_name,

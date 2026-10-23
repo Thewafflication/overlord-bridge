@@ -802,7 +802,12 @@ def test_timeout_remains_bounded_when_output_pipe_never_closes(isolated, tmp_pat
         class StuckProcess:
             pid = 999999
             returncode = None
-            async def communicate(self):
+            def __init__(self):
+                self.stdout = asyncio.StreamReader()
+                self.stderr = asyncio.StreamReader()
+                self.stdout.feed_data(b'partial useful output\n')
+                self.stderr.feed_data(b'partial diagnostic\n')
+            async def wait(self):
                 await asyncio.Event().wait()
         async def spawn(*args, **kwargs):
             return StuckProcess()
@@ -815,7 +820,44 @@ def test_timeout_remains_bounded_when_output_pipe_never_closes(isolated, tmp_pat
             isolated, 'run_python', {'code': 'print(1)', 'timeout_seconds': 1}), timeout=10)
         assert result['timed_out'] and not result['ok']
         assert 'output pipes did not close' in result['stderr']
+        assert 'partial diagnostic' in result['stderr']
+        assert result['stdout'] == 'partial useful output'
     run(scenario())
+
+
+def test_command_capture_drains_large_streams_and_preserves_final_diagnostics(isolated):
+    code = ("import sys\n"
+            "for i in range(512):\n"
+            " sys.stdout.write('o'*8192)\n"
+            " sys.stderr.write('e'*8192)\n"
+            "print('\\nfinal stdout \\u4e16\\u754c')\n"
+            "print('\\nfinal stderr \\U0001f642',file=sys.stderr)\n")
+    result = execute('run_python', {'code': code}, isolated)
+    assert result['ok']
+    assert result['stdout'].endswith('final stdout \u4e16\u754c')
+    assert result['stderr'].endswith('final stderr \U0001f642')
+    for stream in ('stdout', 'stderr'):
+        assert result[stream + '_truncated']
+        assert len(result[stream]) < workers.DEFAULT_LOCAL_AGENT_TOOL_OUTPUT_CHARS + 150
+        assert 'earlier output bytes and partial line omitted' in result[stream]
+
+
+def test_stream_capture_keeps_memory_bounded_and_unicode_boundary_intact():
+    tail = workers._CommandTail(10)
+    for _ in range(1000):
+        tail.append(('\u4e16' * 10 + '\n').encode())
+        assert len(tail.data) <= 40
+    text, truncated = tail.result()
+    assert truncated and text.endswith('\u4e16' * 10)
+    assert '\ufffd' not in text
+    assert tail.dropped == 31000 - 40
+
+
+def test_capture_does_not_expose_partial_credential_after_truncation():
+    tail = workers._CommandTail(10)
+    tail.append(b'API_KEY=' + b'x' * 1000 + b'\nuseful\n')
+    text, truncated = tail.result()
+    assert truncated and text.endswith('useful') and 'xxx' not in text
 
 
 def test_file_discovery_filters_before_traversal_and_can_target_a_folder(isolated, monkeypatch):
