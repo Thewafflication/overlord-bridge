@@ -140,6 +140,8 @@ DEFAULT_LOCAL_AGENT_COMMAND_TIMEOUT = 180
 DEFAULT_LOCAL_AGENT_SLOT_CHECK_INTERVAL = 5
 DEFAULT_LOCAL_AGENT_IDLE_STALL_GRACE = 20
 DEFAULT_LOCAL_AGENT_TOOL_OUTPUT_CHARS = 24000
+WORKER_PLAN_MAX_STEPS = 24
+WORKER_PLAN_EXPLANATION_CHARS = 4000
 _ANSWER_ONLY_CREATIVE_TERMS = (
     "limerick",
     "poem",
@@ -798,8 +800,8 @@ def _local_agent_tools() -> list[dict[str, Any]]:
             "name": "update_plan",
             "description": "Record the current task plan and findings in worker memory. Survives context trimming for this run. Update as steps finish or a specific blocker changes the next action. This records your assessment, not verified completion, and changes no project files.",
             "parameters": {"type": "object", "properties": {
-                "explanation": {"type": "string", "maxLength": 1000},
-                "plan": {"type": "array", "minItems": 1, "maxItems": 12, "items": {
+                "explanation": {"type": "string", "maxLength": WORKER_PLAN_EXPLANATION_CHARS},
+                "plan": {"type": "array", "minItems": 1, "maxItems": WORKER_PLAN_MAX_STEPS, "items": {
                     "type": "object", "properties": {
                         "step": {"type": "string", "minLength": 1, "maxLength": 200},
                         "status": {"type": "string", "enum": ["pending", "in_progress", "completed"]}},
@@ -1398,10 +1400,14 @@ class WorkerManager:
             plan = arguments.get("plan")
             explanation = arguments.get("explanation", "")
             issues = []
-            if not isinstance(explanation, str) or len(explanation) > 1000:
-                issues.append("explanation must be a string of at most 1000 characters")
-            if not isinstance(plan, list) or not 1 <= len(plan) <= 12:
-                issues.append("plan must be an array containing 1-12 step objects")
+            if not isinstance(explanation, str):
+                issues.append("explanation must be a string")
+            elif len(explanation) > WORKER_PLAN_EXPLANATION_CHARS:
+                issues.append(f"explanation has {len(explanation)} characters; maximum is {WORKER_PLAN_EXPLANATION_CHARS}")
+            if not isinstance(plan, list):
+                issues.append("plan must be an array of step objects, not a string or object")
+            elif not 1 <= len(plan) <= WORKER_PLAN_MAX_STEPS:
+                issues.append(f"plan contains {len(plan)} steps; supply 1-{WORKER_PLAN_MAX_STEPS} steps")
             else:
                 for index, item in enumerate(plan):
                     prefix = f"plan[{index}]"
@@ -2206,7 +2212,8 @@ class WorkerManager:
             transcript.append(f"coach[{step}:discovery_checkpoint]: {checkpoint}")
             progress(f"Step {step}: reviewing progress after extended discovery.", important=True)
             await record_worker_plan(
-                "Record what you learned using update_plan before more project actions. Put confirmed findings "
+                f"Record what you learned using update_plan before more project actions. Use at most {WORKER_PLAN_MAX_STEPS} steps "
+                f"and {WORKER_PLAN_EXPLANATION_CHARS} explanation characters. Put confirmed findings "
                 "and relevant file/line locations in explanation, identify any unresolved uncertainty and the "
                 "next concrete action. Reconcile previous completed work and remaining validation/publication. "
                 "Only update_plan is available; reads, commands and writes will not execute in this phase. "
