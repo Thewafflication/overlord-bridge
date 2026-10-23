@@ -9,8 +9,8 @@ reads. Both sides therefore meet at one append-only JSON Lines file:
 says where the message entered the system, so the console can show that a
 message typed in the window was also delivered to Telegram.
 
-The file is append-only and never rewritten, so a reader can follow it by
-remembering the byte offset it reached. Records that are half-written
+The file appends records and periodically retains a bounded tail. Readers
+follow byte offsets and reset when the file is replaced or truncated. Records that are half-written
 (the bridge was killed mid-append) are ignored rather than crashing the reader.
 """
 
@@ -31,8 +31,9 @@ SOURCE_GUI = "gui"
 class ChatMirror:
     """Append-only transcript of the owner/Overlord conversation."""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, max_bytes: int = 2 * 1024 * 1024) -> None:
         self.path = path
+        self.max_bytes = max_bytes
         self._lock = threading.Lock()
         self._sequence = 0
 
@@ -55,6 +56,18 @@ class ChatMirror:
                 with self.path.open("a", encoding="utf-8") as stream:
                     stream.write(json.dumps(record, ensure_ascii=False) + "\n")
                     stream.flush()
+                if self.path.stat().st_size > self.max_bytes:
+                    with self.path.open("rb") as stream:
+                        stream.seek(max(0, self.path.stat().st_size - self.max_bytes // 2))
+                        stream.readline()  # discard a potentially partial first record
+                        tail = stream.read()
+                    if not tail:
+                        # Keep a single large latest record rather than losing it.
+                        raw = self.path.read_bytes()
+                        tail = raw[raw.rfind(b"\n", 0, len(raw) - 1) + 1:]
+                    temporary = self.path.with_suffix(".rotate.tmp")
+                    temporary.write_bytes(tail)
+                    temporary.replace(self.path)
             except OSError:
                 self._sequence -= 1
 
@@ -74,17 +87,15 @@ class ChatMirror:
         if size == offset:
             return [], offset
         try:
-            with self.path.open("r", encoding="utf-8", errors="replace") as stream:
+            with self.path.open("rb") as stream:
                 stream.seek(offset)
-                content = stream.read()
+                raw = stream.read()
         except OSError:
             return [], offset
-        if not content.endswith("\n"):
-            # Only whole lines are records; wait for the writer to finish.
-            last_newline = content.rfind("\n")
-            if last_newline == -1:
-                return [], offset
-            content = content[:last_newline + 1]
+        consumed = raw.rfind(b"\n") + 1
+        if not consumed:
+            return [], offset
+        content = raw[:consumed].decode("utf-8", errors="replace")
         records: List[Dict] = []
         for line in content.splitlines():
             line = line.strip()
@@ -99,7 +110,7 @@ class ChatMirror:
                 and isinstance(record.get("text"), str)
             ):
                 records.append(record)
-        return records, offset + len(content.encode("utf-8"))
+        return records, offset + consumed
 
     def iter_all(self) -> Iterator[Dict]:
         """Yield every complete record in the transcript, oldest first."""

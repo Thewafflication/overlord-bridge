@@ -79,7 +79,7 @@ from modules.chat_mirror import (
     SOURCE_GUI,
     SOURCE_TELEGRAM,
 )
-from modules.chat_requests import read_requests
+from modules.chat_requests import RequestReader
 from modules.conversation_history import (
     Handoff,
     SharedConversationHistory,
@@ -1249,17 +1249,20 @@ class Bridge:
                 )
             except (OSError, ValueError, TypeError):
                 continue
-            action = str((payload or {}).get("action") or "").strip().lower()
+            if not isinstance(payload, dict):
+                continue
+            action = str(payload.get("action") or "").strip().lower()
             try:
-                # Support both single-argument and two-argument handlers.
-                if payload is not None and isinstance(payload, dict):
-                    try:
-                        await self._run_console_action(action, payload)
-                    except TypeError:
-                        # Handler expects only action.
-                        await self._run_console_action(action)
+                # Inspect compatibility before execution: an internal TypeError
+                # must never invoke a handler a second time.
+                import inspect
+                handler = self._run_console_action
+                try:
+                    inspect.signature(handler).bind(action, payload)
+                except TypeError:
+                    await handler(action)
                 else:
-                    await self._run_console_action(action)
+                    await handler(action, payload)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001 - a button must not kill the loop
@@ -1267,22 +1270,21 @@ class Bridge:
 
     async def _chat_request_loop(self) -> None:
         """Poll the console chat queue and forward owner messages to the bridge."""
-        offset = 0
-        # On first run, skip any stale messages already on disk.
-        try:
-            size = self._chat_request_path.stat().st_size
-            offset = size
-        except OSError:
-            pass
+        reader = RequestReader(self._chat_request_path)
         while not self._shutdown_event.is_set():
             await asyncio.sleep(0.3)
             try:
-                requests, offset = read_requests(self._chat_request_path, offset)
-            except Exception:
-                continue
-            for text in requests:
-                # Inbox messages from GUI should be marked as coming from GUI
-                await self._dispatch_inbound(OWNER, text, source=SOURCE_GUI)
+                records, complete_end = reader.read()
+                for text, end in records:
+                    await self._handle_gui_chat({"text": text})
+                    reader.acknowledge(end)
+                if complete_end > reader.state["offset"]:
+                    reader.acknowledge(complete_end)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                # Do not advance over undelivered records or kill the consumer.
+                log.warning("GUI chat delivery paused: %s", type(exc).__name__)
 
     # Settings the setup window may change while the bridge is running.
     _RELOADABLE_ENV = (

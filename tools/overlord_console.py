@@ -265,7 +265,8 @@ class OverlordConsole:
         chat_input_frame.pack(fill="x", pady=(4, 0))
         self.chat_entry = ttk.Entry(chat_input_frame, style="Console.TEntry")
         self.chat_entry.pack(side="left", fill="x", expand=True)
-        ttk.Button(chat_input_frame, text="Send", command=self._send_chat).pack(side="right")
+        self.chat_send_button = ttk.Button(chat_input_frame, text="Send", command=self._send_chat)
+        self.chat_send_button.pack(side="right")
         # Bind Enter key to send
         self.chat_entry.bind("<Return>", lambda _: self._send_chat())
 
@@ -364,6 +365,16 @@ class OverlordConsole:
         record is picked up once it is complete.
         """
         try:
+            stat = self.chat_mirror_path.stat()
+            identity = (stat.st_dev, stat.st_ino)
+            previous = getattr(self, "_chat_identity", identity)
+            if previous != identity or stat.st_size < self.chat_offset:
+                self.chat_offset = 0
+                self.chat_messages.clear()
+                self.chat_text.configure(state="normal")
+                self.chat_text.delete("1.0", "end")
+                self.chat_text.configure(state="disabled")
+            self._chat_identity = identity
             records, self.chat_offset = ChatMirror(self.chat_mirror_path).read_since(
                 self.chat_offset
             )
@@ -374,6 +385,7 @@ class OverlordConsole:
             if not line.strip():
                 continue
             self.chat_messages.append(line)
+            del self.chat_messages[:-MAX_WIDGET_LINES]
             self.chat_text.configure(state="normal")
             tag = "owner" if record.get("role") == ROLE_OWNER else "overlord"
             self.chat_text.insert("end", line + "\n", tag)
@@ -381,7 +393,9 @@ class OverlordConsole:
         if records:
             line_count = int(self.chat_text.index("end-1c").split(".", 1)[0])
             if line_count > MAX_WIDGET_LINES:
+                self.chat_text.configure(state="normal")
                 self.chat_text.delete("1.0", f"{line_count - MAX_WIDGET_LINES}.0")
+                self.chat_text.configure(state="disabled")
             if self.autoscroll.get():
                 self.chat_text.see("end")
 

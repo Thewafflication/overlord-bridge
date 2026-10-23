@@ -19,6 +19,7 @@ never dispatched as a truncated one.
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import time
 from pathlib import Path
@@ -50,50 +51,84 @@ def append_request(path: Path, text: str) -> bool:
     return True
 
 
+def read_request_batch(path: Path, offset: int = 0):
+    """Return (text, raw end offset) records plus the complete-record boundary."""
+    records = []
+    try:
+        with path.open("rb") as stream:
+            if os.fstat(stream.fileno()).st_size < offset:
+                offset = 0
+            stream.seek(offset)
+            end = offset
+            while len(records) < 100:
+                raw = stream.readline()
+                if not raw or not raw.endswith(b"\n"):
+                    break
+                end = stream.tell()
+                try:
+                    payload = json.loads(raw.decode("utf-8", errors="replace"))
+                except ValueError:
+                    continue
+                if isinstance(payload, dict) and isinstance(payload.get("text"), str):
+                    text = payload["text"].strip()
+                    if text:
+                        records.append((text, end))
+            return records, end
+    except OSError:
+        return [], offset
+
+
 def read_requests(path: Path, offset: int = 0) -> Tuple[List[str], int]:
-    """Return the messages queued after *offset* and the new offset.
+    records, end = read_request_batch(path, offset)
+    return [text for text, _ in records], end
 
-    Only whole lines are read; a message still being written stays unread
-    until the writer finishes it.
-    """
-    try:
-        size = path.stat().st_size
-    except OSError:
-        return [], offset
-    if size < offset:
-        # The file was rotated or truncated; start over.
-        offset = 0
-    if size == offset:
-        return [], offset
-    try:
-        # Read raw bytes from the current offset to avoid mis‑counting because
-        # Windows text mode converts CRLF to LF.  We keep the byte offset in the
-        # caller so the same value can be used each iteration.
-        with path.open("rb") as f:
-            f.seek(offset)
-            raw = f.read()
-    except OSError:
-        return [], offset
-    # Find complete records in bytes before decoding. Replacement characters
-    # and Windows newline translation must never change the consumed offset.
-    consumed = raw.rfind(b"\n") + 1
-    if not consumed:
-        return [], offset
-    text = raw[:consumed].decode("utf-8", errors="replace")
-    messages: List[str] = []
-    for line in text.splitlines():
-        line = line.strip()
-        if not line:
-            continue
+
+class RequestReader:
+    """Persist delivery receipts; replay unacknowledged messages after restart."""
+    def __init__(self, path: Path):
+        self.path = path
+        self.cursor = path.with_suffix(path.suffix + ".cursor.json")
+        self.state = {"offset": 0, "identity": None, "anchor": ""}
+        self.pending = False
         try:
-            payload = json.loads(line)
-        except ValueError:
-            continue
-        if isinstance(payload, dict) and isinstance(payload.get("text"), str):
-            txt = payload["text"].strip()
-            if txt:
-                messages.append(txt)
-    return messages, offset + consumed
+            saved = json.loads(self.cursor.read_text(encoding="utf-8"))
+            if (isinstance(saved, dict) and type(saved.get("offset")) is int
+                    and saved["offset"] >= 0 and isinstance(saved.get("anchor"), str)
+                    and isinstance(saved.get("identity"), list)):
+                self.state = saved
+        except (OSError, ValueError):
+            pass
+
+    def _anchor(self, offset):
+        with self.path.open("rb") as stream:
+            stream.seek(max(0, offset - 64))
+            return hashlib.sha256(stream.read(min(offset, 64))).hexdigest()
+
+    def _save(self):
+        temporary = self.cursor.with_suffix(".tmp")
+        temporary.write_text(json.dumps(self.state), encoding="utf-8")
+        temporary.replace(self.cursor)
+        self.pending = False
+
+    def read(self):
+        if self.pending:
+            self._save()
+        try:
+            stat = self.path.stat()
+        except FileNotFoundError:
+            return [], self.state["offset"]
+        identity = [stat.st_dev, stat.st_ino]
+        offset = self.state["offset"]
+        if (identity != self.state["identity"] or stat.st_size < offset
+                or (offset and self._anchor(offset) != self.state["anchor"])):
+            self.state = {"offset": 0, "identity": identity, "anchor": ""}
+        return read_request_batch(self.path, self.state["offset"])
+
+    def acknowledge(self, offset):
+        self.state["offset"] = offset
+        self.state["anchor"] = self._anchor(offset)
+        self.pending = True
+        self._save()
 
 
-__all__ = ["DEFAULT_REQUEST_FILE", "append_request", "read_requests", "request_id"]
+__all__ = ["DEFAULT_REQUEST_FILE", "append_request", "read_requests", "read_request_batch", "RequestReader", "request_id"]

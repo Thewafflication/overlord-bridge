@@ -347,7 +347,7 @@ def test_console_command_loop_acts_once_per_file_change_and_survives_bad_files(t
         await real_sleep(0.1)
         instance._shutdown_event.set()
         await asyncio.wait_for(loop, 2)
-        assert actions == ["refresh_status", "explode", "", "send_status"]
+        assert actions == ["refresh_status", "explode", "send_status"]
 
     run(scenario())
 
