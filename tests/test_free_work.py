@@ -742,6 +742,92 @@ def test_plan_only_worker_ending_returns_to_tools_before_completion(isolated, tm
     assert any('Completion checkpoint' in str(m) for m in seen[1][0])
 
 
+def test_placeholder_report_can_be_rewritten_without_repeating_completed_work(isolated, tmp_path):
+    project = isolated / 'report-correction'
+    project.mkdir()
+    (project / 'feature.py').write_text('enabled = True\n')
+    actual = 'Reviewed feature.py: enabled is True; no edits or commits were requested.'
+    completer, seen = scripted_pool([
+        call('read_file', {'path': 'feature.py'}),
+        {'content': 'The review is complete.'},
+        final_result('summary of actual changes, validation and commit'),
+        final_result(actual),
+    ], reviews=[
+        {'content': json.dumps({'complete': False, 'reason':
+            'The file review is complete. Rewrite the placeholder final report using existing evidence.'})},
+        {'content': '{"complete":true,"reason":"Factual report matches the evidence"}'},
+    ])
+    mgr, sent, _ = manager(tmp_path, completer)
+    start(mgr, project, task='Review feature.py and report findings; do not edit code.')
+    assert events(mgr)[-1]['status'] == 'finished' and actual in sent[-1]
+    checkpoint = next(m['content'] for m in seen[2][0]
+                      if m['role'] == 'user' and 'Completion checkpoint' in m['content'])
+    assert 'summary of actual changes, validation and commit' not in checkpoint
+    assert 'actual facts' in checkpoint
+    assert '{"final":"summary"}' not in seen[0][0][0]['content']
+    assert len(completer.reviews) == 2
+    assert 'Instructional placeholders' in completer.reviews[0][0]['content']
+    assert "Distinguish the test runner's exit status" in completer.reviews[0][0]['content']
+    feedback = seen[3][0][-1]['content']
+    assert 'rewrite it using the existing evidence' in feedback
+    assert (project / 'feature.py').read_text() == 'enabled = True\n'
+
+
+def test_explicit_report_envelope_reaches_completion_review_instead_of_unknown_tool(isolated, tmp_path):
+    project = isolated / 'report-envelope'
+    project.mkdir()
+    text = 'Reviewed the existing source; validation passed and no changes were requested.'
+    completer, seen = scripted_pool([{'content': json.dumps({'report': text, 'outcome': 'finished'})}])
+    mgr, sent, _ = manager(tmp_path, completer)
+    start(mgr, project, task='Review the existing code and report findings.')
+    assert events(mgr)[-1]['status'] == 'finished' and text in sent[-1]
+    assert len(completer.reviews) == 1 and len(seen) == 1
+    evidence = json.loads(completer.reviews[0][1]['content'])
+    assert evidence['proposed_final'] == text
+    assert 'unknown_tool:' not in events(mgr)[-1]['result_tail']
+
+
+def test_report_envelope_does_not_bypass_review_rejection(isolated, tmp_path):
+    project = isolated / 'rejected-envelope'
+    project.mkdir()
+    completer, _ = scripted_pool([
+        {'content': '{"report":"Everything is fixed","outcome":"finished"}'},
+        {'content': '{"report":"No credentials are available to continue","outcome":"blocked"}'},
+    ], reviews=[{'content': '{"complete":false,"reason":"No work or validation evidence"}'}])
+    mgr, sent, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert events(mgr)[-1]['status'] == 'incomplete'
+    assert len(completer.reviews) == 1
+
+
+def test_report_field_on_a_tool_request_is_not_terminal(isolated, tmp_path):
+    project = isolated / 'tool-with-report'
+    project.mkdir()
+    completer, _ = scripted_pool([
+        {'content': json.dumps({'tool': 'read_file', 'arguments': {'path': 'absent.py'},
+                                'report': 'Not a final result', 'outcome': 'finished'})},
+        final_result('The requested file is absent'),
+    ])
+    mgr, sent, _ = manager(tmp_path, completer)
+    start(mgr, project, task='Inspect absent.py and report whether it exists.')
+    assert len(completer.reviews) == 1
+    assert 'file_not_found' in events(mgr)[-1]['result_tail']
+
+
+@pytest.mark.parametrize('outcome', [[], {}])
+def test_malformed_report_outcome_does_not_crash_worker(isolated, tmp_path, outcome):
+    project = isolated / 'malformed-report'
+    project.mkdir()
+    completer, _ = scripted_pool([
+        {'content': json.dumps({'report': 'Not a terminal envelope', 'outcome': outcome})},
+        final_result('No changes were requested'),
+    ])
+    mgr, sent, _ = manager(tmp_path, completer)
+    start(mgr, project, task='Review the project without edits.')
+    assert events(mgr)[-1]['status'] == 'finished'
+    assert len(completer.reviews) == 1
+
+
 def test_worker_ignoring_completion_checkpoint_is_incomplete(isolated, tmp_path):
     project = isolated / 'ignored-checkpoint'
     project.mkdir()

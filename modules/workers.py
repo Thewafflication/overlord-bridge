@@ -140,6 +140,14 @@ DEFAULT_LOCAL_AGENT_COMMAND_TIMEOUT = 180
 DEFAULT_LOCAL_AGENT_SLOT_CHECK_INTERVAL = 5
 DEFAULT_LOCAL_AGENT_IDLE_STALL_GRACE = 20
 DEFAULT_LOCAL_AGENT_TOOL_OUTPUT_CHARS = 24000
+WORKER_FINAL_CONTRACT = (
+    "When the task is complete, return one JSON object with a field named 'final' containing a JSON string "
+    "and a field named 'outcome' set to 'finished'. Write the 'final' value as your own factual, "
+    "task-specific report: name the actual changes, validation results "
+    "and any required commit. Supply actual facts, not sample values, instructions or a template. "
+    "If blocked, set outcome to blocked and explain the concrete blocker in final. "
+    "Do not claim edits, tests, commits or pushes you did not do."
+)
 WORKER_PLAN_MAX_STEPS = 24
 WORKER_PLAN_EXPLANATION_CHARS = 4000
 _ANSWER_ONLY_CREATIVE_TERMS = (
@@ -1968,8 +1976,8 @@ class WorkerManager:
                 "Inspect git status before changes and preserve pre-existing edits and untracked files. "
                 "Stage only your explicit changed paths; do not use git add . or git add -A to sweep unrelated files. "
                 "If formal tool calls are unavailable, output one JSON object exactly like "
-                "{\"tool\":\"read_file\",\"arguments\":{\"path\":\"README.md\"}} or "
-                "{\"final\":\"summary\"}."
+                "{\"tool\":\"read_file\",\"arguments\":{\"path\":\"README.md\"}}. "
+                + WORKER_FINAL_CONTRACT
             )
 
         messages: list[dict[str, Any]] = [
@@ -2451,6 +2459,14 @@ class WorkerManager:
 
                 fallback = _extract_json_object(content) or _extract_xmlish_tool_call(content)
                 if fallback:
+                    # An observed model envelope uses report for final. Recover
+                    # only explicit terminal envelopes, never tool requests or
+                    # arbitrary report-shaped JSON. Normal completion review
+                    # still determines whether the task actually succeeded.
+                    if ("final" not in fallback and fallback.get("outcome") in ("finished", "blocked")
+                            and isinstance(fallback.get("report"), str)
+                            and not any(key in fallback for key in ("tool", "name", "action", "arguments"))):
+                        fallback = {**fallback, "final": fallback["report"]}
                     if "final" in fallback:
                         final_text = str(fallback.get("final") or "").strip()
                         if not final_text:
@@ -2472,7 +2488,18 @@ class WorkerManager:
                                     "tag/push/release steps also need evidence. A claim that "
                                     "tests are runnable or pending is not validation. Missing or failed steps mean "
                                     "complete=false; explain what the worker must do next. Read-only tasks need "
+                                    "no new implementation. Passing tests substantiate behaviors checked by their "
+                                    "recorded assertions: an error-path subprocess can correctly exit nonzero while "
+                                    "the test suite itself exits zero. Distinguish the test runner's exit status "
+                                    "from the program under test; do not demand standalone repetition of assertions "
+                                    "already verified by a successful test run. Read-only tasks need "
                                     "neither edits nor commits. Do not infer success from the proposed report alone. "
+                                    "The final report is also a deliverable: require a factual task-specific "
+                                    "summary of actual work and validation, plus any required commit. "
+                                    "Instructional placeholders or copied templates are not a completed report, "
+                                    "even when tool evidence proves the code work succeeded. If only the report "
+                                    "needs correction, request a rewritten report using the existing evidence; "
+                                    "do not request rediscovery or repetition of already successful work. "
                                     "Absent evidence does not prove code is absent: request targeted inspection or "
                                     "validation of existing code rather than assuming it needs to be recreated."
                                 )},
@@ -2506,7 +2533,8 @@ class WorkerManager:
                                 messages.append({"role": "assistant", "content": content})
                                 messages.append({"role": "user", "content": (
                                     "Completion review rejected this result: " + reason +
-                                    " Continue with tools to finish the missing work. If blocked, return outcome=blocked "
+                                    " Address the missing work. Use tools when needed; if only the report needs "
+                                    "correction, rewrite it using the existing evidence. If blocked, return outcome=blocked "
                                     "with the concrete blocker. Do not repeat a success claim without new evidence."
                                 )})
                                 progress(f"Step {step}: completion review requests more work — {reason}", important=True)
@@ -2555,10 +2583,7 @@ class WorkerManager:
                         checkpoint = (
                             "Completion checkpoint: your text ended the turn, but a plan or intention is not "
                             "completed work. Review the original task and actual tool results. If work remains, "
-                            "continue with tools now. When the task is complete, return exactly "
-                            '{"final":"summary of actual changes, validation and commit", "outcome":"finished"}. '
-                            "If you cannot complete it, return the same JSON with outcome=blocked and explain "
-                            "the concrete blocker. Do not claim edits, tests, commits or pushes you did not do."
+                            "continue with tools now. " + WORKER_FINAL_CONTRACT
                         )
                         completion_feedback = checkpoint
                         messages.append({"role": "user", "content": checkpoint})

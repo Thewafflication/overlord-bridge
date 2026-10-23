@@ -1,5 +1,15 @@
 # Live worker evaluations
 
+## Current unfinished work: completion reporting
+
+Branch `codex/factual-worker-reports` contains an unreleased 1.0.59 candidate. The installed bridge was restored to signed 1.0.58 worker code after three live report-quality previews failed; do not publish this candidate merely because its 1,330 automated checks pass. Current source changes remove copyable placeholder answers, strengthen factual-report review, recover explicit report/outcome terminal envelopes and explain assertion-based validation. All 145 focused free-worker checks pass.
+
+Next step: introduce a first-class terminal tool (for example finish_task) with structured final/outcome fields, feeding the existing LLM evidence review. A native terminal request must not become an unknown tool or a project file. Preserve provider-valid tool-call/reply history when rejecting completion, reject ambiguous mixed action/finish batches before actions, and keep permission checks unchanged. Verify with automated protocol tests and a live read-only report before tagging anything. Avoid regex-based interpretation of report wording. Continue this work rather than starting a new maintenance issue or another implementation fixture.
+
+The CSV implementation fixture is complete at d899b04 and passes all five unchanged tests when independently run with the worker's UTF-8 stdio environment. Its initial final report was the literal completion-template placeholder. Preview 1 returned factual report/outcome JSON but the old parser treated it as an unnamed tool; preview 2 recovered that envelope but its reviewer demanded standalone repetition of error assertions, followed by invalid-plan retries; preview 3 reached the commands correctly but invoked an unknown final tool and created FINAL_REPORT.json despite the read-only request. The third run was stopped with an idle acknowledgement. That untracked evaluation artifact is preserved, not product source. Source modules and tests in the fixture were not changed by the reviews.
+
+The local preview backup `out/checks/report-preview-workers58.py` was checked against tag 1.0.58 and restored to the installed modules/workers.py before restart. The live bridge must remain on stable code until another explicitly tested preview or signed install is needed. Latest report metadata for CSV-report-review is in the installed worker_reports store; local fixture/session metadata is also under out/evals/current.json.
+
 ## 2026-10-23: contained command-loop check
 
 The installed 1.0.55 free worker received an isolated Git repository under `out/evals/command-loop-20261023`. Its task was to fix a JSON-lines totals function, leave the three existing tests unchanged, run unittest, and commit locally. The fixture has no remote and must not be published as a product release.
