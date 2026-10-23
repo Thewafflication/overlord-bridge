@@ -1,5 +1,13 @@
 # Live worker evaluations
 
+## 2026-10-23: package CLI implementation on installed 1.0.59
+
+A fresh isolated Git fixture at `out/evals/package-cli-20261023` tested a two-file Python package, module CLI, stdin, Unicode output, exact decimal aggregation and invalid/non-finite amount handling. Seed `85f816e` had four failing tests and one passing test when run from the fixture directory. `Package-cli-eval` received the README, both implementation files and five existing tests, with instructions to preserve tests, validate the CLI and commit locally. No remote is configured.
+
+The installed worker recovered from one malformed edit call, edited both implementation files, ran validation, committed `61812b1`, ran the requested `python -m unittest -v`, and submitted native finish_task. Completion review accepted the report; the run finished after 13 steps in about 155 seconds. OpenRouter returned 403/429 responses; NVIDIA gpt-oss-20b fallback completed the work. Local control then confirmed idle. Independent verification with the worker UTF-8 stdio environment passed all five tests, confirmed test_ledger.py unchanged, and found a clean fixture tree with only the two implementation files in the commit.
+
+Report-quality limitations remain: the final opening says “improved tests” although tests were unchanged, and mentions missing inputs beyond the exercised invalid/non-finite cases. The implementation also contains an inaccurate comment claiming ROUND_HALF_UP is the Decimal default; no rounding tie policy was specified or tested. These observations do not establish a new command-execution failure or justify a forced release. Do not redispatch this completed fixture as an implementation task. No product code or installed package was changed for this evaluation; Overlord remains online on 1.0.59.
+
 ## Latest completed work: native completion in 1.0.59
 
 The verified 1.0.59 change is merged into main, tagged, published and installed. It removes copyable placeholder answers, provides a native finish_task tool and final alias, strengthens factual-report review, recovers explicit report/outcome terminal envelopes and explains assertion-based validation. All 156 focused free-worker checks and the canonical suite (1,341 passed, one skip) pass, as do Windows/Linux release CI.
