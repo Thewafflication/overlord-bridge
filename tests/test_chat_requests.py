@@ -62,3 +62,28 @@ def test_truncate_reset(tmp_requests):
     assert msgs == []
     assert offset == 0
 
+
+
+@pytest.mark.parametrize('newline', [b'\n', b'\r\n'])
+def test_complete_record_followed_by_partial_unicode_record(tmp_requests, newline):
+    first = json.dumps({'text': 'first café'}, ensure_ascii=False).encode() + newline
+    second = json.dumps({'text': 'second 😀'}, ensure_ascii=False).encode() + newline
+    split = second.index('😀'.encode()) + 2
+    tmp_requests.write_bytes(first + second[:split])
+    messages, offset = read_requests(tmp_requests)
+    assert messages == ['first café'] and offset == len(first)
+    with tmp_requests.open('ab') as stream:
+        stream.write(second[split:])
+    messages, offset = read_requests(tmp_requests, offset)
+    assert messages == ['second 😀'] and offset == len(first + second)
+    assert read_requests(tmp_requests, offset) == ([], offset)
+
+
+def test_malformed_utf8_does_not_shift_following_record_offset(tmp_requests):
+    first = b'{"text":"bad \xff byte"}\r\n'
+    tmp_requests.write_bytes(first)
+    _, offset = read_requests(tmp_requests)
+    assert offset == len(first)
+    with tmp_requests.open('ab') as stream:
+        stream.write(b'{"text":"next"}\n')
+    assert read_requests(tmp_requests, offset)[0] == ['next']

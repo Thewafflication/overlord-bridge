@@ -74,17 +74,12 @@ def read_requests(path: Path, offset: int = 0) -> Tuple[List[str], int]:
             raw = f.read()
     except OSError:
         return [], offset
-    # Decode the bytes we just read.  Use errors='replace' so a truncated
-    # sequence doesn't crash.
-    text = raw.decode("utf-8", errors="replace")
-    # If the read does not end on a newline, the last line is incomplete; we
-    # drop it from the current batch.
-    if not text.endswith("\n"):
-        last_newline = text.rfind("\n")
-        if last_newline == -1:
-            return [], offset
-        # Include the newline in the slice to maintain byte length.
-        text = text[:last_newline + 1]
+    # Find complete records in bytes before decoding. Replacement characters
+    # and Windows newline translation must never change the consumed offset.
+    consumed = raw.rfind(b"\n") + 1
+    if not consumed:
+        return [], offset
+    text = raw[:consumed].decode("utf-8", errors="replace")
     messages: List[str] = []
     for line in text.splitlines():
         line = line.strip()
@@ -98,10 +93,6 @@ def read_requests(path: Path, offset: int = 0) -> Tuple[List[str], int]:
             txt = payload["text"].strip()
             if txt:
                 messages.append(txt)
-    # Compute the number of bytes actually consumed from the raw bytes read,
-    # not from the re-encoded decoded text.  Using len(raw) preserves exact
-    # byte offsets regardless of replacement characters or multi-byte UTF-8.
-    consumed = len(raw)
     return messages, offset + consumed
 
 
