@@ -152,3 +152,61 @@ try {
 ''')
     assert result == {"preserved": True, "backups": 0}
     assert (install / "marker").read_text() == "original install"
+
+
+def test_worker_reports_survive_upgrade_and_reinstall_state_round_trips(tmp_path):
+    install = tmp_path / 'Overlord'
+    reports = install / 'worker_reports'
+    (reports / 'latest').mkdir(parents=True)
+    latest = '{"name":"fixture","session":"saved-session","status":"incomplete"}\n'
+    (reports / 'latest/fixture.json').write_text(latest)
+    (reports / 'events.jsonl').write_text(latest * 2)
+    (reports / 'events.1.jsonl').write_text('older event\n')
+    (install / '.session.free').write_text('synthetic-pin')
+    (install / '.venv').mkdir()
+    (install / '.venv/cache').write_text('replaceable environment')
+    (install / 'run/local-control').mkdir(parents=True)
+    (install / 'run/local-control/service.json').write_text('{"instance":"stale-service"}')
+    result = run_script(tmp_path, r'''
+$state = Join-Path (Split-Path -Parent $Root) 'persistent-state'
+$replacement = Join-Path (Split-Path -Parent $Root) 'replacement'
+$reinstalled = Join-Path (Split-Path -Parent $Root) 'reinstalled'
+Copy-PersistentState -From $Root -To $state
+Copy-PersistentState -From $state -To $replacement
+# A subsequent state save/restore must merge at the same paths, not nest
+# worker_reports/worker_reports or lose the latest updated report.
+$latest = Join-Path $replacement 'worker_reports/latest/fixture.json'
+if (Test-Path -LiteralPath $latest) {
+    [IO.File]::WriteAllText($latest, '{"status":"finished"}')
+}
+Copy-PersistentState -From $replacement -To $state
+Copy-PersistentState -From $state -To $reinstalled
+@{latest=(Test-Path -LiteralPath $latest); nested=(Test-Path -LiteralPath (Join-Path $reinstalled 'worker_reports/worker_reports'))} | ConvertTo-Json -Compress
+''')
+    assert result == {'latest': True, 'nested': False}
+    restored = tmp_path / 'reinstalled'
+    assert (restored / 'worker_reports/latest/fixture.json').read_text() == '{"status":"finished"}'
+    assert (restored / 'worker_reports/events.jsonl').read_text() == latest * 2
+    assert (restored / 'worker_reports/events.1.jsonl').read_text() == 'older event\n'
+    assert (restored / '.session.free').read_text() == 'synthetic-pin'
+    assert (reports / 'latest/fixture.json').read_text() == latest
+    assert not (restored / '.venv').exists()
+    assert not (restored / 'run').exists()
+
+
+def test_worker_report_links_fail_before_copying_external_state(tmp_path):
+    result = run_script(tmp_path, r'''
+$reports = Join-Path $Root 'worker_reports'
+$outside = Join-Path (Split-Path -Parent $Root) 'outside'
+$destination = Join-Path (Split-Path -Parent $Root) 'saved'
+New-Item -ItemType Directory -Path $reports, $outside -Force | Out-Null
+[IO.File]::WriteAllText((Join-Path $outside 'sentinel.json'), 'external fixture')
+$kind = if ($IsWindows) { 'Junction' } else { 'SymbolicLink' }
+New-Item -ItemType $kind -Path (Join-Path $reports 'linked') -Target $outside | Out-Null
+$rejected = $false
+try { Copy-PersistentState -From $Root -To $destination }
+catch { $rejected = $_.Exception.Message -like 'Refusing linked worker report state*' }
+@{rejected=$rejected; copied=(Test-Path -LiteralPath (Join-Path $destination 'worker_reports'));
+  source=(Test-Path -LiteralPath (Join-Path $outside 'sentinel.json'))} | ConvertTo-Json -Compress
+''')
+    assert result == {'rejected': True, 'copied': False, 'source': True}

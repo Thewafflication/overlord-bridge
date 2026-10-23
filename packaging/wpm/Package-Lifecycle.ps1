@@ -52,6 +52,19 @@ function Copy-PersistentState {
     foreach ($session in @(Get-ChildItem -LiteralPath $From -Filter '.session.*' -File -ErrorAction SilentlyContinue)) {
         Copy-Item -LiteralPath $session.FullName -Destination (Join-Path $To $session.Name) -Force
     }
+    # Latest reports contain the worker/session mapping needed for resumption;
+    # event history and its rotation belong to the same persistent store.
+    $reports = Join-Path $From 'worker_reports'
+    if (Test-Path -LiteralPath $reports -PathType Container) {
+        $entries = @(Get-Item -LiteralPath $reports -Force) +
+            @(Get-ChildItem -LiteralPath $reports -Recurse -Force)
+        foreach ($entry in $entries) {
+            if ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                throw 'Refusing linked worker report state; the existing installation was not replaced.'
+            }
+        }
+        Copy-Item -LiteralPath $reports -Destination $To -Recurse -Force
+    }
 }
 
 function Assert-Python312 {
@@ -139,7 +152,7 @@ if ($Action -eq 'Remove') {
     if (Test-Path -LiteralPath $installRoot) {
         Remove-Item -LiteralPath $installRoot -Recurse -Force
     }
-    Write-Host "Removed Overlord. Preserved configuration and session pins in $stateRoot."
+    Write-Host "Removed Overlord. Preserved configuration, session pins and worker reports in $stateRoot."
     return
 }
 
