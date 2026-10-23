@@ -12,6 +12,12 @@ from pathlib import Path
 from tkinter import ttk
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from modules.chat_mirror import (  # noqa: E402
+    ChatMirror,
+    ROLE_OWNER,
+    describe_source,
+)
+from modules.chat_requests import append_request  # noqa: E402
 from modules.commands import format_brain_card  # noqa: E402
 from modules.version import display_version  # noqa: E402
 from modules.output_text import activity_summary  # noqa: E402
@@ -40,6 +46,22 @@ def format_brain_summary(name: str, status: dict, active_brain: str) -> str:
     return format_brain_card(name, status, active_brain)
 
 
+def format_chat_line(record: dict) -> str:
+    """Render one transcript record as a single console chat line.
+
+    The role says who spoke and the source says where they typed it, so a
+    message sent from this window is visibly the same message the phone got.
+    """
+    role = str(record.get("role") or "")
+    source = describe_source(str(record.get("source") or ""))
+    text = str(record.get("text") or "").rstrip()
+    if role == ROLE_OWNER:
+        label = "You"
+    else:
+        label = "Overlord"
+    return f"[{source}] {label}: {text}"
+
+
 class OverlordConsole:
     def __init__(
         self,
@@ -48,6 +70,7 @@ class OverlordConsole:
         state_path: Path,
         status_path: Path | None = None,
         command_path: Path | None = None,
+        chat_request_path: Path | None = None,
     ) -> None:
         self.log_path = log_path
         self.signal_path = signal_path
@@ -59,6 +82,19 @@ class OverlordConsole:
         self.file_identity: tuple[int, int, int] | None = None
         self.signal_mtime = 0
         self.status_mtime = 0
+
+        # Chat mirror is shared with the bridge: the bridge appends every
+        # owner message and every reply, and this window only reads it.
+        self.chat_mirror_path = Path(log_path.parent, "chat-mirror.jsonl")
+        self.chat_offset = 0
+        self.chat_messages = []  # store formatted lines for display
+        # Messages typed here travel to the bridge through an append-only
+        # queue, so two quick messages cannot overwrite each other.
+        self.chat_request_path = (
+            Path(chat_request_path)
+            if chat_request_path is not None
+            else Path(log_path.parent, "console-chat.jsonl")
+        )
 
         self.root = tk.Tk()
         self.root.title(f"Overlord Console — {self.version}")
@@ -103,6 +139,13 @@ class OverlordConsole:
         )
         style.configure(
             "Console.TCheckbutton", background="#111827", foreground="#e5e7eb"
+        )
+        style.configure(
+            "Console.TEntry",
+            fieldbackground="#0b1220",
+            foreground="#e5e7eb",
+            insertcolor="#ffffff",
+            bordercolor="#1e293b",
         )
 
         outer = ttk.Frame(self.root, style="Console.TFrame", padding=10)
@@ -194,6 +237,39 @@ class OverlordConsole:
                   wraplength=900, font=("Segoe UI", 11)).pack(fill="x", pady=(4, 12))
         self.log_toggle = ttk.Button(outer, text="Show detailed logs ▸", command=self.toggle_logs)
         self.log_toggle.pack(anchor="w", pady=(0, 6))
+        # --- Chat pane -----------------------------------------------------
+        ttk.Label(outer, text="Chat", style="Console.TLabel").pack(anchor="w")
+        self.chat_frame = ttk.Frame(outer, style="Console.TFrame")
+        self.chat_frame.pack(fill="both", expand=True)
+        # Scrollable text widget for chat
+        chat_scrollbar = ttk.Scrollbar(self.chat_frame, orient="vertical")
+        chat_scrollbar.pack(side="right", fill="y")
+        self.chat_text = tk.Text(
+            self.chat_frame,
+            bg="#07101f",
+            fg="#dbeafe",
+            insertbackground="#ffffff",
+            selectbackground="#1d4ed8",
+            relief="flat",
+            padx=12,
+            pady=10,
+            wrap="word",
+            font=("Cascadia Mono", 10),
+            yscrollcommand=chat_scrollbar.set,
+            state="disabled",
+        )
+        self.chat_text.pack(side="left", fill="both", expand=True)
+        chat_scrollbar.config(command=self.chat_text.yview)
+        # Input entry and send button
+        chat_input_frame = ttk.Frame(outer, style="Console.TFrame")
+        chat_input_frame.pack(fill="x", pady=(4, 0))
+        self.chat_entry = ttk.Entry(chat_input_frame, style="Console.TEntry")
+        self.chat_entry.pack(side="left", fill="x", expand=True)
+        self.chat_send_button = ttk.Button(chat_input_frame, text="Send", command=self._send_chat)
+        self.chat_send_button.pack(side="right")
+        # Bind Enter key to send
+        self.chat_entry.bind("<Return>", lambda _: self._send_chat())
+
         text_frame = self.log_frame = ttk.Frame(outer, style="Console.TFrame")
         scrollbar = ttk.Scrollbar(text_frame, orient="vertical")
         scrollbar.pack(side="right", fill="y")
@@ -232,6 +308,9 @@ class OverlordConsole:
         self.text.tag_configure("debug", foreground="#64748b")
         self.text.tag_configure("plain", foreground="#d1d5db")
         self.text.tag_configure("command", foreground="#86efac")
+        if hasattr(self, "chat_text"):
+            self.chat_text.tag_configure("owner", foreground="#86efac")
+            self.chat_text.tag_configure("overlord", foreground="#dbeafe")
 
     def _seek_initial_tail(self) -> None:
         try:
@@ -277,6 +356,67 @@ class OverlordConsole:
             return
         self._append(content)
         self.status.set(f"Live • {self.log_path} • PID {os.getpid()}")
+
+    def _read_new_chat(self) -> None:
+        """Pull newly recorded chat lines out of the shared transcript.
+
+        The bridge owns the conversation and appends to the transcript; this
+        only reads it, following the file by byte offset so a half-written
+        record is picked up once it is complete.
+        """
+        try:
+            stat = self.chat_mirror_path.stat()
+            identity = (stat.st_dev, stat.st_ino)
+            previous = getattr(self, "_chat_identity", identity)
+            if previous != identity or stat.st_size < self.chat_offset:
+                self.chat_offset = 0
+                self.chat_messages.clear()
+                self.chat_text.configure(state="normal")
+                self.chat_text.delete("1.0", "end")
+                self.chat_text.configure(state="disabled")
+            self._chat_identity = identity
+            records, self.chat_offset = ChatMirror(self.chat_mirror_path).read_since(
+                self.chat_offset
+            )
+        except OSError:
+            return
+        for record in records:
+            line = format_chat_line(record)
+            if not line.strip():
+                continue
+            self.chat_messages.append(line)
+            del self.chat_messages[:-MAX_WIDGET_LINES]
+            self.chat_text.configure(state="normal")
+            tag = "owner" if record.get("role") == ROLE_OWNER else "overlord"
+            self.chat_text.insert("end", line + "\n", tag)
+            self.chat_text.configure(state="disabled")
+        if records:
+            line_count = int(self.chat_text.index("end-1c").split(".", 1)[0])
+            if line_count > MAX_WIDGET_LINES:
+                self.chat_text.configure(state="normal")
+                self.chat_text.delete("1.0", f"{line_count - MAX_WIDGET_LINES}.0")
+                self.chat_text.configure(state="disabled")
+            if self.autoscroll.get():
+                self.chat_text.see("end")
+
+    def _send_chat(self) -> None:
+        """Send what was typed in the chat box to the bridge as an owner message.
+
+        The typed text is left in the box if it cannot be delivered, so nothing
+        the owner wrote is lost to a failed write.
+        """
+        text = self.chat_entry.get().strip()
+        if not text:
+            return
+        if self.command_path is None:
+            self.action_status.set("No bridge connected")
+            return
+        if not append_request(self.chat_request_path, text):
+            self.action_status.set("Could not send: the request queue is unavailable")
+            return
+        self.chat_entry.delete(0, "end")
+        self.action_status.set("Sent to Overlord")
+        self.root.after(4000, lambda: self.action_status.set(""))
 
     def _check_signal(self) -> None:
         try:
@@ -350,6 +490,7 @@ class OverlordConsole:
         self._read_new_log()
         self._check_signal()
         self._read_brain_status()
+        self._read_new_chat()
         self.root.after(POLL_MS, self.poll)
 
     def _write_visibility(self, state: str) -> None:
@@ -393,9 +534,11 @@ def main() -> None:
     parser.add_argument("--state", type=Path, required=True)
     parser.add_argument("--status", type=Path)
     parser.add_argument("--command", type=Path)
+    parser.add_argument("--chat-request", type=Path)
     args = parser.parse_args()
     OverlordConsole(
-        args.log, args.signal, args.state, args.status, args.command
+        args.log, args.signal, args.state, args.status, args.command,
+        args.chat_request,
     ).run()
 
 
