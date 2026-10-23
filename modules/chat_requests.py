@@ -98,8 +98,10 @@ def read_requests(path: Path, offset: int = 0) -> Tuple[List[str], int]:
             txt = payload["text"].strip()
             if txt:
                 messages.append(txt)
-    # Compute the number of bytes actually consumed.
-    consumed = len(text.encode("utf-8"))
+    # Compute the number of bytes actually consumed from the raw bytes read,
+    # not from the re-encoded decoded text.  Using len(raw) preserves exact
+    # byte offsets regardless of replacement characters or multi-byte UTF-8.
+    consumed = len(raw)
     return messages, offset + consumed
 
 
