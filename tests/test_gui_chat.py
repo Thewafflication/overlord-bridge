@@ -217,4 +217,3 @@ def test_failed_receipt_write_pauses_without_redelivering_in_same_process(tmp_pa
     blocked = False
     records, _ = reader.read()
     assert [text for text, _ in records] == ['second']
-
