@@ -1109,8 +1109,8 @@ def test_noop_writes_do_not_bypass_duplicate_guard(isolated, tmp_path):
     {'plan': [{'step': '', 'status': 'pending'}]},
     {'plan': [{'step': 'x' * 201, 'status': 'pending'}]},
     {'plan': [{'step': 'test', 'status': 'unknown'}]},
-    {'plan': [{'step': 'test', 'status': 'pending'}] * 13},
-    {'plan': [{'step': 'test', 'status': 'pending'}], 'explanation': 'x' * 1001},
+    {'plan': [{'step': 'test', 'status': 'pending'}] * (workers.WORKER_PLAN_MAX_STEPS + 1)},
+    {'plan': [{'step': 'test', 'status': 'pending'}], 'explanation': 'x' * (workers.WORKER_PLAN_EXPLANATION_CHARS + 1)},
 ])
 def test_invalid_worker_plans_are_rejected(tmp_path, args):
     mgr, _, _ = manager(tmp_path, None)
@@ -1492,3 +1492,35 @@ def test_exhausted_plan_retries_report_specific_field_error(isolated, tmp_path):
     assert events(mgr)[-1]['status'] == 'incomplete'
     assert 'Last plan error' in sent[-1] and 'plan[0].status' in sent[-1]
     assert 'PRIVATE-STATUS' not in sent[-1]
+
+
+def test_detailed_progress_plan_continues_within_context_budget(isolated, tmp_path):
+    project = isolated / 'detailed-progress-plan'
+    project.mkdir()
+    pressure = context_pressure_actions(project)
+    detailed = {'plan': [{'step': f'Verify concrete GUI case {i}', 'status': 'pending'} for i in range(24)],
+                'explanation': 'Confirmed queue findings and remaining integration cases. ' * 60}
+    assert 1000 < len(detailed['explanation']) <= 4000
+    initial = call('update_plan', {'plan': [{'step': 'Inspect', 'status': 'in_progress'}]})
+    completer, seen = scripted_pool([*pressure, final_result('Read-only assessment')],
+                                  plans=[initial, call('update_plan', detailed)])
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert len(completer.planning) == 2
+    assert 'Verify concrete GUI case 23' in str(seen[-1][0])
+    assert all(len(json.dumps(messages, ensure_ascii=False)) <= 48000 for messages, _ in seen)
+    assert events(mgr)[-1]['status'] == 'finished'
+
+
+@pytest.mark.parametrize('args, expected', [
+    ({'plan': 'PRIVATE-PLAN'}, 'array of step objects'),
+    ({'plan': []}, 'contains 0 steps'),
+    ({'plan': [{'step': 'inspect', 'status': 'pending'}] * 25}, 'contains 25 steps'),
+    ({'plan': [{'step': 'inspect', 'status': 'pending'}], 'explanation': 'x' * 4001},
+     'has 4001 characters'),
+])
+def test_plan_size_diagnostics_distinguish_shape_and_actual_counts(tmp_path, args, expected):
+    mgr, _, _ = manager(tmp_path, None)
+    result = run(mgr._local_agent_execute_tool(tmp_path, 'update_plan', args))
+    assert result['error'] == 'invalid_plan' and expected in result['message']
+    assert 'PRIVATE-PLAN' not in json.dumps(result)
