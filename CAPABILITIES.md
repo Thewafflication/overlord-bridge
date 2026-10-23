@@ -6,6 +6,8 @@ workflow lands.
 
 ## Current Capabilities
 
+- Local worker control: `python -m modules.local_control status|stop --run-dir <bridge-run-directory>` (or installed `overlord-control`) reads live task state or uses the same cancellation path as Telegram `/stop`, without a model call or credentials. The `control_overlord` MCP tool exposes the same interface. Stop succeeds only when active turn and worker cleanup are confirmed idle; timeout or `cleanup_pending` is not confirmation. The bridge stays running. Requests carry an instance ID, unique request ID and deadline so stale/expired requests cannot stop a later bridge. In owner-authorized monitoring/fix sessions, use this to stop and verify locally instead of requesting a manual Telegram round trip. See [local control](docs/local-control.md).
+
 - Context monitoring: `/context` shows the latest fresh session/model-matched
   observation and the warning/automatic-compaction settings. Configure
   `OVERLORD_CONTEXT_WARN_PERCENT` (75), `OVERLORD_CONTEXT_COMPACT_PERCENT` (85)

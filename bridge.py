@@ -808,6 +808,8 @@ class Bridge:
             asyncio.create_task(self._status_refresh_loop())
         asyncio.create_task(self._console_command_loop())
         asyncio.create_task(self._chat_request_loop())
+        from modules.local_control import serve
+        control_task = asyncio.create_task(serve(BASE_DIR / "run", self._local_control_action, self._shutdown_event))
         try:
             while not self._shutdown_event.is_set():
                 chat_id, text = await asyncio.get_running_loop().run_in_executor(
@@ -817,6 +819,8 @@ class Bridge:
                     break
                 await self._dispatch_inbound(chat_id, text)
         finally:
+            control_task.cancel()
+            await asyncio.gather(control_task, return_exceptions=True)
             if self._turn_is_active():
                 await self._stop_active_turn()
             await self.brain.disconnect()
@@ -1571,6 +1575,22 @@ class Bridge:
         if done and not task.cancelled():
             task.exception()  # retrieve a finished task's failure
         return not pending
+
+    async def _local_control_action(self, action: str) -> dict[str, Any]:
+        """Use the owner stop path and acknowledge actual cleanup, not receipt."""
+        if action not in {"status", "stop"}:
+            return {"ok": False, "error": "invalid_control_request"}
+        if action == "stop":
+            log.info("Local control requested stop")
+            await self._handle_stop(OWNER)
+        running = getattr(getattr(self, "workers", None), "_running", {})
+        workers = sorted(name for name, task in list(running.items()) if not task.done())
+        active = self._turn_is_active()
+        idle = not active and not workers
+        return {"ok": action == "status" or idle, "stopped": idle if action == "stop" else None,
+                "state": {"active_turn": active, "workers": workers, "idle": idle,
+                          "version": display_version()},
+                **({"error": "cleanup_pending"} if action == "stop" and not idle else {})}
 
     async def _handle_stop(self, chat_id: int) -> None:
         running = getattr(getattr(self, "workers", None), "_running", {})

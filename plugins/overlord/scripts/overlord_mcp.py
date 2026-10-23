@@ -230,6 +230,20 @@ def _append_worker_handoff(folder: str, name: str, task: str, recommendation: di
         return {"ok": False, "path": str(path), "error": str(exc)}
 
 
+def control_overlord(action: str = "status", run_dir: str | None = None) -> dict[str, Any]:
+    """Local acknowledged control; no Telegram API or model credentials needed."""
+    if action not in {"status", "stop"}:
+        return {"ok": False, "error": "invalid_control_request"}
+    command = [sys.executable, "-m", "modules.local_control", action]
+    if run_dir:
+        command += ["--run-dir", run_dir]
+    result = _run(command, timeout=35)
+    try:
+        return json.loads(result["stdout"])
+    except (ValueError, TypeError):
+        return {"ok": False, "error": "control_client_failed", "stderr": result.get("stderr", "")}
+
+
 def dispatch_overlord_worker(
     name: str,
     folder: str,
@@ -781,6 +795,13 @@ def net_ssh(
 
 ToolFn = Callable[..., Any]
 TOOLS: dict[str, tuple[ToolFn, dict[str, Any]]] = {
+    "control_overlord": (control_overlord, {
+        "description": "Read live local bridge/worker status or stop the active turn and workers through the owner cancellation path. Stop succeeds only after cleanup is confirmed; cleanup_pending/timeout is not a stopped acknowledgement. Use when authorized by the owner to control Overlord.",
+        "inputSchema": {"type": "object", "properties": {
+            "action": {"type": "string", "enum": ["status", "stop"], "default": "status"},
+            "run_dir": {"type": "string", "description": "Optional bridge run directory; auto-detects the installed Windows bridge."}},
+            "additionalProperties": False},
+    }),
     "list_overlord_capabilities": (
         list_overlord_capabilities,
         {
