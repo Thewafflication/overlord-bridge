@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "overlord-bridge"
-version = "1.0.48"
+version = "1.0.49"
 description = "Drive a home-rooted Overlord agent from Telegram (Claude/Codex control bridge)."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -27,6 +27,7 @@ Homepage = "https://github.com/Thewafflication/overlord-bridge"
 
 [project.scripts]
 overlord-bridge = "bridge:main"
+overlord-control = "modules.local_control:main"
 
 # The distributable Python surface is the top-level bridge module plus the
 # modules package. Shell entry points (overlord, overlord-email) and runtime

@@ -300,3 +300,17 @@ def test_main_survives_malformed_and_non_object_lines(monkeypatch):
     assert array_error["error"]["code"] == -32600
     assert number_error["error"]["code"] == -32600
     assert listing["id"] == 9 and listing["result"]["tools"]
+
+
+def test_local_control_tool_uses_acknowledged_cli_and_preserves_failure(monkeypatch):
+    calls = []
+    def fake_run(argv, **kwargs):
+        calls.append(argv)
+        return {'stdout': '{"ok":false,"error":"cleanup_pending"}', 'stderr': '', 'ok': False}
+    monkeypatch.setattr(om, '_run', fake_run)
+    result = om.control_overlord('stop', 'C:/Overlord/run')
+    assert result == {'ok': False, 'error': 'cleanup_pending'}
+    assert calls[0][1:] == ['-m', 'modules.local_control', 'stop', '--run-dir', 'C:/Overlord/run']
+    assert 'control_overlord' in om.TOOLS
+    assert om.control_overlord('run_command')['error'] == 'invalid_control_request'
+    assert len(calls) == 1
