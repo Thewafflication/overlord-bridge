@@ -9,3 +9,5 @@ The worker read both files, edited the function correctly, ran all three tests s
 The run also exposed the tool name `run_python<|channel|>json`, which was rejected as unknown. The model recovered by using run_command, but the known mechanical wrapper should be normalized through the same approval and command-restriction path as the existing analysis/commentary wrappers.
 
 Next evaluation step: after installing the wrapper fix and confirming provider availability, resume `Command-loop-eval` from the session in its latest installed worker report. Verify the unchanged tests, local commit and completion report independently. Continue from the staged work rather than recreating the fixture. The untracked Python cache is test output, not product source.
+
+The wrapper fix is installed in 1.0.56 and independently verified in installed Python. A resume request is being submitted using the saved session and staged fixture; follow its current live status and latest report before dispatching another run. Provider unavailability remains a possible external blocker and must not be reported as successful completion.
