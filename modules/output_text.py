@@ -55,7 +55,7 @@ def worker_tool_name(raw: str) -> str:
     if marker and channel.strip() in {"analysis", "commentary", "json"}:
         name = head.strip()
     name = name.removeprefix("functions.")
-    return {"run": "run_command", "bash": "run_command", "shell": "run_command",
+    return {"final": "finish_task", "run": "run_command", "bash": "run_command", "shell": "run_command",
             "read": "read_file", "search": "search_file", "write": "write_file",
             "list": "list_files"}.get(name, name)
 

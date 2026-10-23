@@ -828,6 +828,85 @@ def test_malformed_report_outcome_does_not_crash_worker(isolated, tmp_path, outc
     assert len(completer.reviews) == 1
 
 
+@pytest.mark.parametrize('name', ['finish_task', 'final', 'functions.finish_task<|channel|>json'])
+def test_native_completion_tool_delivers_report_without_a_project_file(isolated, tmp_path, name):
+    project = isolated / 'native-final'
+    project.mkdir()
+    text = 'Reviewed the existing project; no changes or commits were requested.'
+    completer, seen = scripted_pool([call(name, {'final': text, 'outcome': 'finished'})])
+    mgr, sent, _ = manager(tmp_path, completer)
+    start(mgr, project, task='Review the existing project without editing files.')
+    assert events(mgr)[-1]['status'] == 'finished' and text in sent[-1]
+    assert len(completer.reviews) == 1 and len(seen) == 1
+    assert list(project.iterdir()) == []
+    assert any(tool['function']['name'] == 'finish_task' for tool in seen[0][1])
+
+
+def test_rejected_native_completion_keeps_matching_tool_reply_before_retry(isolated, tmp_path):
+    project = isolated / 'native-retry'
+    project.mkdir()
+    text = 'Reviewed the project; no implementation was requested.'
+    completer, seen = scripted_pool([
+        call('finish_task', {'final': 'summary', 'outcome': 'finished'}, 'first'),
+        call('finish_task', {'final': text, 'outcome': 'finished'}, 'second'),
+    ], reviews=[{'content': '{"complete":false,"reason":"Rewrite the placeholder using the existing evidence"}'},
+                {'content': '{"complete":true,"reason":"Factual report"}'}])
+    mgr, sent, _ = manager(tmp_path, completer)
+    start(mgr, project, task='Review the project without edits.')
+    assert events(mgr)[-1]['status'] == 'finished' and text in sent[-1]
+    history = seen[1][0]
+    calls = [m for m in history if m.get('tool_calls')]
+    replies = [m for m in history if m.get('role') == 'tool']
+    assert calls[0]['tool_calls'][0]['id'] == replies[0]['tool_call_id'] == 'first'
+    assert json.loads(replies[0]['content'])['completion_confirmed'] is False
+    assert any('Completion review rejected' in m['content'] for m in history if m['role'] == 'user')
+
+
+def test_native_completion_cannot_be_batched_with_project_actions(isolated, tmp_path):
+    project = isolated / 'mixed-native'
+    project.mkdir()
+    batch = call('write_file', {'path': 'must-not-exist', 'content': 'no'}, 'write')
+    batch['tool_calls'] += call('finish_task', {'final': 'Done', 'outcome': 'finished'}, 'finish')['tool_calls']
+    completer, seen = scripted_pool([batch, call('finish_task', {'final': 'Review blocked by invalid batch', 'outcome': 'blocked'})])
+    mgr, sent, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert events(mgr)[-1]['status'] == 'incomplete'
+    assert not (project / 'must-not-exist').exists() and not completer.reviews
+    assert not any(m.get('tool_calls') for m in seen[1][0])
+    assert 'only call' in seen[1][0][-1]['content']
+
+
+@pytest.mark.parametrize('arguments', [{}, {'final': '', 'outcome': 'finished'},
+                                      {'final': 'A report', 'outcome': []},
+                                      {'final': 'A report', 'outcome': 'unexpected'},
+                                      {'final': 'A report', 'outcome': 'finished', 'command': 'anything'}])
+def test_native_completion_schema_errors_are_repairable_without_actions(isolated, tmp_path, arguments):
+    project = isolated / 'invalid-native'
+    project.mkdir()
+    completer, seen = scripted_pool([
+        call('finish_task', arguments, 'bad'),
+        call('finish_task', {'final': 'Cannot continue without the required inputs', 'outcome': 'blocked'}, 'good'),
+    ])
+    mgr, sent, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert events(mgr)[-1]['status'] == 'incomplete'
+    assert not completer.reviews and list(project.iterdir()) == []
+    error = next(json.loads(m['content']) for m in seen[1][0] if m['role'] == 'tool')
+    assert error['ok'] is False
+
+
+def test_json_fallback_can_use_native_completion_tool_name(isolated, tmp_path):
+    project = isolated / 'json-native'
+    project.mkdir()
+    text = 'Reviewed existing project; no modifications requested.'
+    completer, _ = scripted_pool([{'content': json.dumps({
+        'tool': 'finish_task', 'arguments': {'final': text, 'outcome': 'finished'}})}])
+    mgr, sent, _ = manager(tmp_path, completer)
+    start(mgr, project, task='Review the project without editing files.')
+    assert events(mgr)[-1]['status'] == 'finished' and text in sent[-1]
+    assert len(completer.reviews) == 1
+
+
 def test_worker_ignoring_completion_checkpoint_is_incomplete(isolated, tmp_path):
     project = isolated / 'ignored-checkpoint'
     project.mkdir()

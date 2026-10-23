@@ -141,7 +141,9 @@ DEFAULT_LOCAL_AGENT_SLOT_CHECK_INTERVAL = 5
 DEFAULT_LOCAL_AGENT_IDLE_STALL_GRACE = 20
 DEFAULT_LOCAL_AGENT_TOOL_OUTPUT_CHARS = 24000
 WORKER_FINAL_CONTRACT = (
-    "When the task is complete, return one JSON object with a field named 'final' containing a JSON string "
+    "When the task is complete, call finish_task to submit your factual report to the owner. "
+    "Do not create a report file unless the user requested one. If formal tools are unavailable, "
+    "return one JSON object with a field named 'final' containing a JSON string "
     "and a field named 'outcome' set to 'finished'. Write the 'final' value as your own factual, "
     "task-specific report: name the actual changes, validation results "
     "and any required commit. Supply actual facts, not sample values, instructions or a template. "
@@ -970,6 +972,14 @@ def _local_agent_tools() -> list[dict[str, Any]]:
             },
         },
     ]
+    tools.append({"type": "function", "function": {
+        "name": "finish_task",
+        "description": "Submit your final factual report and request completion review. Use this tool instead of writing a report file or invoking an unavailable final tool. Call it alone, after required work and validation; rejection lets you correct the report or finish missing work.",
+        "parameters": {"type": "object", "properties": {
+            "final": {"type": "string", "minLength": 1,
+                      "description": "Your task-specific factual summary of actual work, validation results and any required commit; never copy a template."},
+            "outcome": {"type": "string", "enum": ["finished", "blocked"]}},
+            "required": ["final", "outcome"]}}})
     for tool in tools:
         tool["function"]["parameters"]["additionalProperties"] = False
     return tools
@@ -1093,6 +1103,18 @@ def _worker_call_envelope_error(calls: Any) -> str | None:
         name = function.get("name")
         if not isinstance(name, str) or not name.strip():
             return "function.name must be a nonempty string naming an available tool."
+    if len(calls) > 1 and any(worker_tool_name(call["function"]["name"]) == "finish_task" for call in calls):
+        return "finish_task must be the only call in a response; no action in this mixed batch was executed."
+    return None
+
+
+def _finish_task_error(arguments: Any) -> dict[str, Any] | None:
+    error = _worker_argument_error("finish_task", arguments)
+    if error:
+        return error
+    if not str(arguments.get("final") or "").strip() or arguments.get("outcome") not in ("finished", "blocked"):
+        return {"ok": False, "error": "invalid_finish_task",
+                "message": "Supply a nonempty final string and outcome equal to finished or blocked. No completion was confirmed."}
     return None
 
 
@@ -2404,6 +2426,7 @@ class WorkerManager:
                 if content:
                     transcript.append(f"assistant[{step}]: {content}")
 
+                native_final = None
                 if tool_calls:
                     envelope_error = _worker_call_envelope_error(tool_calls)
                     if envelope_error:
@@ -2439,8 +2462,14 @@ class WorkerManager:
                             arguments = {"__invalid_json_arguments__": True}
                         if not isinstance(arguments, dict):
                             arguments = {"__invalid_json_arguments__": True}
-                        duplicate_result = repeated_tool_call_result(tool_name, arguments)
-                        result = await execute_with_progress(tool_name, arguments, duplicate_result)
+                        if tool_name == "finish_task":
+                            result = _finish_task_error(arguments)
+                            if result is None:
+                                native_final = arguments
+                                result = {"ok": True, "completion_submitted": True, "completion_confirmed": False}
+                        else:
+                            duplicate_result = repeated_tool_call_result(tool_name, arguments)
+                            result = await execute_with_progress(tool_name, arguments, duplicate_result)
                         result_text = _local_agent_json_result(result, DEFAULT_LOCAL_AGENT_TOOL_OUTPUT_CHARS)
                         transcript.append(f"tool[{step}:{tool_name}]: {result_text}")
                         messages.append(
@@ -2454,11 +2483,21 @@ class WorkerManager:
                         if followup:
                             transcript.append(f"coach[{step}:{tool_name}]: {followup}")
                             messages.append({"role": "user", "content": followup})
-                    await check_discovery_progress()
-                    continue
+                    if native_final is None:
+                        await check_discovery_progress()
+                        continue
 
-                fallback = _extract_json_object(content) or _extract_xmlish_tool_call(content)
+                fallback = native_final or _extract_json_object(content) or _extract_xmlish_tool_call(content)
                 if fallback:
+                    if worker_tool_name(fallback.get("tool") or fallback.get("name") or fallback.get("action") or "") == "finish_task":
+                        arguments = fallback.get("arguments")
+                        error = _finish_task_error(arguments)
+                        if error:
+                            messages.append({"role": "assistant", "content": content})
+                            messages.append({"role": "user", "content": json.dumps(error)})
+                            transcript.append(f"tool[{step}:finish_task]: {json.dumps(error)}")
+                            continue
+                        fallback = arguments
                     # An observed model envelope uses report for final. Recover
                     # only explicit terminal envelopes, never tool requests or
                     # arbitrary report-shaped JSON. Normal completion review
@@ -2530,7 +2569,8 @@ class WorkerManager:
                                     break
                                 final_review_rejected = True
                                 completion_feedback = "Completion review rejected this result: " + reason
-                                messages.append({"role": "assistant", "content": content})
+                                if native_final is None:
+                                    messages.append({"role": "assistant", "content": content})
                                 messages.append({"role": "user", "content": (
                                     "Completion review rejected this result: " + reason +
                                     " Address the missing work. Use tools when needed; if only the report needs "
