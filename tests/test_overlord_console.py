@@ -152,3 +152,12 @@ def test_collapsed_logs_keep_collecting_and_toggle_without_losing_text():
         assert "completed" in console.text.get("1.0", "end")
     finally:
         root.destroy()
+
+
+def test_rapid_approval_responses_are_queued_without_overwriting(tmp_path):
+    from modules.chat_requests import read_requests
+    console = _console(tmp_path, tmp_path / 'console-command.json')
+    console.send_command('respond', request_id='one', answer='allow')
+    console.send_command('respond', request_id='two', answer='deny')
+    records, _ = read_requests(tmp_path / 'console-responses.jsonl')
+    assert [(json.loads(row)['request_id'], json.loads(row)['answer']) for row in records] == [('one','allow'),('two','deny')]

@@ -132,7 +132,7 @@ def request_reload(command_path: Path | None) -> bool:
 class SetupWindow:
     def __init__(self, env_path: Path, command_path: Path | None) -> None:
         self.env_path, self.command_path = env_path, command_path
-        current = read_env(env_path, (GEMINI_KEY, "GEMINI_API_KEY", GEMINI_ENABLED, NVIDIA_KEY, "NVIDIA_API_KEY", OPENROUTER_KEY,
+        current = read_env(env_path, ("OVERLORD_TELEGRAM_ENABLED", "TELEGRAM_BOT_TOKEN", "OWNER_CHAT_ID", GEMINI_KEY, "GEMINI_API_KEY", GEMINI_ENABLED, NVIDIA_KEY, "NVIDIA_API_KEY", OPENROUTER_KEY,
                                       "OVERLORD_WORKER_OPENROUTER_API_KEY", OPENROUTER_ENABLED) + SETTING_NAMES)
         self.saved_gemini = current.get(GEMINI_KEY) or current.get("GEMINI_API_KEY", "")
         self.saved_nvidia = current.get(NVIDIA_KEY) or current.get("NVIDIA_API_KEY", "")
@@ -158,6 +158,23 @@ class SetupWindow:
         notebook.pack(fill="both", expand=True, padx=12, pady=12)
         outer = ttk.Frame(notebook, style="Setup.TFrame", padding=16)
         notebook.add(outer, text="API keys")
+        integrations = ttk.Frame(notebook, style="Setup.TFrame", padding=16)
+        notebook.add(integrations, text="Integrations")
+        default_telegram = bool(current.get("TELEGRAM_BOT_TOKEN") and current.get("OWNER_CHAT_ID"))
+        self.use_telegram = tk.BooleanVar(value=current.get("OVERLORD_TELEGRAM_ENABLED", str(int(default_telegram))).lower() in ("1", "true", "yes", "on"))
+        ttk.Checkbutton(integrations, text="Enable Telegram", variable=self.use_telegram,
+                        style="Setup.TCheckbutton").pack(anchor="w", pady=8)
+        ttk.Label(integrations, text="Console chat, approvals and questions work without Telegram. "
+                             "Restart Overlord after changing these integration settings.",
+                  style="Muted.TLabel", wraplength=520).pack(anchor="w", pady=8)
+        ttk.Label(integrations, text="Bot token (leave blank to keep saved token)", style="Setup.TLabel").pack(anchor="w")
+        self.telegram_token = ttk.Entry(integrations, show="•", width=60)
+        self.telegram_token.pack(fill="x", pady=4)
+        self.saved_telegram_token = current.get("TELEGRAM_BOT_TOKEN", "")
+        ttk.Label(integrations, text="Owner chat ID", style="Setup.TLabel").pack(anchor="w")
+        self.telegram_owner = ttk.Entry(integrations, width=60)
+        self.telegram_owner.insert(0, current.get("OWNER_CHAT_ID", ""))
+        self.telegram_owner.pack(fill="x", pady=4)
         projects = ttk.Frame(notebook, style="Setup.TFrame", padding=16)
         notebook.add(projects, text="Projects")
         self.project_folders = self._folder_list(projects, "Individual project folders",
@@ -315,7 +332,20 @@ class SetupWindow:
             if problem:
                 self.status.set("✗ " + problem)
                 return
+        if self.use_telegram.get():
+            token = self.telegram_token.get().strip() or self.saved_telegram_token
+            try:
+                int(self.telegram_owner.get().strip())
+            except ValueError:
+                self.status.set("Enter a numeric owner chat ID to enable Telegram.")
+                return
+            if not token:
+                self.status.set("Enter a bot token to enable Telegram.")
+                return
         values: dict[str, str | None] = {
+            "OVERLORD_TELEGRAM_ENABLED": "1" if self.use_telegram.get() else "0",
+            "TELEGRAM_BOT_TOKEN": self.telegram_token.get().strip() or None,
+            "OWNER_CHAT_ID": self.telegram_owner.get().strip(),
             GEMINI_KEY: self.gemini.get().strip() or None,
             GEMINI_ENABLED: "1" if self.use_gemini.get() else "0",
             NVIDIA_KEY: nvidia or None,
@@ -341,7 +371,7 @@ class SetupWindow:
             return
         reloaded = request_reload(self.command_path)
         self.status.set("✓ Saved. " + (
-            "A running Overlord will pick the settings up within a second or two."
+            "Other settings reload now; restart Overlord for Telegram integration changes."
             if reloaded else "Restart Overlord to apply them."))
         for entry in (self.nvidia, self.openrouter, self.gemini):
             entry.delete(0, "end")

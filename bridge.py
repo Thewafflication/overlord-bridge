@@ -296,10 +296,11 @@ FREE_WORK_PATIENCE = max(0, env_int("OVERLORD_FREE_WORK_PATIENCE", 120))
 FREE_WORK_STEPS = max(0, env_int("OVERLORD_FREE_WORK_STEPS", 0))
 PROJECTS_ROOT = os.environ.get("OVERLORD_PROJECTS_ROOT", "").strip()
 
-if not TOKEN or not OWNER_RAW:
+TELEGRAM_ENABLED = env_bool("OVERLORD_TELEGRAM_ENABLED", bool(TOKEN and OWNER_RAW))
+if TELEGRAM_ENABLED and (not TOKEN or not OWNER_RAW):
     startup_state.failed("Configuration", "TELEGRAM_BOT_TOKEN and OWNER_CHAT_ID must be set in .env")
     sys.exit("ERROR: TELEGRAM_BOT_TOKEN and OWNER_CHAT_ID must be set in .env")
-OWNER = int(OWNER_RAW)
+OWNER = int(OWNER_RAW) if TELEGRAM_ENABLED else 0
 
 # Per-brain session files: a Claude session id and a Codex thread id are not
 # interchangeable, so each brain keeps its own pinned thread across brain
@@ -525,14 +526,18 @@ class Bridge:
             audit=PermissionAudit(BASE_DIR / "run/permissions.jsonl", root=BASE_DIR),
         )
         self.chat_mirror = ChatMirror(CHAT_MIRROR_FILE)
-        self.telegram = TelegramHandler(
+        backend = TelegramHandler(
             TOKEN,
             self.inbound,
             OWNER,
             on_permission_response=self.gate.on_permission_response,
             on_choice_response=self.gate.on_choice_response,
             on_send=self._mirror_outbound,
-        )
+        ) if TELEGRAM_ENABLED else None
+        from modules.console_transport import ConsoleTransport
+        self.telegram = ConsoleTransport(BASE_DIR / 'run' / 'console-prompts.json', self.inbound, OWNER,
+                                         self._mirror_outbound, self.gate.on_permission_response,
+                                         self.gate.on_choice_response, backend)
         self.gate.telegram = self.telegram
         self.brain_name = _BRAIN_NAME
         self.brain = build_brain(self.gate, self.brain_name)
@@ -758,12 +763,11 @@ class Bridge:
 
     # ---------------------------------------------------------------- main loop
     async def run(self) -> None:
-        startup_state.report("Connecting to Telegram")
+        startup_state.report("Connecting to Telegram" if TELEGRAM_ENABLED else "Starting local console")
         self.telegram.start()
         if not self.telegram.wait_ready(30):
-            log.error("Telegram handler failed to start within 30s")
-            startup_state.failed("Telegram", "Telegram did not connect within 30s. Check the bot token and network.")
-            return
+            log.warning("Telegram did not connect; continuing with the local console")
+            self.telegram.disable_backend()
 
         resumed = session_file_for(self.brain_name).exists()
         startup_state.report(f"Starting the {self.brain.name} brain")
@@ -786,6 +790,8 @@ class Bridge:
             self.gate.permission_level,
         )
         self.tray.start(self.brain.name)
+        if getattr(self.telegram, 'backend', TELEGRAM_ENABLED) is None or not TELEGRAM_ENABLED:
+            self.tray._toggle_console_clicked(None, None)
         self._chat_request_path = CONSOLE_CHAT_FILE
         approve_note = f"\nPermission level: {self.gate.permission_level}."
         if self._conversation_history.persistence_note:
@@ -890,7 +896,7 @@ class Bridge:
         if chat_mirror is None:
             chat_mirror = DisabledChatMirror()
             object.__setattr__(self, "chat_mirror", chat_mirror)
-        chat_mirror.append(ROLE_OVERLORD, text, source=SOURCE_TELEGRAM)
+        chat_mirror.append(ROLE_OVERLORD, text, source=SOURCE_TELEGRAM if getattr(self.telegram, 'backend', TELEGRAM_ENABLED) else SOURCE_GUI)
 
     async def _free_pool(self):
         """The free-model pool workers draw from: the active free brain, else a
@@ -1272,9 +1278,21 @@ class Bridge:
     async def _chat_request_loop(self) -> None:
         """Poll the console chat queue and forward owner messages to the bridge."""
         reader = RequestReader(self._chat_request_path)
+        responses = RequestReader(self._chat_request_path.parent / 'console-responses.jsonl')
         while not self._shutdown_event.is_set():
             await asyncio.sleep(0.3)
             try:
+                replies, reply_end = responses.read()
+                for raw, end in replies:
+                    try:
+                        response = json.loads(raw)
+                    except (TypeError, ValueError):
+                        response = None
+                    if isinstance(response, dict) and response.get('action') == 'respond':
+                        await self._run_console_action('respond', response)
+                    responses.acknowledge(end)
+                if reply_end > responses.state['offset']:
+                    responses.acknowledge(reply_end)
                 records, complete_end = reader.read()
                 for text, end in records:
                     await self._handle_gui_chat({"text": text})
@@ -1357,6 +1375,13 @@ class Bridge:
         if action == "shutdown":
             log.info("Stop requested from the console")
             self.request_shutdown()
+        elif action == "stop_task":
+            await self._handle_stop(OWNER)
+        elif action == "respond":
+            payload = payload or {}
+            respond = getattr(self.telegram, 'respond', None)
+            if respond is not None:
+                respond(str(payload.get('request_id') or ''), payload.get('answer'))
         elif action == "refresh_status":
             await self._refresh_status(self.brain, force=True)
             self._write_console_status()
@@ -1511,6 +1536,7 @@ class Bridge:
             )
         payload = {
             "version": display_version(),
+            "telegram_enabled": bool(getattr(self.telegram, 'backend', TELEGRAM_ENABLED)),
             "active_brain": self.brain.name,
             "brains": statuses,
         }
@@ -1705,6 +1731,10 @@ class Bridge:
         parts = text.strip().split(maxsplit=1)
         current = getattr(self.brain, kind, None)
         env_key = self._env_key_for(kind, self.brain.name)
+        if len(parts) > 1 and parts[1].strip():
+            clear_options = getattr(self.telegram, 'clear_command_options', None)
+            if clear_options is not None:
+                clear_options()
 
         if len(parts) == 1 or not parts[1].strip():
             routing = ""

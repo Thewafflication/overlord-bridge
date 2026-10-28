@@ -98,13 +98,17 @@ class OverlordConsole:
 
         self.root = tk.Tk()
         self.root.title(f"Overlord Console — {self.version}")
-        self.root.geometry("1000x620")
-        self.root.minsize(640, 360)
+        self.root.geometry("1080x780")
+        self.root.minsize(800, 640)
         self.root.configure(bg="#111827")
         self.root.protocol("WM_DELETE_WINDOW", self.hide)
 
         self.autoscroll = tk.BooleanVar(value=True)
         self.logs_visible = False
+        self.details_visible = False
+        self.prompts_mtime = 0
+        self.connection = tk.StringVar(value="Connecting to Overlord…")
+        self.response_state = tk.StringVar(value="Ready")
         self.activity = tk.StringVar(value="Waiting for activity…")
         self.status = tk.StringVar(value=f"Live log: {self.log_path}")
         # Replaced by the running bridge's version as soon as it publishes one:
@@ -112,8 +116,6 @@ class OverlordConsole:
         # it is watching, and the bridge's number is the truthful one.
         self.version_label = tk.StringVar(value=self.version)
         self._build_ui()
-        if sys.platform == "win32":
-            self.root.state("zoomed")
         self._configure_tags()
         self._seek_initial_tail()
         self._write_visibility("visible")
@@ -164,14 +166,14 @@ class OverlordConsole:
             style="Console.TLabel",
             font=("Segoe UI", 9),
         ).pack(side="left", padx=(8, 0))
-        ttk.Button(toolbar, text="Clear", command=self.clear).pack(side="right")
-        ttk.Button(toolbar, text="Copy All", command=self.copy_all).pack(
+        ttk.Button(toolbar, text="Clear logs", command=self.clear).pack(side="right")
+        ttk.Button(toolbar, text="Copy logs", command=self.copy_all).pack(
             side="right", padx=6
         )
         ttk.Button(toolbar, text="Hide", command=self.hide).pack(side="right")
         ttk.Button(toolbar, text="Settings…", command=self.open_settings).pack(side="right", padx=6)
-        stop_button = ttk.Button(toolbar, text="Stop Overlord",
-                                 command=lambda: self.send_command("shutdown"))
+        stop_button = ttk.Button(toolbar, text="Stop task",
+                                 command=lambda: self.send_command("stop_task"))
         stop_button.pack(side="right", padx=6)
         if self.command_path is None:
             stop_button.state(["disabled"])
@@ -182,7 +184,7 @@ class OverlordConsole:
             style="Console.TCheckbutton",
         ).pack(side="right", padx=10)
 
-        actions = ttk.Frame(outer, style="Console.TFrame")
+        actions = self.actions_frame = ttk.Frame(outer, style="Console.TFrame")
         actions.pack(fill="x", pady=(0, 6))
         ttk.Label(
             actions, text="Status", style="Console.TLabel", font=("Segoe UI", 9)
@@ -193,8 +195,6 @@ class OverlordConsole:
         for label, action in (
             ("Refresh", "refresh_status"),
             ("Refresh All", "refresh_all"),
-            ("Send to Telegram", "send_status"),
-            ("Send All to Telegram", "send_status_all"),
         ):
             button = ttk.Button(
                 actions,
@@ -204,6 +204,9 @@ class OverlordConsole:
             button.pack(side="left", padx=3)
             if self.command_path is None:
                 button.state(["disabled"])
+        ttk.Button(actions, text="Engine details", command=self.toggle_details).pack(side="left", padx=3)
+        for label, command in (("Models", "/model"), ("Effort", "/effort"), ("Help", "/help")):
+            ttk.Button(actions, text=label, command=lambda value=command: self.queue_chat(value)).pack(side="left", padx=3)
         self.action_status = tk.StringVar(value="")
         ttk.Label(
             actions,
@@ -212,8 +215,7 @@ class OverlordConsole:
             font=("Segoe UI", 9),
         ).pack(side="left", padx=8)
 
-        status_frame = ttk.Frame(outer, style="Console.TFrame")
-        status_frame.pack(fill="x", pady=(0, 8))
+        status_frame = self.status_frame = ttk.Frame(outer, style="Console.TFrame")
         self.brain_status = {}
         for name in ("claude", "codex", "free"):
             value = tk.StringVar(value=format_brain_summary(name, {}, ""))
@@ -232,7 +234,7 @@ class OverlordConsole:
             padding = (0, 4) if name == "claude" else (4, 0) if name == "free" else (4, 4)
             card.pack(side="left", fill="x", expand=True, padx=padding)
 
-        ttk.Label(outer, text="Latest activity", style="Console.TLabel").pack(anchor="w")
+        ttk.Label(outer, textvariable=self.connection, style="Console.TLabel", font=("Segoe UI Semibold", 11)).pack(anchor="w", pady=(6, 0))
         ttk.Label(outer, textvariable=self.activity, style="Console.TLabel",
                   wraplength=900, font=("Segoe UI", 11)).pack(fill="x", pady=(4, 12))
         self.log_toggle = ttk.Button(outer, text="Show detailed logs ▸", command=self.toggle_logs)
@@ -257,18 +259,29 @@ class OverlordConsole:
             font=("Cascadia Mono", 10),
             yscrollcommand=chat_scrollbar.set,
             state="disabled",
+            height=8,
         )
         self.chat_text.pack(side="left", fill="both", expand=True)
         chat_scrollbar.config(command=self.chat_text.yview)
+        self.prompt_frame = ttk.Frame(outer, style="Console.TFrame")
+        self.prompt_frame.pack(fill="x", pady=6)
         # Input entry and send button
         chat_input_frame = ttk.Frame(outer, style="Console.TFrame")
         chat_input_frame.pack(fill="x", pady=(4, 0))
-        self.chat_entry = ttk.Entry(chat_input_frame, style="Console.TEntry")
+        self.chat_entry = tk.Text(chat_input_frame, height=3, wrap="word", bg="#172033", fg="#e5e7eb",
+                                  insertbackground="white", relief="flat", padx=10, pady=8, font=("Segoe UI", 11))
         self.chat_entry.pack(side="left", fill="x", expand=True)
         self.chat_send_button = ttk.Button(chat_input_frame, text="Send", command=self._send_chat)
         self.chat_send_button.pack(side="right")
         # Bind Enter key to send
-        self.chat_entry.bind("<Return>", lambda _: self._send_chat())
+        self.chat_entry.bind("<Return>", self._composer_enter)
+        self.chat_entry.bind("<Control-Return>", self._composer_enter)
+        self.root.bind("<Control-l>", lambda _: self.chat_entry.focus_set())
+        self.composer_hint = ttk.Label(outer, text="Enter to send · Shift+Enter for a new line · Ctrl+L to focus", style="Console.TLabel")
+        self.composer_hint.pack(anchor="w", pady=4)
+        self.response_label = ttk.Label(outer, textvariable=self.response_state, style="Console.TLabel")
+        self.response_label.pack(anchor="w")
+        self.chat_entry.focus_set()
 
         text_frame = self.log_frame = ttk.Frame(outer, style="Console.TFrame")
         scrollbar = ttk.Scrollbar(text_frame, orient="vertical")
@@ -289,9 +302,81 @@ class OverlordConsole:
         )
         self.text.pack(side="left", fill="both", expand=True)
         scrollbar.configure(command=self.text.yview)
-        ttk.Label(outer, textvariable=self.status, style="Console.TLabel").pack(
-            fill="x", pady=(7, 0)
-        )
+        self.footer_label = ttk.Label(outer, textvariable=self.status, style="Console.TLabel")
+        self.footer_label.pack(fill="x", pady=(7, 0))
+        # Reserve composer and decisions before the expanding transcript, even at minimum size.
+        for widget in (self.footer_label, self.response_label, self.composer_hint, chat_input_frame, self.prompt_frame):
+            widget.pack_configure(side="bottom", fill="x", before=self.chat_frame)
+
+    def toggle_details(self) -> None:
+        self.details_visible = not self.details_visible
+        if self.details_visible:
+            self.status_frame.pack(fill="x", pady=(0, 8), after=self.actions_frame)
+        else:
+            self.status_frame.pack_forget()
+
+    def _composer_enter(self, event=None):
+        if event is not None and event.state & 1:
+            return None
+        self._send_chat()
+        return "break"
+
+    def queue_chat(self, text):
+        if self.command_path is None or not append_request(self.chat_request_path, text):
+            self.action_status.set("Could not send: bridge request queue unavailable")
+            return False
+        self.action_status.set("Sent to Overlord")
+        return True
+
+    def _read_prompts(self):
+        path = self.log_path.parent / "console-prompts.json"
+        try:
+            mtime = path.stat().st_mtime_ns
+            if mtime == self.prompts_mtime:
+                return
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return
+        self.prompts_mtime = mtime
+        self.response_state.set("Overlord is working…" if data.get("typing") else "Ready")
+        requests = data.get("requests", {})
+        if requests == getattr(self, "_prompt_snapshot", None):
+            return
+        drafts = {key: entry.get() for key, entry in getattr(self, "_prompt_entries", {}).items()}
+        self._prompt_snapshot = requests
+        self._prompt_entries = {}
+        for child in self.prompt_frame.winfo_children():
+            child.destroy()
+        notebook = ttk.Notebook(self.prompt_frame)
+        if requests:
+            ttk.Label(self.prompt_frame, text=f"Needs your attention ({len(requests)})", style="Console.TLabel").pack(anchor="w")
+            notebook.pack(fill="x")
+        for request_id, request in requests.items():
+            if not isinstance(request, dict) or time.time() > request.get("expires", 0):
+                continue
+            row = ttk.Frame(notebook, style="Console.TFrame", padding=4)
+            title = {"permission":"Approval", "choice":"Question", "command":"Options"}.get(request.get("kind"), "Request")
+            notebook.add(row, text=title + (f" · {request_id[:4]}" if len(requests) > 1 else ""))
+            prompt = tk.Text(row, height=3, wrap="word", bg="#172033", fg="#fbbf24", relief="flat", font=("Segoe UI", 10))
+            prompt.insert("1.0", request.get("prompt", ""))
+            prompt.configure(state="disabled")
+            prompt.pack(fill="x")
+            options = request.get("options", [])
+            if request.get("kind") == "permission":
+                for label, value in options:
+                    ttk.Button(row, text=label, command=lambda rid=request_id, v=value: self.send_command("respond", request_id=rid, answer=v)).pack(side="left", padx=3)
+            else:
+                entry = ttk.Combobox(row, values=[label for label, _ in options], state="normal" if request.get("kind") == "choice" else "readonly", width=70)
+                entry.pack(side="left", fill="x", expand=True)
+                if request_id in drafts:
+                    entry.set(drafts[request_id])
+                elif options:
+                    entry.current(0)
+                self._prompt_entries[request_id] = entry
+                def submit(rid=request_id, widget=entry, choices=options):
+                    answer = dict(choices).get(widget.get(), widget.get())
+                    self.send_command("respond", request_id=rid, answer=answer)
+                ttk.Button(row, text="Apply" if request.get("kind") == "command" else "Answer", command=submit).pack(side="right", padx=4)
 
     def toggle_logs(self) -> None:
         self.logs_visible = not self.logs_visible
@@ -405,7 +490,8 @@ class OverlordConsole:
         The typed text is left in the box if it cannot be delivered, so nothing
         the owner wrote is lost to a failed write.
         """
-        text = self.chat_entry.get().strip()
+        multiline = isinstance(self.chat_entry, tk.Text)
+        text = (self.chat_entry.get("1.0", "end-1c") if multiline else self.chat_entry.get()).strip()
         if not text:
             return
         if self.command_path is None:
@@ -414,7 +500,7 @@ class OverlordConsole:
         if not append_request(self.chat_request_path, text):
             self.action_status.set("Could not send: the request queue is unavailable")
             return
-        self.chat_entry.delete(0, "end")
+        self.chat_entry.delete("1.0" if multiline else 0, "end")
         self.action_status.set("Sent to Overlord")
         self.root.after(4000, lambda: self.action_status.set(""))
 
@@ -435,7 +521,7 @@ class OverlordConsole:
         elif action == "show":
             self.show()
 
-    def send_command(self, action: str) -> None:
+    def send_command(self, action: str, **arguments) -> None:
         """Ask the bridge to perform a console action, including shutdown.
 
         Writes the request atomically (temp file + replace) so the bridge never
@@ -447,7 +533,13 @@ class OverlordConsole:
             return
         request_id = max(time.time_ns(), getattr(self, "_last_command_id", 0) + 1)
         self._last_command_id = request_id
-        payload = {"action": action, "at": request_id}
+        payload = {"action": action, "at": request_id, **arguments}
+        if action == 'respond':
+            if append_request(self.command_path.parent / 'console-responses.jsonl', json.dumps(payload)):
+                self.action_status.set("Response sent")
+            else:
+                self.action_status.set("Could not send response; try again")
+            return
         try:
             self.command_path.parent.mkdir(parents=True, exist_ok=True)
             temporary = self.command_path.with_suffix(".tmp")
@@ -478,6 +570,10 @@ class OverlordConsole:
         if reported and reported != self.version_label.get():
             self.version_label.set(reported)
         active = str(payload.get("active_brain") or "")
+        if hasattr(self, "connection"):
+            active_info = payload.get("brains", {}).get(active, {})
+            telegram = "Telegram on" if payload.get("telegram_enabled", True) else "Console only"
+            self.connection.set(f"{active.upper()} · {active_info.get('turn_state', 'idle').capitalize()} · {telegram}")
         statuses = payload.get("brains")
         if not isinstance(statuses, dict):
             return
@@ -491,6 +587,7 @@ class OverlordConsole:
         self._check_signal()
         self._read_brain_status()
         self._read_new_chat()
+        self._read_prompts()
         self.root.after(POLL_MS, self.poll)
 
     def _write_visibility(self, state: str) -> None:

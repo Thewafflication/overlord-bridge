@@ -298,3 +298,14 @@ def test_full_model_catalog_is_offered_as_exact_command_completions():
         assert offered[0][2][-1][1] == "/model model-17"
         assert gate.prompts == [] and brain.calls == []
     run(scenario())
+
+
+def test_applied_model_setting_clears_choices_from_both_interfaces():
+    async def scenario():
+        instance=make_bridge(Brain(), Gate())
+        cleared=[]
+        instance.telegram.clear_command_options=lambda:cleared.append(True)
+        await instance._handle_model(42, '/model sonnet')
+        assert cleared == [True]
+        assert instance.brain.calls == [('model','sonnet')]
+    run(scenario())

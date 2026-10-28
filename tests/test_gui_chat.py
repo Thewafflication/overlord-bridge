@@ -162,14 +162,14 @@ def make_console(tmp_path):
 def test_real_tk_send_retains_failed_input_and_reads_shared_transcript(tmp_path, monkeypatch):
     console = make_console(tmp_path)
     try:
-        console.chat_entry.insert(0, 'typed GUI message')
+        console.chat_entry.insert('1.0', 'typed GUI message')
         original = console_module.append_request
         monkeypatch.setattr(console_module, 'append_request', lambda *args: False)
         console.chat_send_button.invoke()
-        assert console.chat_entry.get() == 'typed GUI message'
+        assert console.chat_entry.get('1.0', 'end-1c') == 'typed GUI message'
         monkeypatch.setattr(console_module, 'append_request', original)
         console.chat_send_button.invoke()
-        assert console.chat_entry.get() == ''
+        assert console.chat_entry.get('1.0', 'end-1c') == ''
         assert read_requests(console.chat_request_path)[0] == ['typed GUI message']
         mirror = ChatMirror(console.chat_mirror_path)
         mirror.append(ROLE_OWNER, 'typed GUI message', SOURCE_GUI)
@@ -217,3 +217,57 @@ def test_failed_receipt_write_pauses_without_redelivering_in_same_process(tmp_pa
     blocked = False
     records, _ = reader.read()
     assert [text for text, _ in records] == ['second']
+
+
+def test_minimum_window_keeps_multiline_composer_and_approval_visible(tmp_path):
+    import json, time
+    console = make_console(tmp_path)
+    try:
+        console.log_path.parent.mkdir(parents=True, exist_ok=True)
+        (console.log_path.parent / "console-prompts.json").write_text(json.dumps({
+            "typing": True, "requests": {"id": {"kind":"permission", "prompt":"Run tests?",
+            "expires":time.time()+60, "options":[["Allow once","allow"],["Deny","deny"]]}}}), encoding="utf-8")
+        console._read_prompts()
+        console.root.geometry("800x640")
+        console.root.deiconify()
+        console.root.update()
+        assert console.chat_entry.winfo_rooty() + console.chat_entry.winfo_height() <= console.root.winfo_rooty() + console.root.winfo_height()
+        assert console.chat_text.winfo_height() >= 80
+        assert console.prompt_frame.winfo_height() >= 50
+        console.chat_entry.insert("1.0", "first line\nsecond line")
+        console._send_chat()
+        assert read_requests(console.chat_request_path)[0] == ["first line\nsecond line"]
+        assert console.response_state.get() == "Overlord is working…"
+    finally:
+        console.root.destroy()
+
+
+def test_console_response_queue_resolves_question_without_becoming_chat(tmp_path):
+    from modules.console_transport import ConsoleTransport
+    from modules.brain import PermissionGate
+    from queue import Queue
+    async def scenario():
+        instance = make_bridge(tmp_path)
+        instance._chat_request_path = tmp_path / 'requests.jsonl'
+        gate = PermissionGate(telegram=None, owner=0, timeout=2)
+        transport = ConsoleTransport(tmp_path / 'prompts.json', Queue(), 0, lambda *a: None,
+                                     gate.on_permission_response, gate.on_choice_response)
+        gate.telegram = transport
+        instance.telegram = transport
+        conversation=[]
+        async def chat(payload):
+            conversation.append(payload)
+        instance._handle_gui_chat = chat
+        question = asyncio.create_task(gate.choose('Select', [('chosen','')]))
+        await asyncio.sleep(0)
+        request_id=next(iter(transport.requests))
+        append_request(tmp_path / 'console-responses.jsonl', json.dumps({'action':'respond','request_id':request_id,'answer':'chosen'}))
+        consumer=asyncio.create_task(instance._chat_request_loop())
+        try:
+            assert await question == 'chosen'
+            assert conversation == []
+            assert RequestReader(tmp_path / 'console-responses.jsonl').read()[0] == []
+        finally:
+            instance._shutdown_event.set()
+            await consumer
+    asyncio.run(scenario())

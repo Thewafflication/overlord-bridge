@@ -50,8 +50,7 @@ if ($Install -or -not (Test-Path -LiteralPath $Python)) {
 if (-not (Test-Path -LiteralPath $EnvFile)) {
     Copy-Item -LiteralPath $EnvExample -Destination $EnvFile
     Write-Host "Created $EnvFile"
-    Write-Host "Add TELEGRAM_BOT_TOKEN and OWNER_CHAT_ID, set OVERLORD_BRAIN=codex, then run this script again."
-    exit 1
+    Write-Host "Starting console mode. Telegram is optional; configure it in Settings if wanted."
 }
 
 if (-not (Test-Path -LiteralPath $InstructionsFile)) {
@@ -59,14 +58,17 @@ if (-not (Test-Path -LiteralPath $InstructionsFile)) {
     Write-Host "Created $InstructionsFile from the sanitized example. Review it when convenient."
 }
 
-$Required = @("TELEGRAM_BOT_TOKEN", "OWNER_CHAT_ID")
+$Required = @()
 $Configured = @{}
 foreach ($Line in Get-Content -LiteralPath $EnvFile) {
     if ($Line -match '^\s*([A-Z][A-Z0-9_]*)\s*=\s*(.*?)\s*$') {
         $Configured[$Matches[1]] = $Matches[2].Trim('"', "'")
     }
 }
-$Missing = @($Required | Where-Object { -not $Configured[$_] })
+$TelegramSetting = if ($env:OVERLORD_TELEGRAM_ENABLED) { $env:OVERLORD_TELEGRAM_ENABLED } else { $Configured["OVERLORD_TELEGRAM_ENABLED"] }
+$TelegramEnabled = if ($TelegramSetting) { $TelegramSetting -match '^(1|true|yes|on)$' } else { [bool]($Configured["TELEGRAM_BOT_TOKEN"] -and $Configured["OWNER_CHAT_ID"]) }
+if ($TelegramEnabled) { $Required = @("TELEGRAM_BOT_TOKEN", "OWNER_CHAT_ID") }
+$Missing = @($Required | Where-Object { -not $Configured[$_] -and -not [Environment]::GetEnvironmentVariable($_) })
 if ($Missing.Count -gt 0) {
     throw "Set $($Missing -join ' and ') in $EnvFile before starting the bridge."
 }

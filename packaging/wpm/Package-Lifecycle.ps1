@@ -241,4 +241,4 @@ if ($wasRunning) {
     Write-Host 'Restarted the previously running Overlord.'
 }
 Write-Host "Installed Overlord $Version in $installRoot."
-Write-Host 'Edit the installed .env file with TELEGRAM_BOT_TOKEN and OWNER_CHAT_ID before first launch.'
+Write-Host 'Telegram is optional. Launch the console, or configure Telegram in Settings > Integrations.'

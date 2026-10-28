@@ -65,7 +65,7 @@ timeout). Switching brains is just changing the flag and restarting the service.
    ```bash
    cd ~/Projects/overlord-bridge
    cp .env.example .env
-   $EDITOR .env          # paste TELEGRAM_BOT_TOKEN and OWNER_CHAT_ID
+   $EDITOR .env          # choose the brain; Telegram credentials are optional
    chmod 600 .env
    ```
 4. **Dependencies** are already installed in `.venv`. To recreate:
@@ -190,8 +190,12 @@ notepad .env
 ```
 
 The first command creates `.venv`, installs the pinned dependencies, and creates
-`.env` from `.env.example` when needed. In `.env`, fill in
-`TELEGRAM_BOT_TOKEN` and `OWNER_CHAT_ID`, then add or uncomment:
+`.env` from `.env.example` when needed. Telegram is optional: without credentials,
+Overlord opens the local console, including chat, approval controls and questions.
+Set `OVERLORD_TELEGRAM_ENABLED=0` to run locally even with saved credentials.
+To connect Telegram, use Settings > Integrations, enable it and supply a bot token
+and numeric owner chat ID, then restart. Existing configured installs keep Telegram enabled.
+In `.env`, choose your brain, for example:
 
 ```ini
 OVERLORD_BRAIN=codex
