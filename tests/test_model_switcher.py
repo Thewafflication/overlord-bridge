@@ -284,3 +284,17 @@ def test_free_models_are_listed_with_their_availability(tmp_path):
     options = dict(run(brain.model_options()))
     assert options[a.key] == "ready" and "back in 2m" in options[b.key]
     assert run(brain.effort_options()) == []
+
+
+def test_full_model_catalog_is_offered_as_exact_command_completions():
+    async def scenario():
+        brain = Brain(options=[(f"model-{i}", "") for i in range(18)])
+        gate = Gate()
+        instance = make_bridge(brain, gate)
+        offered=[]
+        instance.telegram.send_command_options=lambda *args: offered.append(args)
+        await instance._run_switcher(42, "model")
+        assert len(offered[0][2]) == 18
+        assert offered[0][2][-1][1] == "/model model-17"
+        assert gate.prompts == [] and brain.calls == []
+    run(scenario())

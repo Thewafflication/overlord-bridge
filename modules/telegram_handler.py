@@ -23,6 +23,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+import time
+import uuid
 from queue import Queue
 from typing import Awaitable, Callable, Iterator, Optional
 
@@ -50,6 +52,14 @@ log = logging.getLogger("overlord.telegram")
 
 # Telegram hard limit on a single text message.
 MAX_MESSAGE_LEN = 4096
+COMMAND_OPTION_PAGES = {
+    "/brain": [("Claude", "/brain claude"), ("Codex", "/brain codex"), ("Free models", "/brain free")],
+    "/status": [("All engines", "/status all")],
+    "/tokens": [(str(n), f"/tokens {n}") for n in (10, 25, 50)],
+    "/permissions": [("Ask", "/permissions level ask"), ("Safe", "/permissions level safe"),
+                     ("Full access: 10 minutes", "/permissions full 10"), ("Revoke all grants", "/permissions revoke all")],
+    "/work": [("Projects", "/work projects"), ("Running workers", "/work status"), ("Stop free workers", "/work stop")],
+}
 COMMANDS = (
     "start", "menu",
     "new", "help", "status", "stop", "steer", "brain", "tokens", "quote",
@@ -195,7 +205,12 @@ class TelegramHandler(threading.Thread):
         normalized = command
         if command not in {"/new", "/help", "/stop"} and len(parts) > 1:
             normalized += " " + parts[1].strip()
+        if command in {"/brain", "/model", "/effort", "/new", "/stop"}:
+            self._command_picker = None
         self.inbound_queue.put((chat_id, normalized))
+        if normalized in COMMAND_OPTION_PAGES:
+            await self._send_command_options(chat_id, f"Choose an option for {normalized}:",
+                                             COMMAND_OPTION_PAGES[normalized])
         log.info("Owner requested %s", normalized)
 
     def _ensure_choice_state(self) -> None:
@@ -252,6 +267,9 @@ class TelegramHandler(threading.Thread):
         await query.answer()
         chat_id = query.message.chat_id if query.message else None
         if chat_id != self.owner_chat_id:
+            return
+        if (query.data or "").startswith("arg:"):
+            await self._handle_command_option(query, chat_id)
             return
         if (query.data or "").startswith("menu:"):
             await self._handle_menu_callback(query, chat_id)
@@ -372,7 +390,11 @@ class TelegramHandler(threading.Thread):
             if action == "questions":
                 await self._handle_question_command(chat_id, "/questions", [])
             else:
-                self.inbound_queue.put((chat_id, MENU_ACTIONS[action]))
+                command = MENU_ACTIONS[action]
+                self.inbound_queue.put((chat_id, command))
+                if command in COMMAND_OPTION_PAGES:
+                    await self._send_command_options(chat_id, f"Choose an option for {command}:",
+                                                     COMMAND_OPTION_PAGES[command])
 
     async def _register_command_menu(self) -> None:
         await self._telegram_call("register command menu", lambda: self.bot.set_my_commands(
@@ -382,6 +404,69 @@ class TelegramHandler(threading.Thread):
             chat_id=self.owner_chat_id, menu_button=MenuButtonCommands()))
 
     # ------------------------------------------------------------------ outbound
+    def send_command_options(self, chat_id: int, title: str, options: list[tuple[str, str]]) -> None:
+        """Offer exact command completions without taking over a pending AI question."""
+        if self.loop is not None:
+            asyncio.run_coroutine_threadsafe(self._send_command_options(chat_id, title, options), self.loop)
+
+    async def _send_command_options(self, chat_id: int, title: str,
+                                    options: list[tuple[str, str]]) -> None:
+        if chat_id != self.owner_chat_id or not options:
+            return
+        token = uuid.uuid4().hex[:16]
+        # One current picker per chat; old buttons cannot apply stale choices.
+        self._command_picker = {"token": token, "title": title[:200], "options": list(options),
+                                "expires": time.monotonic() + 600, "message_id": None}
+        picker = self._command_picker
+        async def deliver():
+            message = await self.bot.send_message(
+                chat_id=chat_id, text=picker["title"], reply_markup=self._command_option_markup(picker, 0))
+            picker["message_id"] = message.message_id
+        await self._telegram_call("command options", deliver)
+
+    def clear_command_options(self) -> None:
+        if self.loop is not None:
+            self.loop.call_soon_threadsafe(setattr, self, "_command_picker", None)
+
+    @staticmethod
+    def _command_option_markup(picker, page: int):
+        options = picker["options"]
+        token = picker["token"]
+        rows = [[InlineKeyboardButton(label[:100], callback_data=f"arg:{token}:pick:{i}")]
+                for i, (label, _) in enumerate(options) if page * 7 <= i < (page + 1) * 7]
+        navigation = []
+        if page:
+            navigation.append(InlineKeyboardButton("‹ Previous", callback_data=f"arg:{token}:page:{page - 1}"))
+        if (page + 1) * 7 < len(options):
+            navigation.append(InlineKeyboardButton("Next ›", callback_data=f"arg:{token}:page:{page + 1}"))
+        if navigation:
+            rows.append(navigation)
+        rows.append([InlineKeyboardButton("Cancel", callback_data=f"arg:{token}:cancel:0")])
+        return InlineKeyboardMarkup(rows)
+
+    async def _handle_command_option(self, query, chat_id: int) -> None:
+        picker = getattr(self, "_command_picker", None)
+        try:
+            _, token, action, raw = query.data.split(":")
+            index = int(raw)
+        except (ValueError, AttributeError):
+            return
+        if (not picker or token != picker["token"] or time.monotonic() > picker["expires"]
+                or query.message.message_id != picker["message_id"]):
+            return
+        if action == "page" and 0 <= index <= (len(picker["options"]) - 1) // 7:
+            await self._telegram_call("command options page", lambda: query.edit_message_text(
+                text=picker["title"], reply_markup=self._command_option_markup(picker, index)))
+            return
+        if action == "cancel":
+            self._command_picker = None
+            await self._telegram_call("cancel command options", lambda: query.edit_message_text(text="Command options closed."))
+        elif action == "pick" and 0 <= index < len(picker["options"]):
+            _, command = picker["options"][index]
+            self._command_picker = None
+            self.inbound_queue.put((chat_id, command))
+            await self._telegram_call("select command option", lambda: query.edit_message_text(text=f"Selected: {command}"))
+
     def send(self, chat_id: int, text: str, *, mirror: bool = True) -> None:
         """Thread-safe: queue a (chunked) reply onto the polling loop.
 

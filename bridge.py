@@ -1825,6 +1825,14 @@ class Bridge:
         current = getattr(brain, kind, None) or "default"
         if not options:
             return
+        command_picker = getattr(self.telegram, "send_command_options", None)
+        if command_picker is not None:
+            options.sort(key=lambda item: item[0] != current)
+            command_picker(chat_id, f"Choose {kind} for {brain.name} (now {current}):", [
+                (("● " if value == current else "") + value + (f" — {note}" if note else ""),
+                 f"/{kind} {value}") for value, note in options
+            ])
+            return
         # Telegram prompts hold few buttons: keep the current value visible and
         # leave the rest to the "type another answer" button.
         options.sort(key=lambda item: item[0] != current)
@@ -1932,6 +1940,9 @@ class Bridge:
 
             previous = self.brain
             self.brain = candidate
+            clear_options = getattr(self.telegram, "clear_command_options", None)
+            if clear_options is not None:
+                clear_options()
             self.brain_name = target
             if hasattr(self, "_status_by_brain"):
                 self._status_cache = self._basic_status()

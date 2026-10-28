@@ -470,3 +470,59 @@ def test_typing_is_shared_by_overlapping_operations_and_refreshed_after_messages
         assert not handler._typing_tasks and not handler._typing_users
         assert not handler._typing_wakeups and original.done()
     run(scenario())
+
+
+def test_command_arguments_offer_buttons_and_selection_runs_exact_command_once():
+    handler = make_handler()
+    run(handler._handle_command(update("/brain"), None))
+    assert queued(handler) == [(42, "/brain")]
+    sent = handler.sent[-1]
+    button = sent["reply_markup"].inline_keyboard[2][0]
+    assert button.text == "Free models"
+    query = menu_query(button.callback_data)
+    query.message.message_id = 1
+    run(handler._handle_callback(SimpleNamespace(callback_query=query), None))
+    run(handler._handle_callback(SimpleNamespace(callback_query=query), None))
+    assert queued(handler) == [(42, "/brain free")]
+
+
+def test_argument_picker_pages_long_unicode_values_and_rejects_stale_foreign_expired():
+    handler = make_handler()
+    options = [(f"Model {i}", "/model " + "模型" * 50 + str(i)) for i in range(18)]
+    run(handler._send_command_options(42, "Models", options))
+    picker = handler._command_picker
+    markup = handler.sent[-1]["reply_markup"]
+    assert all(len(b.callback_data.encode()) <= 64 for row in markup.inline_keyboard for b in row)
+    query = menu_query(f"arg:{picker['token']}:page:2")
+    query.message.message_id = picker['message_id']
+    run(handler._handle_callback(SimpleNamespace(callback_query=query), None))
+    assert query.message.reply_markup.inline_keyboard[0][0].text == "Model 14"
+    query.data = f"arg:{picker['token']}:pick:17"
+    query.message.chat_id = 666
+    run(handler._handle_callback(SimpleNamespace(callback_query=query), None))
+    assert queued(handler) == []
+    query.message.chat_id = 42
+    picker['expires'] = 0
+    run(handler._handle_callback(SimpleNamespace(callback_query=query), None))
+    assert queued(handler) == []
+    run(handler._send_command_options(42, "New models", options))
+    run(handler._handle_callback(SimpleNamespace(callback_query=query), None))
+    assert queued(handler) == []
+    current = handler._command_picker
+    query.data = f"arg:{current['token']}:pick:17"
+    query.message.message_id = current['message_id']
+    run(handler._handle_callback(SimpleNamespace(callback_query=query), None))
+    assert queued(handler) == [(42, options[17][1])]
+
+
+def test_command_picker_cancel_and_other_messages_do_not_answer_ai_questions():
+    handler = make_handler()
+    handler._choice_for_chat[42] = "pending-question"
+    run(handler._handle_command(update("/permissions"), None))
+    picker=handler._command_picker
+    query=menu_query(f"arg:{picker['token']}:cancel:0")
+    query.message.message_id=picker['message_id']
+    run(handler._handle_callback(SimpleNamespace(callback_query=query), None))
+    assert handler._command_picker is None
+    assert handler._choice_for_chat[42] == "pending-question"
+    assert queued(handler) == [(42,"/permissions")]

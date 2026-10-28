@@ -11,6 +11,8 @@ from modules.version import display_version
 
 HELP_TEXT = """Overlord commands
 
+Pick a command to see option buttons. Model and effort choices support paging.
+
 /help — list available commands
 /status — show the active brain, model, effort, usage and tokens
 /status all — show every brain side by side
