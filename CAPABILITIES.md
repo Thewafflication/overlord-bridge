@@ -6,6 +6,8 @@ workflow lands.
 
 ## Current Capabilities
 
+- Free model pool: OpenRouter discovery includes up to sixteen live zero-priced chat models, with vendor diversity first and sibling models afterward. Gemini 3.5 Flash-Lite, 3.1 Flash-Lite, 2.5 Flash and 2.5 Flash-Lite are supported by free chat and the shared worker completion pool through Google's compatible endpoint. Configure a Google AI Studio key and explicitly enable Gemini in Settings > API keys; use a project without billing for free-tier usage. Paid projects can incur charges, and Overlord cannot inspect their billing tier. Provider-wide pacing and cooldowns remain active. Grok, ChatGPT and Claude free web plans do not grant free API usage; OpenAI GPT-OSS is available through NVIDIA. See [1.0.60](docs/releases/1.0.60.md).
+
 - Local worker control: `python -m modules.local_control status|stop --run-dir <bridge-run-directory>` (or installed `overlord-control`) reads live task state or uses the same cancellation path as Telegram `/stop`, without a model call or credentials. The `control_overlord` MCP tool exposes the same interface. Stop succeeds only when active turn and worker cleanup are confirmed idle; timeout or `cleanup_pending` is not confirmation. The bridge stays running. Requests carry an instance ID, unique request ID and deadline so stale/expired requests cannot stop a later bridge. In owner-authorized monitoring/fix sessions, use this to stop and verify locally instead of requesting a manual Telegram round trip. See [local control](docs/local-control.md).
 
 - Context monitoring: `/context` shows the latest fresh session/model-matched

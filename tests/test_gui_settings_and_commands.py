@@ -150,6 +150,8 @@ def test_setup_window_saves_projects_and_permissions_without_touching_saved_keys
         window.project_folders.insert("end", str(folder))
         window.permission_level.set("full")
         window.work_approval.set("commands")
+        window.gemini.insert(0, "synthetic-gemini-key")
+        window.use_gemini.set(True)
         window.save()
         values = read_env(env, (PROJECT_FOLDERS, PERMISSION_LEVEL, "OVERLORD_AUTO_APPROVE", "OVERLORD_FREE_WORK_APPROVAL",
                                 "OVERLORD_WORKER_NVIDIA_API_KEY"))
@@ -158,6 +160,8 @@ def test_setup_window_saves_projects_and_permissions_without_touching_saved_keys
         assert values[PERMISSION_LEVEL] == "full"
         assert values["OVERLORD_FREE_WORK_APPROVAL"] == "commands"
         assert values["OVERLORD_WORKER_NVIDIA_API_KEY"] == "nvapi-" + "x" * 30
+        gemini = read_env(env, ("OVERLORD_FREE_GEMINI_API_KEY", "OVERLORD_FREE_GEMINI_ENABLED"))
+        assert gemini == {"OVERLORD_FREE_GEMINI_API_KEY": "synthetic-gemini-key", "OVERLORD_FREE_GEMINI_ENABLED": "1"}
         assert json.loads((tmp_path / "command.json").read_text())["action"] == "reload_env"
     finally:
         window.root.destroy()

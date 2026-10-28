@@ -2,8 +2,9 @@
 
 A chat :class:`Brain` with optional project-worker dispatch tools supplied by
 the bridge. Files and commands run in the existing worker harness and permission
-gate. Standalone chat remains text-only. Models come from two providers:
+gate. Standalone chat remains text-only. Models come from three providers:
 
+  * ``gemini``     Google AI Studio free-tier projects (explicit opt-in)
   * ``nvidia``     NVIDIA NIM (the same key the NVIDIA workers use)
   * ``openrouter`` OpenRouter models whose ID ends in ``:free``. Opt-in, because
                    chat content is sent to third-party providers, and admitted
@@ -43,12 +44,14 @@ from modules.workers import (
 
 log = logging.getLogger("overlord.free")
 
-PROVIDERS = ("nvidia", "openrouter")
+PROVIDERS = ("nvidia", "openrouter", "gemini")
+GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/openai"
+GEMINI_FREE_MODELS = ("gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-2.5-flash-lite")
 # "openrouter:free" means: discover the best zero-priced chat models from the live
 # catalog (fixed IDs go stale quickly). OpenRouter leads, NVIDIA follows.
-DEFAULT_MODELS = "openrouter:free,nvidia:gpt-oss,nvidia:nemotron,nvidia:nemotron-lightning"
+DEFAULT_MODELS = "openrouter:free,nvidia:gpt-oss,nvidia:nemotron,nvidia:nemotron-lightning," + ",".join(f"gemini:{m}" for m in GEMINI_FREE_MODELS)
 DISCOVER = "free"
-DISCOVER_LIMIT = 3
+DISCOVER_LIMIT = 16
 ADMISSION_TTL = 300.0
 # Used only when the catalog cannot be fetched at start-up.
 FALLBACK_OPENROUTER = (
@@ -58,7 +61,7 @@ FALLBACK_OPENROUTER = (
 _NOT_CHAT = ("safety", "guard", "embed", "moderation", "rerank")
 # Conservative published-tier defaults: OpenRouter's free tier is about 20/min
 # and 50/day without credits; NIM is rate limited per minute only.
-DEFAULT_LIMITS = {"nvidia": (20, 0), "openrouter": (15, 45)}
+DEFAULT_LIMITS = {"nvidia": (20, 0), "openrouter": (15, 45), "gemini": (5, 20)}
 SYSTEM_PROMPT = (
     "You are the Overlord's chat assistant, reached through Telegram. You are a "
     "text-only model: you cannot run commands, read or edit files, browse, or "
@@ -132,7 +135,9 @@ def parse_models(raw: str) -> list[ModelSpec]:
 
 
 def discover_free_models(catalog: Any, limit: int = DISCOVER_LIMIT) -> list[str]:
-    """Best zero-priced OpenRouter chat models: largest context, one per vendor."""
+    """Zero-priced chat models, with vendor diversity before sibling models."""
+    if limit <= 0:
+        return []
     if not isinstance(catalog, dict) or not isinstance(catalog.get("data"), list):
         return []
     candidates = []
@@ -157,6 +162,11 @@ def discover_free_models(catalog: Any, limit: int = DISCOVER_LIMIT) -> list[str]
         chosen.append(model)
         if len(chosen) >= limit:
             break
+    for _, model in sorted(candidates):
+        if len(chosen) >= limit:
+            break
+        if model not in chosen:
+            chosen.append(model)
     return chosen
 
 
@@ -390,6 +400,7 @@ class FreeBrain(Brain):
         model: str | None = None,
         bases: dict[str, str] | None = None,
         openrouter_enabled: bool = False,
+        gemini_enabled: bool = False,
         max_tokens: int = 2048,
         history_chars: int = 24_000,
         timeout: float = 90.0,
@@ -401,7 +412,8 @@ class FreeBrain(Brain):
         self.developer_instructions = developer_instructions.strip()
         self.limiter = limiter
         self.keys = {k: (v or "").strip() for k, v in keys.items()}
-        self.bases = {"nvidia": DEFAULT_NVIDIA_API_BASE, "openrouter": OPENROUTER_BASE, **(bases or {})}
+        self.bases = {"nvidia": DEFAULT_NVIDIA_API_BASE, "openrouter": OPENROUTER_BASE,
+                      "gemini": GEMINI_BASE, **(bases or {})}
         self.max_tokens = max(64, max_tokens)
         self.history_chars = max(2_000, history_chars)
         self.timeout = timeout
@@ -423,6 +435,10 @@ class FreeBrain(Brain):
                 continue
             if not self.keys.get(spec.provider):
                 self.unavailable.append(f"{spec.key}: no {spec.provider} API key configured")
+            elif spec.provider == "gemini" and not gemini_enabled:
+                self.unavailable.append(f"{spec.key}: enable Gemini with a free-tier project (OVERLORD_FREE_GEMINI_ENABLED=1)")
+            elif spec.provider == "gemini" and spec.model not in GEMINI_FREE_MODELS:
+                self.unavailable.append(f"{spec.key}: model is not in the Gemini free-tier text catalog")
             elif spec.provider == "openrouter" and not openrouter_enabled:
                 self.unavailable.append(
                     f"{spec.key}: OpenRouter sends chat to third parties; set "
@@ -692,7 +708,7 @@ class FreeBrain(Brain):
                 # visible answer or tool call, rather than hidden thinking.
                 payload["chat_template_kwargs"] = {"enable_thinking": False}
                 payload.pop("reasoning_budget", None)
-        else:
+        elif spec.provider == "openrouter":
             payload["provider"] = free_provider_policy()
         return payload
 

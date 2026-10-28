@@ -547,7 +547,7 @@ CATALOG = {"data": [
 
 def test_discovery_picks_priced_at_zero_chat_models_one_per_vendor():
     assert free_brain.discover_free_models(CATALOG) == [
-        "big/model-a:free", "other/model-c:free", "third/model-d:free"]
+        "big/model-a:free", "other/model-c:free", "third/model-d:free", "fourth/model-e:free", "big/model-b:free"]
     assert free_brain.discover_free_models(CATALOG, limit=1) == ["big/model-a:free"]
     assert free_brain.discover_free_models({"data": "x"}) == []
     assert free_brain.discover_free_models(None) == []
@@ -556,7 +556,7 @@ def test_discovery_picks_priced_at_zero_chat_models_one_per_vendor():
 def test_openrouter_leads_the_default_model_list():
     specs = parse_models(free_brain.DEFAULT_MODELS)
     assert specs[0] == ModelSpec("openrouter", "free")
-    assert {s.provider for s in specs} == {"openrouter", "nvidia"}
+    assert {s.provider for s in specs} == {"openrouter", "nvidia", "gemini"}
 
 
 def test_connect_expands_the_placeholder_from_the_live_catalog(tmp_path, monkeypatch):
@@ -571,7 +571,7 @@ def test_connect_expands_the_placeholder_from_the_live_catalog(tmp_path, monkeyp
     run(brain.connect())
     assert [s.key for s in brain.models] == [
         "openrouter:big/model-a:free", "openrouter:other/model-c:free",
-        "openrouter:third/model-d:free", NV.key]
+        "openrouter:third/model-d:free", "openrouter:fourth/model-e:free", "openrouter:big/model-b:free", NV.key]
     assert brain.model == "openrouter:big/model-a:free"  # OpenRouter leads
 
 
@@ -634,7 +634,7 @@ def test_status_lists_every_model_with_its_state_and_marks_the_current_one(tmp_p
     brain = make(tmp_path, monkeypatch, [], models=(NV, NV2))
     brain.limiter.cool_down(NV2.key, 90)
     lines = brain.status_snapshot()["usage_summary"]
-    assert lines[0] == "Keys: nvidia ✓, openrouter ✓"
+    assert lines[0] == "Keys: nvidia ✓, openrouter ✓, gemini ✗ no key"
     assert f"● {NV.key}: ready" in lines
     assert any(l.startswith(f"○ {NV2.key}: cooling down, back in") for l in lines)
 
@@ -651,3 +651,33 @@ def test_a_standby_free_brain_still_reports_status(monkeypatch):
     text = format_status(status)
     assert "Keys: nvidia ✓" in text and "Usage: unavailable" not in text
     assert "nvidia:openai/gpt-oss-20b" in text
+
+
+def test_gemini_requires_enable_and_known_free_tier_model(tmp_path, monkeypatch):
+    spec = ModelSpec("gemini", "gemini-3.5-flash-lite")
+    brain = make(tmp_path, monkeypatch, [], models=(spec,), keys={"gemini":"test-key"})
+    assert brain.models == []
+    assert "OVERLORD_FREE_GEMINI_ENABLED" in brain.unavailable[0]
+    brain = make(tmp_path, monkeypatch, [], models=(ModelSpec("gemini", "paid-or-unknown"),),
+                 keys={"gemini":"test-key"}, gemini_enabled=True)
+    assert brain.models == []
+    assert "free-tier text catalog" in brain.unavailable[0]
+
+
+def test_gemini_chat_and_tool_payload_use_google_endpoint(tmp_path, monkeypatch):
+    spec = ModelSpec("gemini", "gemini-3.5-flash-lite")
+    brain = make(tmp_path, monkeypatch, [reply("Google reply")], models=(spec,),
+                 keys={"gemini":"test-key"}, gemini_enabled=True)
+    assert run(ask(brain)) == ["Google reply"]
+    assert brain.calls[0][0] == free_brain.GEMINI_BASE + "/chat/completions"
+    tools = [{"type":"function", "function":{"name":"run_command", "parameters":{"type":"object"}}}]
+    payload = brain._payload(spec, [{"role":"user", "content":"test"}], tools)
+    assert payload["tools"] == tools and payload["tool_choice"] == "auto"
+    assert "provider" not in payload
+    assert parse_models(spec.key) == [spec]
+
+
+def test_discovery_keeps_siblings_after_vendor_diversity():
+    models = free_brain.discover_free_models(CATALOG, limit=5)
+    assert len(models) == 5 and models[-1] == "big/model-b:free"
+    assert free_brain.discover_free_models(CATALOG, limit=0) == []

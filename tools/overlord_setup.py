@@ -27,6 +27,10 @@ from modules.gui_settings import (  # noqa: E402
     SETTING_NAMES, decode_paths, encode_paths, PERMISSION_LEVEL, PERMISSION_LEVELS, permission_level,
 )
 
+GEMINI_KEY = "OVERLORD_FREE_GEMINI_API_KEY"
+GEMINI_ENABLED = "OVERLORD_FREE_GEMINI_ENABLED"
+GEMINI_MODELS_URL = "https://generativelanguage.googleapis.com/v1beta/openai/models"
+GEMINI_KEYS_PAGE = "https://aistudio.google.com/apikey"
 NVIDIA_KEY = "OVERLORD_WORKER_NVIDIA_API_KEY"
 OPENROUTER_KEY = "OVERLORD_FREE_OPENROUTER_API_KEY"
 OPENROUTER_ENABLED = "OVERLORD_FREE_OPENROUTER_ENABLED"
@@ -128,8 +132,9 @@ def request_reload(command_path: Path | None) -> bool:
 class SetupWindow:
     def __init__(self, env_path: Path, command_path: Path | None) -> None:
         self.env_path, self.command_path = env_path, command_path
-        current = read_env(env_path, (NVIDIA_KEY, "NVIDIA_API_KEY", OPENROUTER_KEY,
+        current = read_env(env_path, (GEMINI_KEY, "GEMINI_API_KEY", GEMINI_ENABLED, NVIDIA_KEY, "NVIDIA_API_KEY", OPENROUTER_KEY,
                                       "OVERLORD_WORKER_OPENROUTER_API_KEY", OPENROUTER_ENABLED) + SETTING_NAMES)
+        self.saved_gemini = current.get(GEMINI_KEY) or current.get("GEMINI_API_KEY", "")
         self.saved_nvidia = current.get(NVIDIA_KEY) or current.get("NVIDIA_API_KEY", "")
         self.saved_openrouter = (current.get(OPENROUTER_KEY)
                                  or current.get("OVERLORD_WORKER_OPENROUTER_API_KEY", ""))
@@ -205,6 +210,15 @@ class SetupWindow:
                                     "provider)", variable=self.use_openrouter,
                         style="Setup.TCheckbutton").grid(row=8, column=0, columnspan=4,
                                                          sticky="w", pady=(8, 0))
+        self.gemini = self._key_row(outer, 9, "Google Gemini", self.saved_gemini,
+                                    self.test_gemini, GEMINI_KEYS_PAGE)
+        self.use_gemini = tk.BooleanVar(value=truth(GEMINI_ENABLED))
+        ttk.Checkbutton(outer, text="Enable Gemini (use a project without billing for free usage)",
+                        variable=self.use_gemini, style="Setup.TCheckbutton").grid(
+                            row=12, column=0, columnspan=4, sticky="w", pady=(8, 0))
+        ttk.Label(outer, text="Gemini paid projects can incur charges. Grok, ChatGPT and Claude web free plans "
+                             "do not provide free API access. OpenAI GPT-OSS is available through NVIDIA.",
+                  style="Muted.TLabel", wraplength=520).grid(row=13, column=0, columnspan=4, sticky="w", pady=8)
         self.status = tk.StringVar(value="Leave a key blank to keep the saved one.")
         ttk.Label(self.root, textvariable=self.status, style="Muted.TLabel", wraplength=520,
                   justify="left").pack(fill="x", padx=16)
@@ -282,6 +296,12 @@ class SetupWindow:
             return
         self._background(lambda: probe_key(NVIDIA_MODELS_URL, key, "NVIDIA"))
 
+    def test_gemini(self, key: str) -> None:
+        if not key.strip():
+            self.status.set("Enter a key first.")
+            return
+        self._background(lambda: probe_key(GEMINI_MODELS_URL, key, "Gemini"))
+
     def test_openrouter(self, key: str) -> None:
         if not key.strip():
             self.status.set("✗ Enter a key first.")
@@ -296,6 +316,8 @@ class SetupWindow:
                 self.status.set("✗ " + problem)
                 return
         values: dict[str, str | None] = {
+            GEMINI_KEY: self.gemini.get().strip() or None,
+            GEMINI_ENABLED: "1" if self.use_gemini.get() else "0",
             NVIDIA_KEY: nvidia or None,
             OPENROUTER_KEY: openrouter or None,
             OPENROUTER_ENABLED: "1" if self.use_openrouter.get() else "0",
@@ -321,7 +343,7 @@ class SetupWindow:
         self.status.set("✓ Saved. " + (
             "A running Overlord will pick the settings up within a second or two."
             if reloaded else "Restart Overlord to apply them."))
-        for entry in (self.nvidia, self.openrouter):
+        for entry in (self.nvidia, self.openrouter, self.gemini):
             entry.delete(0, "end")
 
     def run(self) -> None:
