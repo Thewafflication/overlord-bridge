@@ -1,5 +1,12 @@
 # Live worker evaluations
 
+## Latest installed release: Telegram command options in 1.0.61
+
+Owner requested argument completion after choosing a Telegram slash command. Implemented fixed option buttons for /brain, /status, /tokens, /permissions and /work, plus paginated complete model/effort catalogs. Telegram sends selected slash commands immediately, so the supported flow is command then argument buttons. Pickers use opaque short callbacks, exact queued commands, owner/message checks, ten-minute expiry, cancellation and single-use state; they remain separate from AI questions. Existing typed commands still work.
+
+Feature commit 90d6c10 and immutable tag 1.0.61 are pushed; signed package published and installed after graceful idle shutdown. Focused checks: 78 passed; canonical rerun: 1,348 passed, one skip. PowerShell 7 was temporarily unavailable during the first full run, then restored; all eight packaging lifecycle tests and full rerun passed. Windows/Linux tag CI passed. Installed bridge/picker source hashes match tested files. Restarted online/idle as 1.0.61, instance 105f99eb7d014cc2a9ca03b311da504e. Sent /model via the existing desktop chat command; installed log records it and no Telegram delivery errors appeared during the smoke check. A real owner tap remains observable in later activity. No model or permission setting was changed by this smoke check. No unfinished install remains.
+
+
 ## Latest installed release: expanded free models in 1.0.60
 
 Owner requested more free models including Gemini, Grok, ChatGPT and Claude. Release 1.0.60 expands OpenRouter discovery to sixteen qualifying models (vendor diversity first, then siblings) and adds four opt-in Gemini text models through Google's compatible endpoint. Setup includes Gemini key testing and enablement. Gemini requires an owner-supplied key from a project without billing; paid projects can incur charges, and real Gemini inference has not been exercised without that key. Grok/Claude APIs and ChatGPT web free access are not presented as free API entitlements; GPT-OSS remains available through NVIDIA. Sources and setup are in docs/releases/1.0.60.md.
