@@ -1,5 +1,12 @@
 # Live worker evaluations
 
+## Latest installed release: expanded free models in 1.0.60
+
+Owner requested more free models including Gemini, Grok, ChatGPT and Claude. Release 1.0.60 expands OpenRouter discovery to sixteen qualifying models (vendor diversity first, then siblings) and adds four opt-in Gemini text models through Google's compatible endpoint. Setup includes Gemini key testing and enablement. Gemini requires an owner-supplied key from a project without billing; paid projects can incur charges, and real Gemini inference has not been exercised without that key. Grok/Claude APIs and ChatGPT web free access are not presented as free API entitlements; GPT-OSS remains available through NVIDIA. Sources and setup are in docs/releases/1.0.60.md.
+
+Committed/pushed 12feeaf, immutable tag 1.0.60, signed release published and installed after graceful console shutdown. Focused suite: 229 passed; canonical rerun: 1,343 passed, two skips. Initial full run hit an existing process-readiness timing assertion; its focused and full reruns passed. Windows/Linux tag CI passed. Package signature verified; installed bridge, free-brain and setup files match tested source bytes. Live startup loaded fifteen OpenRouter free models plus three NVIDIA models, resumed ten chat messages, and local control confirms version 1.0.60 online/idle (instance 506da6cd18ee4660a26d36f2bdba5b8e). No unfinished install remains. Gemini is supported but not active until keyed/enabled through Settings. Preserve all completed fixtures below; no need to redispatch them.
+
+
 ## 2026-10-23: atomic store and failure-path test on 1.0.59
 
 The fresh isolated fixture `out/evals/atomic-store-20261023` (seed `272f06a`, no remote) asked `Atomic-store-eval` to reproduce failures, implement atomic JSON replacement with Unicode and parent creation, preserve three original tests, add a replacement-failure test, run unittest and commit. The baseline had one failed test, one error and one pass. The worker initially hid subprocess stderr inside a Python wrapper, then recovered by running the requested test command directly and observed exit 1.
