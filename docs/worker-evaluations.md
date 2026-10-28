@@ -1,5 +1,14 @@
 # Live worker evaluations
 
+## Latest installed release: optional Telegram and console UX in 1.0.62
+
+Owner requested optional Telegram and a better console. Feature commit 80159db/tag 1.0.62 is committed, pushed, signed, released and installed. Telegram defaults off without credentials, can be explicitly disabled with OVERLORD_TELEGRAM_ENABLED=0, and remains enabled for existing configured installs. Settings > Integrations controls this after restart. ConsoleTransport mirrors conversation and prompts locally, optionally delegates to Telegram, and routes local allow/deny/session choices and questions through the existing gate. A durable response queue prevents rapid replies overwriting one another or becoming model chat. Command choices clear when a model/effort argument is applied.
+
+UX: multiline composer (Enter sends, Shift+Enter newline, Ctrl+L focus), working indicator, Stop task, model/effort shortcuts, collapsible engine cards/logs and tabbed pending requests. Synthetic Computer Use preview inspection caught composer clipping; reserved bottom controls and an 800x640 minimum corrected it. A real Tk minimum-window test passed independently. Focused checks: 110 passed, one display-related skip. Final canonical tools/check.py all: 1,360 passed, one skip, plus syntax/inventory and wheel build. Windows/Linux tag CI passed. Installed bridge, transport, console and setup files match tested source bytes.
+
+Real installed smoke: launched 1.0.62 with only a process-local Telegram disable flag. Local control was responsive/idle, brain-status and prompt snapshots both reported Telegram disabled, and the GUI opened automatically. /model through the console produced one local command picker containing all eighteen active models. Inspected the actual installed console-only window with Computer Use; composer, model selector and console-only status were visible. No model, approval policy, saved Telegram setting, key or session was changed. Gracefully stopped this smoke instance and restarted with saved configuration; Telegram polling resumed, ten free-chat history messages loaded, prompt state was clean and local control reported 1.0.62 online/idle (instance 7dd5d349ea8c4a5e86f3052ff92a6fb8). No unfinished release/install remains. Keep synthetic preview files under out/checks out of releases.
+
+
 ## Latest installed release: Telegram command options in 1.0.61
 
 Owner requested argument completion after choosing a Telegram slash command. Implemented fixed option buttons for /brain, /status, /tokens, /permissions and /work, plus paginated complete model/effort catalogs. Telegram sends selected slash commands immediately, so the supported flow is command then argument buttons. Pickers use opaque short callbacks, exact queued commands, owner/message checks, ten-minute expiry, cancellation and single-use state; they remain separate from AI questions. Existing typed commands still work.
