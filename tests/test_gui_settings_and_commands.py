@@ -19,6 +19,30 @@ from modules.gui_settings import PERMISSION_LEVEL
 from tools.overlord_setup import read_env, save_settings
 
 
+def test_default_project_roots_can_be_removed_and_stay_removed(tmp_path, monkeypatch):
+    from modules.gui_settings import default_project_roots
+
+    home = tmp_path / "home"
+    home.mkdir()
+    projects, documents = home / "Projects", home / "Documents"
+    projects.mkdir()
+    documents.mkdir()
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    monkeypatch.setattr(bridge, "_ALLOWED_ROOTS", (projects, documents))
+    monkeypatch.setattr(bridge, "CWD", str(home))
+    monkeypatch.setattr(bridge, "PROJECTS_ROOT", "")
+    monkeypatch.delenv(PROJECT_ROOTS, raising=False)
+    assert decode_paths(default_project_roots()) == [projects, documents]
+    assert bridge.project_roots() == [projects, documents]
+
+    env = tmp_path / "settings.env"
+    for retained in ([str(projects)], []):
+        save_settings(env, {PROJECT_ROOTS: encode_paths(retained)})
+        saved = read_env(env, (PROJECT_ROOTS,))[PROJECT_ROOTS]
+        monkeypatch.setenv(PROJECT_ROOTS, saved)
+        assert bridge.project_roots() == [Path(p) for p in retained]
+
+
 def test_project_paths_round_trip_spaces_unicode_and_duplicates(tmp_path):
     folder = tmp_path / "my project café"
     folder.mkdir()
@@ -145,6 +169,9 @@ def test_setup_window_saves_projects_and_permissions_without_touching_saved_keys
         pytest.skip("No graphical display")
     try:
         window.root.withdraw()
+        from modules.gui_settings import default_project_roots
+        assert list(window.project_roots.get(0, "end")) == json.loads(default_project_roots())
+        window.project_roots.delete(0, "end")
         folder = tmp_path / "app"
         folder.mkdir()
         window.project_folders.insert("end", str(folder))
@@ -156,6 +183,7 @@ def test_setup_window_saves_projects_and_permissions_without_touching_saved_keys
         values = read_env(env, (PROJECT_FOLDERS, PERMISSION_LEVEL, "OVERLORD_AUTO_APPROVE", "OVERLORD_FREE_WORK_APPROVAL",
                                 "OVERLORD_WORKER_NVIDIA_API_KEY"))
         assert decode_paths(values[PROJECT_FOLDERS]) == [folder.resolve()]
+        assert read_env(env, (PROJECT_ROOTS,))[PROJECT_ROOTS] == "[]"
         assert values["OVERLORD_AUTO_APPROVE"] == "1"
         assert values[PERMISSION_LEVEL] == "full"
         assert values["OVERLORD_FREE_WORK_APPROVAL"] == "commands"

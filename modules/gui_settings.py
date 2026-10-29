@@ -15,6 +15,12 @@ SETTING_NAMES = (PROJECT_FOLDERS, PROJECT_ROOTS, "OVERLORD_PROJECTS_ROOT",
                  AUTO_APPROVE, AUTO_EDITS, WORK_APPROVAL, PERMISSION_LEVEL)
 
 
+def default_project_roots() -> str:
+    """Initial editable roots; an explicitly saved empty list disables them."""
+    return json.dumps([str(p) for p in (Path.home() / "Projects", Path.home() / "Documents")
+                       if p.is_dir()])
+
+
 def permission_level(value: str | None, *, legacy_auto: bool = False) -> str:
     if value is None:
         return "full" if legacy_auto else "safe"

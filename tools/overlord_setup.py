@@ -25,6 +25,7 @@ from modules.version import display_version  # noqa: E402
 from modules.gui_settings import (  # noqa: E402
     PROJECT_FOLDERS, PROJECT_ROOTS, AUTO_APPROVE, AUTO_EDITS, WORK_APPROVAL,
     SETTING_NAMES, decode_paths, encode_paths, PERMISSION_LEVEL, PERMISSION_LEVELS, permission_level,
+    default_project_roots,
 )
 
 GEMINI_KEY = "OVERLORD_FREE_GEMINI_API_KEY"
@@ -180,14 +181,14 @@ class SetupWindow:
         self.project_folders = self._folder_list(projects, "Individual project folders",
                                                 current.get(PROJECT_FOLDERS, ""))
         self.project_roots = self._folder_list(projects, "Folders containing projects",
-                                              current.get(PROJECT_ROOTS, ""))
+                                              current.get(PROJECT_ROOTS, default_project_roots()))
         self.legacy_root = current.get("OVERLORD_PROJECTS_ROOT", "")
         if self.legacy_root and self.legacy_root not in self.project_roots.get(0, "end"):
             self.project_roots.insert("end", self.legacy_root)
         ttk.Label(projects, style="Muted.TLabel", wraplength=520,
                   text="Add a project itself, or a parent such as source/repos. These folders "
-                       "become available to /work and worker dispatch. The current workspace "
-                       "and standard Projects/Documents folders remain available.").pack(pady=8)
+                       "become available to /work and worker dispatch. Projects/Documents are "
+                       "defaults you can remove. The current workspace remains available.").pack(pady=8)
 
         permissions = ttk.Frame(notebook, style="Setup.TFrame", padding=16)
         notebook.add(permissions, text="Permissions")

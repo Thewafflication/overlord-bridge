@@ -107,7 +107,10 @@ workflow lands.
   API keys, individual projects / project parent folders, and bridge / Claude-edit /
   free-worker approval settings. Save reloads these into the running bridge.
   Projects are stored as JSON arrays in `OVERLORD_PROJECT_FOLDERS` and
-  `OVERLORD_PROJECTS_ROOTS`. The live console highlights native Codex command
+  `OVERLORD_PROJECTS_ROOTS`. Existing Projects/Documents folders appear as editable
+  defaults until a root list is saved; removing them (including saving an empty
+  list) excludes them from discovery. The current workspace remains available.
+  The live console highlights native Codex command
   events, Claude SDK Bash hooks, shared Claude Telegram-turn transcripts, and
   free/local/NVIDIA worker shell execution,
   with command, working folder, completion status and available exit codes.

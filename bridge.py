@@ -310,7 +310,8 @@ _BRAIN_NAME = BRAIN if BRAIN in VALID_BRAINS else "claude"
 
 def project_roots() -> list[Path]:
     """Folders whose children are projects: the configured root, the workspace
-    (unless that is the whole home directory) and the standard worker zones."""
+    (unless that is the whole home directory). Standard zones default only
+    until the user saves an explicit root list, including an empty one."""
     candidates: list[Path] = []
     candidates.extend(configured_paths(PROJECT_ROOTS))
     if PROJECTS_ROOT:
@@ -321,7 +322,8 @@ def project_roots() -> list[Path]:
             candidates.append(workspace)
     except OSError:
         pass
-    candidates.extend(_ALLOWED_ROOTS)
+    if PROJECT_ROOTS not in os.environ:
+        candidates.extend(_ALLOWED_ROOTS)
     seen: list[Path] = []
     for root in candidates:
         if root.is_dir() and root not in seen:
