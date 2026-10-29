@@ -1710,14 +1710,23 @@ class WorkerManager:
             denial = _local_agent_path_denial(path, folder, write=False)
             if denial:
                 return {"ok": False, "error": denial, "path": str(path)}
-            if not path.exists() or not path.is_file():
-                return {"ok": False, "error": "file_not_found", "path": str(path)}
+            try:
+                if not path.exists() or not path.is_file():
+                    return {"ok": False, "error": "file_not_found", "path": str(path)}
+                text = path.read_text(encoding="utf-8", errors="replace")
+            except OSError as exc:
+                # Windows placeholders/reparse points can fail during stat, before
+                # opening the file. Return evidence to the worker so it can recover.
+                return {"ok": False, "tool": tool_name, "error": "file_unreadable",
+                        "path": str(path), "errno": exc.errno,
+                        "winerror": getattr(exc, "winerror", None),
+                        "message": "The operating system could not read this file. "
+                                   "Choose an accessible source file or report this blocker."}
             max_chars = arguments.get("max_chars", 6000)
             try:
                 max_chars_i = max(1, min(int(max_chars), DEFAULT_LOCAL_AGENT_TOOL_OUTPUT_CHARS))
             except (TypeError, ValueError):
                 max_chars_i = 6000
-            text = path.read_text(encoding="utf-8", errors="replace")
             lines = text.splitlines(keepends=True)
             start, count = 1, len(lines)
             if "start_line" in arguments or "line_count" in arguments:

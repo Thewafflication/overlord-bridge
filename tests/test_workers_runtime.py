@@ -66,6 +66,33 @@ def run(coro):
     return asyncio.run(coro)
 
 
+@pytest.mark.parametrize("operation", ["stat", "read_text"])
+def test_inaccessible_read_returns_error_and_worker_can_continue(isolated, monkeypatch, operation):
+    project = isolated / "accessible"
+    project.mkdir()
+    broken = project / "unavailable.c"
+    broken.write_text("source", encoding="utf-8")
+    (project / "good.c").write_text("available source", encoding="utf-8")
+    original = getattr(Path, operation)
+
+    def fail_one(path, *args, **kwargs):
+        if path == broken:
+            error = OSError(13, "inaccessible placeholder")
+            error.winerror = 1920
+            raise error
+        return original(path, *args, **kwargs)
+
+    manager, _, _ = make_manager(isolated)
+    monkeypatch.setattr(Path, operation, fail_one)
+    result = run(manager._execute_checked("free", project, "read_file", {"path": broken.name}))
+    assert result["ok"] is False
+    assert result["error"] == "file_unreadable"
+    assert result["winerror"] == 1920
+    recovered = run(manager._execute_checked("free", project, "read_file", {"path": "good.c"}))
+    assert recovered["ok"] is True
+    assert "available source" in recovered["content"]
+
+
 def test_cancelled_tool_terminates_its_owned_process(tmp_path, monkeypatch):
     async def scenario():
         manager, _, _ = make_manager(tmp_path)

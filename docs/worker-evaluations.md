@@ -1,5 +1,11 @@
 # Live worker evaluations
 
+## 2026-10-29: scheduled-project audit and inaccessible-file recovery
+
+The two-hour monitor retained all sixteen active 7200-second project schedules and their exclusions. cv2pdb_package reported commit 173692b; independent inspection confirmed the committed PowerShell test harness and rerunning it passed package verification. This establishes a positive synthetic-package test only, not negative-case coverage. Other scheduled reports were explicitly incomplete (invalid progress plans or unavailable provider pool), rather than false successes. Healthy subsequent workers were left running. Detailed report IDs and follow-ups live in out/monitoring/overlord-project-work.json.
+
+Free-tcc_package crashed at read_file before returning a tool result: Path.exists raised Windows error 1920 for out/simd/linux/Makefile. Reproduced the actual metadata failure without changing project files. The read tool now returns file_unreadable with numeric OS diagnostics for metadata/open/read failures; it retains missing-file and access restrictions. Both synthetic metadata/read regressions verify the same worker can read another accessible file afterward. Actual-path smoke returns file_unreadable/winerror 1920. Focused worker suites: 139 passed. Release/install verification is pending; continue 1.0.67 deployment before another fix.
+
 ## Latest installed release: optional Telegram and console UX in 1.0.62
 
 Owner requested optional Telegram and a better console. Feature commit 80159db/tag 1.0.62 is committed, pushed, signed, released and installed. Telegram defaults off without credentials, can be explicitly disabled with OVERLORD_TELEGRAM_ENABLED=0, and remains enabled for existing configured installs. Settings > Integrations controls this after restart. ConsoleTransport mirrors conversation and prompts locally, optionally delegates to Telegram, and routes local allow/deny/session choices and questions through the existing gate. A durable response queue prevents rapid replies overwriting one another or becoming model chat. Command choices clear when a model/effort argument is applied.
