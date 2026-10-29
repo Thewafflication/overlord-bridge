@@ -22,6 +22,40 @@ def test_log_lines_are_classified_for_rich_text():
     assert MODULE.level_for_line("plain output") == "plain"
 
 
+def test_chat_widget_renders_styles_and_keeps_transcript_original(tmp_path):
+    import tkinter as tk
+    import pytest
+
+    try:
+        root = tk.Tk()
+    except tk.TclError:
+        pytest.skip("No graphical display")
+    root.withdraw()
+    try:
+        console = MODULE.OverlordConsole.__new__(MODULE.OverlordConsole)
+        console.text = tk.Text(root)
+        console.chat_text = tk.Text(root)
+        console.autoscroll = tk.BooleanVar(value=True)
+        console.chat_offset = 0
+        console.chat_messages = []
+        console.chat_mirror_path = tmp_path / "chat.jsonl"
+        raw = "## Result\n**Ready**\n```python\n**literal**\n```"
+        console.chat_mirror_path.write_text(json.dumps({
+            "role": "assistant", "source": "console", "text": raw,
+        }) + "\n", encoding="utf-8")
+        console._configure_tags()
+        console._read_new_chat()
+        displayed = console.chat_text.get("1.0", "end-1c")
+        assert "## Result" not in displayed
+        assert "Ready" in displayed and "**literal**" in displayed
+        assert console.chat_text.tag_ranges("md_heading")
+        assert console.chat_text.tag_ranges("md_bold")
+        assert console.chat_text.tag_ranges("md_code")
+        assert json.loads(console.chat_mirror_path.read_text(encoding="utf-8"))["text"] == raw
+    finally:
+        root.destroy()
+
+
 def test_brain_status_card_marks_active_brain_and_usage():
     text = MODULE.format_brain_summary(
         "claude",

@@ -21,6 +21,7 @@ from modules.chat_requests import append_request  # noqa: E402
 from modules.commands import format_brain_card  # noqa: E402
 from modules.version import display_version  # noqa: E402
 from modules.output_text import activity_summary  # noqa: E402
+from modules.message_formatting import message_spans  # noqa: E402
 
 POLL_MS = 300
 INITIAL_TAIL_BYTES = 160_000
@@ -396,6 +397,11 @@ class OverlordConsole:
         if hasattr(self, "chat_text"):
             self.chat_text.tag_configure("owner", foreground="#86efac")
             self.chat_text.tag_configure("overlord", foreground="#dbeafe")
+            self.chat_text.tag_configure("md_bold", font=("Segoe UI", 11, "bold"))
+            self.chat_text.tag_configure("md_italic", font=("Segoe UI", 11, "italic"))
+            self.chat_text.tag_configure("md_heading", font=("Segoe UI", 14, "bold"), spacing1=8, spacing3=4)
+            self.chat_text.tag_configure("md_code", font=("Consolas", 10), background="#172033")
+            self.chat_text.tag_configure("md_link", foreground="#93c5fd", underline=True)
 
     def _seek_initial_tail(self) -> None:
         try:
@@ -473,7 +479,12 @@ class OverlordConsole:
             del self.chat_messages[:-MAX_WIDGET_LINES]
             self.chat_text.configure(state="normal")
             tag = "owner" if record.get("role") == ROLE_OWNER else "overlord"
-            self.chat_text.insert("end", line + "\n", tag)
+            body = str(record.get("text") or "").rstrip()
+            prefix = line[:-len(body)] if body else line
+            self.chat_text.insert("end", prefix, tag)
+            for content, styles in message_spans(body):
+                self.chat_text.insert("end", content, (tag,) + styles)
+            self.chat_text.insert("end", "\n\n", tag)
             self.chat_text.configure(state="disabled")
         if records:
             line_count = int(self.chat_text.index("end-1c").split(".", 1)[0])
