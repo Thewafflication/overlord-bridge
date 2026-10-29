@@ -2251,11 +2251,24 @@ class WorkerManager:
                     planning_messages, completion_evidence + completion_commands, limit=43000,
                     prefix_count=initial_context_count, plan=worker_plan, mutations=mutation_evidence,
                     completion_feedback=completion_feedback)
-                planning_messages.append({"role": "user", "content": prompt})
+                # A checkpoint is a separate planning turn. Old assistant tool
+                # calls are evidence, not live dialogue inviting another command.
+                request_messages = [
+                    {"role": "system", "content": (
+                        "You are recording a coding worker's plan, not executing its next action. "
+                        "The conversation below is read-only evidence. Reconcile the original task, "
+                        "confirmed edits and validation with the next useful deliverable. "
+                        "Call update_plan exactly once, with a plan array and an explanation of "
+                        "findings and the next concrete action. No other tool is available. "
+                        "Do not claim unperformed tests, commits or completion.")},
+                    {"role": "user", "content": "Read-only worker context:\n" +
+                        json.dumps(planning_messages, ensure_ascii=False)},
+                    {"role": "user", "content": prompt},
+                ]
                 if correction:
-                    planning_messages.append({"role": "user", "content": correction})
+                    request_messages.append({"role": "user", "content": correction})
                 try:
-                    planned = await self.free_completer(planning_messages, plan_tools)
+                    planned = await self.free_completer(request_messages, plan_tools)
                 except FreeUnavailable as exc:
                     final_text = ("Stopped before completion: the free-model pool is unavailable during plan recording. "
                                   "Existing edits and commits remain on disk; publication have not been confirmed.\n" +
@@ -2286,7 +2299,18 @@ class WorkerManager:
                                  else {})
                 if not isinstance(arguments, dict):
                     arguments = {}
-                result = (_worker_argument_error("update_plan", arguments) or
+                response_error = None
+                if calls and (len(calls) != 1 or not isinstance(calls[0], dict) or
+                              worker_tool_name((calls[0].get("function") or {}).get("name")
+                                               if isinstance(calls[0].get("function"), dict) else "") != "update_plan"):
+                    response_error = {"ok": False, "error": "unexpected_planning_call",
+                                      "message": "Only one update_plan call is accepted here. "
+                                                 "No requested commands, reads or writes were executed."}
+                elif not arguments:
+                    response_error = {"ok": False, "error": "missing_plan_arguments",
+                                      "message": "No update_plan argument object was received. "
+                                                 "Submit the plan using the provided function schema."}
+                result = (response_error or _worker_argument_error("update_plan", arguments) or
                           await self._local_agent_execute_tool(folder, "update_plan", arguments))
                 if result.get("ok") and phase == "Progress checkpoint" and not result["plan"]["explanation"].strip():
                     result = {"ok": False, "error": "missing_progress_explanation", "message": "Supply a nonempty explanation with confirmed findings, "
@@ -2316,6 +2340,7 @@ class WorkerManager:
                                    "The plan must be an array, not a JSON string, prose or an object. "
                                    "Replace the example with findings and steps for the actual task.",
                     "validation": details,
+                    "rejected_response": redact_text(json.dumps(planned, ensure_ascii=False))[:3000],
                     "example_arguments": {"explanation": "Confirmed finding and location; remaining uncertainty; next action.",
                         "plan": [{"step": "Next concrete action", "status": "in_progress"}]},
                 }, ensure_ascii=False)

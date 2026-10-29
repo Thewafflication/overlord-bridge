@@ -1709,6 +1709,29 @@ def test_progress_plan_repair_keeps_structured_feedback_after_trimming(isolated,
     assert events(mgr)[-1]['status'] == 'finished'
 
 
+def test_checkpoint_isolates_execution_history_and_explains_rejected_calls(isolated, tmp_path):
+    project = isolated / 'isolated-planner'
+    project.mkdir()
+    valid = call('update_plan', {
+        'plan': [{'step': 'Validate the queue repair and commit', 'status': 'in_progress'}],
+        'explanation': 'Queue source inspected; next run the regression and commit.'})
+    rejected = call('write_file', {'path': 'unplanned.txt', 'content': 'must not execute'})
+    completer, _ = scripted_pool(
+        [*context_pressure_actions(project), final_result('Inspected')],
+        plans=[valid, rejected, valid])
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    checkpoint = completer.planning[1]
+    assert [m['role'] for m in checkpoint] == ['system', 'user', 'user']
+    assert 'read-only evidence' in checkpoint[0]['content']
+    assert 'tool_calls' in checkpoint[1]['content']
+    correction = json.loads(completer.planning[2][-1]['content'])
+    assert correction['validation']['error'] == 'unexpected_planning_call'
+    assert 'write_file' in correction['rejected_response']
+    assert not (project / 'unplanned.txt').exists()
+    assert events(mgr)[-1]['status'] == 'finished'
+
+
 def test_plan_validation_names_nested_fields_without_values(tmp_path):
     mgr, _, _ = manager(tmp_path, None)
     result = run(mgr._local_agent_execute_tool(tmp_path, 'update_plan', {
