@@ -856,7 +856,11 @@ class FreeBrain(Brain):
                   "workers for configured local projects with start_project_work. Use it when "
                   "the user requests a project review, inspection or changes. Workers can read "
                   "files and run commands. Interpret project names from context and the available "
-                  "folders; ask if ambiguous. Pass the user's requirements faithfully. A code "
+                  "folders; ask if ambiguous. Pass the user's requirements faithfully. A request to "
+                  "continue a project or advance a milestone authorizes useful implementation, validation "
+                  "and local commits within that request. Tell the worker to use project instructions, "
+                  "handoffs, current requirements, plans and tests to select a concrete next step; "
+                  "do not downgrade it to a read-only survey or findings report. A code "
                   "review should inspect the local checkout and report actionable findings with "
                   "file/line evidence without editing. Answer ordinary conversation directly. "
                   "Never claim a worker started without calling the tool."
@@ -887,7 +891,7 @@ class FreeBrain(Brain):
                 if call.get("function", {}).get("name") == "shared_memory" and shared_memory is not None:
                     results.append(shared_memory.execute_chat_tool(call))
                 elif project_work is not None:
-                    results.append(project_work.execute_chat_tool(chat_id, call))
+                    results.append(project_work.execute_chat_tool(chat_id, call, owner_request=text))
                 else:
                     results.append("Unknown tool; no action performed.")
             reply = "\n".join(results)

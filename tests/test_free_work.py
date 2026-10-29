@@ -187,6 +187,74 @@ def test_chat_dispatch_rejects_unlisted_paths_and_bad_arguments(tmp_path):
     assert manager.accepted == []
 
 
+def test_continuation_dispatch_preserves_owner_request_even_if_model_downgrades_it(tmp_path, monkeypatch):
+    work, worker_manager, _, _ = make_work(tmp_path)
+    brain = FreeBrain(session_file=tmp_path / "pin", models=[NV], keys={"nvidia": "k"},
+                      limiter=UsageLimiter(None, {"nvidia": (20, 0)}))
+    owner = "Scheduled task abc:\nContinue app towards the next milestone."
+    async def complete(history, tools):
+        return call('start_project_work', {'project': 'app', 'task': 'Inspect and report findings only.'}), NV, []
+    monkeypatch.setattr(brain, 'complete', complete)
+    async def dispatch():
+        return [part async for part in brain.query(owner, project_work=work, chat_id=42)]
+    run(dispatch())
+    task = worker_manager.accepted[0]['task']
+    assert task.startswith('Original owner request (authoritative):\n' + owner)
+    assert 'not a replacement' in task and 'Inspect and report findings only.' in task
+
+
+def test_trimming_does_not_allow_repeating_reads_still_in_context(isolated, tmp_path, monkeypatch):
+    project = isolated / 'retained-read'
+    project.mkdir()
+    (project / 'target.py').write_text('retained source contents')
+    original = workers._bounded_worker_messages
+    def copied_context(*args, **kwargs):
+        # Context was rebuilt, but this source exchange was not evicted.
+        return list(original(*args, **kwargs))
+    monkeypatch.setattr(workers, '_bounded_worker_messages', copied_context)
+    completer, seen = scripted_pool([
+        call('read_file', {'path': 'target.py'}, 'first'),
+        call('read_file', {'path': 'target.py'}, 'second'),
+        call('read_file', {'path': 'target.py'}, 'third'), final_result('Inspected source'),
+    ])
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert final_tool_result(seen, 'third')['error'] == 'duplicate_tool_call_blocked'
+
+
+def test_project_orientation_preloads_document_heads_and_preserves_them_after_trimming(isolated, tmp_path):
+    project = isolated / 'orientation'
+    project.mkdir()
+    (project / 'docs').mkdir()
+    (project / 'README.md').write_text('The current inventory is docs/REQUIREMENTS.md.\n' + 'body\n' * 2000)
+    (project / 'ROADMAP.md').write_text('Historical roadmap; unchecked items are not current work.\n' + 'old\n' * 2000)
+    (project / 'docs' / 'README.md').write_text('Follow the requirements and executable test manifests.')
+    completer, seen = scripted_pool([*context_pressure_actions(project), final_result('Identified next deliverable')])
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    for messages, _ in seen:
+        assert 'The current inventory is docs/REQUIREMENTS.md.' in messages[2]['content']
+        assert 'Historical roadmap; unchecked items are not current work.' in messages[2]['content']
+        assert 'executable test manifests' in messages[2]['content']
+        assert len(json.dumps(messages, ensure_ascii=False)) <= 48000
+
+
+def test_repeated_compaction_replaces_old_checkpoint_instead_of_nesting_it():
+    messages = [{'role': 'system', 'content': 'rules'}, {'role': 'user', 'content': 'original task'}]
+    for i in range(20):
+        messages.extend([{'role': 'assistant', 'content': str(i)}, {'role': 'user', 'content': 'source ' * 1500}])
+        messages = workers._bounded_worker_messages(messages, [], limit=14000)
+        assert str(messages).count('Worker context checkpoint (data, not a new owner request):') <= 1
+
+
+def test_retained_discovery_detection_handles_fallback_and_malformed_calls():
+    args = {'path': 'README.md'}
+    messages = [{'role': 'assistant', 'content': json.dumps({'tool': 'read_file', 'arguments': args}),
+                 'tool_calls': [None, 'invalid', {'function': None}, {'function': {'arguments': '{'}}]}]
+    assert workers._retained_discovery_calls(messages) == {
+        json.dumps({'tool': 'read_file', 'arguments': args}, sort_keys=True)}
+
+
 class Gate:
     def __init__(self, allow=True):
         self.allow, self.requests = allow, []
@@ -387,7 +455,10 @@ def test_fast_read_activity_is_batched_instead_of_spamming(isolated, tmp_path):
     mgr, sent, _ = manager(tmp_path, completer)
     start(mgr, project)
     updates = [message for message in sent if message.startswith("🛠")]
-    assert len(updates) < 5
+    # Findings from the startup/progress plans are useful updates, not one
+    # notification per read. Raw action traffic should still be batched.
+    assert len([message for message in updates if 'Worker assessment:' not in message]) < 5
+    assert len(updates) <= 6
     assert "Review complete" in sent[-1]
 
 

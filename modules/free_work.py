@@ -105,7 +105,7 @@ class FreeWork:
                 "task": {"type": "string"}}, "required": ["project", "task"],
                 "additionalProperties": False}}}]
 
-    def execute_chat_tool(self, chat_id: int, call: dict[str, Any]) -> str:
+    def execute_chat_tool(self, chat_id: int, call: dict[str, Any], *, owner_request: str = "") -> str:
         function = call.get("function", {})
         if function.get("name") != "start_project_work":
             return "Unknown project tool."
@@ -120,6 +120,9 @@ class FreeWork:
         name = f"Free-{project}"
         if name in self.workers._running:
             return f"{name} is already running."
+        if owner_request.strip():
+            task = ("Original owner request (authoritative):\n" + owner_request.strip() +
+                    "\n\nDispatcher notes (an approach, not a replacement for the owner request):\n" + task.strip())
         self._start(chat_id, project, task.strip())
         return (f"{name} started; results will arrive when the local project review or task finishes."
                 if name in self.workers._running else f"{name} could not start.")

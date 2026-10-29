@@ -552,3 +552,14 @@ Confirmed file mutations retain their own bounded 20-entry metadata ledger acros
 - Completion challenges survive reads, searches, listings, plan updates and unchanged writes. Confirmed edits or successful commands reset them; valid final reports still receive review, including read-only work. Unresolved feedback is pinned across context trimming and progress planning.
 
 - Plan repair retries retain the latest structured correction after trimming, alongside a valid argument example. Nested validation names constraints without submitted values; bounded rejection diagnostics and the final exhausted-retry report identify the specific failure.
+
+- Free chat dispatch preserves the exact current owner request alongside subordinate
+  dispatcher notes, so milestone continuation cannot silently become a read-only
+  survey. Workers preload allowed HANDOFF.md, AGENTS.md, README.md,
+  docs/README.md and ROADMAP.md after explicit hints (eight files, 4,000 characters
+  per file, 12,000 characters total). Preloads retain file beginnings and stay
+  pinned through trimming; project status notes and documentation links should
+  guide targeted requirements/test/source checks. Previous generated context
+  checkpoints are replaced rather than nested. Trimming refreshes duplicate read,
+  list and search protection only for requests no longer present in retained
+  context. Model-authored plan findings are surfaced as worker assessments.

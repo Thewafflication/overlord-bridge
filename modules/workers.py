@@ -1159,6 +1159,11 @@ def _bounded_worker_messages(messages: list[dict[str, Any]], evidence: list[str]
         note["content"] = heading + evidence_tail + mutation_text + plan_text + review_text
     groups = []
     for message in messages[prefix_count:]:
+        if message.get("role") == "user" and str(message.get("content", "")).startswith(
+                "Worker context checkpoint (data, not a new owner request):"):
+            # Replace our previous checkpoint instead of nesting it inside
+            # the next checkpoint and repeatedly evicting useful source.
+            continue
         if message.get("role") == "assistant" or not groups:
             groups.append([])
         groups[-1].append(message)
@@ -1168,6 +1173,30 @@ def _bounded_worker_messages(messages: list[dict[str, Any]], evidence: list[str]
             break
         retained = group + retained
     return base + [note] + retained
+
+
+def _retained_discovery_calls(messages: list[dict[str, Any]]) -> set[str]:
+    """Identify tool requests still in context; trimming isn't universal amnesia."""
+    found = set()
+    for message in messages:
+        if message.get("role") != "assistant":
+            continue
+        requests = []
+        for call in message.get("tool_calls") or []:
+            if not isinstance(call, dict) or not isinstance(call.get("function"), dict):
+                continue
+            function = call["function"]
+            try:
+                args = function.get("arguments", {})
+                requests.append((worker_tool_name(function.get("name")), json.loads(args) if isinstance(args, str) else args))
+            except (ValueError, TypeError):
+                continue
+        fallback = _extract_json_object(str(message.get("content") or "")) or {}
+        requests.append((worker_tool_name(fallback.get("tool") or fallback.get("name")), fallback.get("arguments", {})))
+        for tool, args in requests:
+            if tool in {"read_file", "list_files", "search_file"} and isinstance(args, dict):
+                found.add(json.dumps({"tool": tool, "arguments": args}, sort_keys=True))
+    return found
 
 
 class WorkerReportStore:
@@ -1951,15 +1980,22 @@ class WorkerManager:
         )
 
         preload_blocks: list[str] = []
-        for hinted_path in dict.fromkeys([*(files or []), "HANDOFF.md"]):
+        preload_chars = 0
+        for hinted_path in dict.fromkeys([*(files or []), "HANDOFF.md", "AGENTS.md", "README.md",
+                                         "docs/README.md", "ROADMAP.md"]):
             path, error = _resolve_worker_relative_path(folder, hinted_path)
             if error or path is None:
                 continue
             denial = _local_agent_path_denial(path, folder, write=False)
             if denial or not path.exists() or not path.is_file():
                 continue
-            text = path.read_text(encoding="utf-8", errors="replace")
-            bounded, truncated = _bounded_tail(text, 4000)
+            available = min(4000, 12000 - preload_chars)
+            if available <= 0:
+                break
+            with path.open(encoding="utf-8", errors="replace") as stream:
+                text = stream.read(available + 1)
+            bounded, truncated = text[:available], len(text) > available
+            preload_chars += len(bounded)
             preload_blocks.append(
                 f"--- FILE: {hinted_path} ---\n{bounded}"
                 + ("\n[truncated]" if truncated else "")
@@ -1987,6 +2023,13 @@ class WorkerManager:
                 "need project context, do not inspect files or run commands; return the final "
                 "answer directly. "
                 "Prefer the suggested starting files and any preloaded file contents before exploring further. "
+                "When dispatcher notes accompany an original owner request, the original request controls "
+                "scope and deliverables; do not replace implementation with a read-only approach. "
+                "Follow project instructions and linked documentation indexes to identify authoritative current state. "
+                "A roadmap or checklist may be historical: reconcile its status notes against requirements, "
+                "tests, recent git history and actual code before declaring missing work. "
+                "For continuation or milestone work, select a bounded next deliverable and implement and validate it; "
+                "discovery is preparation, not a substitute for the owner's requested outcome. "
                 "Use update_plan to record concrete next steps and findings; update it as work progresses. "
                 "The latest plan survives context trimming; continue from it instead of restarting discovery. "
                 "Prefer targeted commands compatible with the host environment. "
@@ -2027,8 +2070,8 @@ class WorkerManager:
                 {
                     "role": "user",
                     "content": (
-                        "Here are the suggested starting files already loaded for you. "
-                        "Use them before broad exploration. Handoff notes describe prior work and may be stale; "
+                        "Here are suggested starting files and project orientation documents already loaded for you. "
+                        "Use them and their links before broad exploration. Handoff notes describe prior work and may be stale; "
                         "reconcile them against the current task and source, and do not replay side effects automatically.\n\n"
                         + "\n\n".join(preload_blocks)
                     ),
@@ -2245,6 +2288,8 @@ class WorkerManager:
                         "Current model-maintained plan (assessment, not verified completion):\n" +
                         json.dumps(worker_plan, ensure_ascii=False))})
                     transcript.append(phase + ": " + json.dumps(worker_plan, ensure_ascii=False))
+                    if worker_plan["explanation"].strip():
+                        progress("Worker assessment: " + worker_plan["explanation"][:1200], important=True)
                     return True
                 # Keep the latest correction after trimming and after the phase
                 # prompt, rather than burying or discarding structured errors.
@@ -2367,10 +2412,12 @@ class WorkerManager:
                     completion_feedback=completion_feedback)
                     if bounded_messages is not messages:
                         messages = bounded_messages
-                        # Source results may have been evicted. Allow reacquisition
-                        # without clearing repeated command/write protection.
+                        # Reacquire only evicted source; retaining a recent result
+                        # must not reset its duplicate guard on every trim.
+                        retained_calls = _retained_discovery_calls(messages)
                         for fingerprint in list(tool_call_counts):
-                            if json.loads(fingerprint)["tool"] in {"read_file", "list_files", "search_file"}:
+                            if (json.loads(fingerprint)["tool"] in {"read_file", "list_files", "search_file"}
+                                    and fingerprint not in retained_calls):
                                 del tool_call_counts[fingerprint]
                         progress(f"Step {step}: bounded earlier worker context; retained task and recent tool exchanges.",
                                  important=True)
