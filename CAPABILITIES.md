@@ -115,6 +115,17 @@ workflow lands.
   free/local/NVIDIA worker shell execution,
   with command, working folder, completion status and available exit codes.
 
+- Persistent scheduled tasks: `/schedule` (or the console Schedules button)
+  lists tasks; `in 30m <task>`, `at <ISO-time-with-offset> <task>` and
+  `every 24h <task>` create one-time or recurring prompts. `pause`, `resume`,
+  `run` and `remove` accept a listed ID. State lives in
+  `run/scheduled-tasks.json`; bridge restarts and `/new` preserve it. Due tasks
+  wait for an idle foreground turn, then use the active brain and ordinary
+  permissions. Overlord must be running. Missed intervals coalesce into one
+  dispatch. Recurrence uses elapsed seconds, not wall-clock calendar rules.
+  Dispatch is persisted before starting, preventing automatic duplicate replay
+  after a crash; use `run <id>` to retry a dispatched task without a result.
+
 - `voice_gateway`: place and manage phone calls, send DTMF, listen to real
   people with local Whisper STT, and speak responses through Azure TTS or
   ElevenLabs. Live as MCP tools (`hfp_status`, `lookup_contact`, `place_call`)

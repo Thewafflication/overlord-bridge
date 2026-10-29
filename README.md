@@ -42,6 +42,36 @@ common interface and a remote permission gate added.
 | `overlord-fetch-relay.service` | `systemd --user` unit for `modules/fetch_relay.py` |
 | `.env.example` | Config template |
 
+## Scheduled tasks
+
+Use the console's **Schedules** button or `/schedule` in either chat interface.
+Schedules are saved in `run/scheduled-tasks.json` and survive bridge restarts.
+
+```text
+/schedule in 30m Review the build results in my project
+/schedule at 2026-12-01T09:00:00-06:00 Prepare the monthly project summary
+/schedule every 24h Check project status and report changes
+/schedule list
+/schedule pause <id>
+/schedule resume <id>
+/schedule run <id>
+/schedule remove <id>
+```
+
+Overlord must be running to execute schedules. Tasks use the active brain,
+conversation and current permissions; approvals still require a response.
+They wait for the foreground turn to finish, and results appear in normal chat.
+An overdue one-time task runs when the bridge is next idle. Recurring schedules
+use fixed elapsed intervals, so `24h` does not promise the same local wall-clock
+time across daylight-saving changes; missed intervals run once without a backlog.
+Absolute times require a UTC offset or `Z` to avoid timezone ambiguity.
+
+The list shows dispatch state, not task completion. Dispatch is recorded before
+starting to prevent duplicate execution after a crash; a crash at that boundary
+may leave a task marked dispatched without a result. Use `/schedule run <id>` to
+retry deliberately. `/stop` cancels the active turn; pause or remove a recurring
+schedule to prevent future runs. `/new` preserves schedules.
+
 ## Choosing the brain
 
 Set `OVERLORD_BRAIN` in `.env`:

@@ -53,6 +53,7 @@ log = logging.getLogger("overlord.telegram")
 # Telegram hard limit on a single text message.
 MAX_MESSAGE_LEN = 4096
 COMMAND_OPTION_PAGES = {
+    "/schedule": [("Scheduled tasks", "/schedule list"), ("Scheduling help", "/schedule help")],
     "/brain": [("Claude", "/brain claude"), ("Codex", "/brain codex"), ("Free models", "/brain free")],
     "/status": [("All engines", "/status all")],
     "/tokens": [(str(n), f"/tokens {n}") for n in (10, 25, 50)],
@@ -64,7 +65,7 @@ COMMANDS = (
     "start", "menu",
     "new", "help", "status", "stop", "steer", "brain", "tokens", "quote",
     "model", "effort", "questions", "reply", "cancelquestion", "permissions",
-    "context", "compact", "work",
+    "context", "compact", "work", "schedule",
 )
 
 COMMAND_DESCRIPTIONS = {
@@ -78,6 +79,7 @@ COMMAND_DESCRIPTIONS = {
     "cancelquestion": "Cancel a pending question", "permissions": "Show permission grants",
     "context": "Show retained conversation context", "compact": "Compact the conversation",
     "work": "Manage autonomous project work",
+    "schedule": "Manage scheduled tasks",
 }
 
 # Fixed callback IDs route through the same owner-only command queue as typed commands.

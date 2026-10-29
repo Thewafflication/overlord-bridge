@@ -18,6 +18,7 @@ Pick a command to see option buttons. Model and effort choices support paging.
 /status all — show every brain side by side
 /tokens [n] — per-prompt token history (default 10)
 /quote <text> — estimate the input tokens a prompt would cost
+/schedule — manage persistent one-time and recurring tasks (/schedule help)
 /model [name] — show or switch the active brain's model
 /effort [level] — show or switch the reasoning effort level
 /questions — show the pending question and its ID

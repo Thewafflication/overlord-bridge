@@ -89,6 +89,7 @@ from modules.telegram_handler import TelegramHandler
 from modules.single_instance import AlreadyRunningError, SingleInstance
 from modules.windows_tray import WindowsTray
 from modules.free_work import FreeWork, normalize_mode
+from modules.scheduled_tasks import ScheduledTasks
 from modules.workers import _ALLOWED_ROOTS, DEFAULT_AIDER_CONTEXT_TOKENS, WorkerManager
 
 logging.basicConfig(
@@ -762,6 +763,10 @@ class Bridge:
             response_tokens=env_int("OVERLORD_FREE_WORK_MAX_TOKENS", 8192),
             projects=lambda: configured_paths(PROJECT_FOLDERS),
         )
+        self.scheduled_tasks = ScheduledTasks(
+            BASE_DIR / "run" / "scheduled-tasks.json", send=self.telegram.send,
+            start=self._start_scheduled_turn, busy=self._turn_is_active,
+        )
 
     # ---------------------------------------------------------------- main loop
     async def run(self) -> None:
@@ -819,6 +824,7 @@ class Bridge:
         asyncio.create_task(self._chat_request_loop())
         from modules.local_control import serve
         control_task = asyncio.create_task(serve(BASE_DIR / "run", self._local_control_action, self._shutdown_event))
+        schedule_task = asyncio.create_task(self.scheduled_tasks.watch(OWNER))
         try:
             while not self._shutdown_event.is_set():
                 chat_id, text = await asyncio.get_running_loop().run_in_executor(
@@ -828,6 +834,8 @@ class Bridge:
                     break
                 await self._dispatch_inbound(chat_id, text)
         finally:
+            schedule_task.cancel()
+            await asyncio.gather(schedule_task, return_exceptions=True)
             control_task.cancel()
             await asyncio.gather(control_task, return_exceptions=True)
             if self._turn_is_active():
@@ -882,6 +890,8 @@ class Bridge:
                 self._handle_context(chat_id)
             elif command == "/work":
                 await self.free_work.handle(chat_id, text)
+            elif command == "/schedule":
+                self.scheduled_tasks.handle(chat_id, text)
             elif command == "/compact":
                 self._start_compaction(chat_id)
             else:
@@ -1572,6 +1582,12 @@ class Bridge:
 
     def _turn_is_active(self) -> bool:
         return self._active_turn_task is not None and not self._active_turn_task.done()
+
+    def _start_scheduled_turn(self, chat_id: int, text: str) -> bool:
+        if self._turn_is_active():
+            return False
+        self.chat_mirror.append(ROLE_OWNER, text, source="schedule")
+        return self._start_turn(chat_id, text)
 
     def _start_turn(self, chat_id: int, text: str) -> bool:
         if self._turn_is_active():

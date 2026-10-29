@@ -186,10 +186,15 @@ def test_local_stop_cleans_up_real_worker_command_tree(tmp_path):
         instance.workers = SimpleNamespace(_running={'command-test': task})
         shutdown, server, _ = await start_server(tmp_path, instance._local_control_action)
         try:
-            for _ in range(300):
+            # Process startup can exceed three seconds on a loaded Windows
+            # runner. Wait for readiness, and surface early tool failures.
+            deadline = asyncio.get_running_loop().time() + 15
+            while asyncio.get_running_loop().time() < deadline:
                 if (project / 'ready.txt').exists():
                     break
-                await asyncio.sleep(0.01)
+                if task.done():
+                    raise AssertionError(f"Worker exited before readiness: {task.result()}")
+                await asyncio.sleep(0.02)
             assert (project / 'ready.txt').exists()
             result = await asyncio.to_thread(local_control.request, tmp_path, 'stop', 15)
             assert result['ok'] and result['state']['idle'] and task.cancelled()

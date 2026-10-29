@@ -206,7 +206,7 @@ class OverlordConsole:
             if self.command_path is None:
                 button.state(["disabled"])
         ttk.Button(actions, text="Engine details", command=self.toggle_details).pack(side="left", padx=3)
-        for label, command in (("Models", "/model"), ("Effort", "/effort"), ("Help", "/help")):
+        for label, command in (("Models", "/model"), ("Effort", "/effort"), ("Schedules", "/schedule"), ("Help", "/help")):
             ttk.Button(actions, text=label, command=lambda value=command: self.queue_chat(value)).pack(side="left", padx=3)
         self.action_status = tk.StringVar(value="")
         ttk.Label(
