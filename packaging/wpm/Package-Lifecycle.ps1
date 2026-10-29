@@ -52,6 +52,19 @@ function Copy-PersistentState {
     foreach ($session in @(Get-ChildItem -LiteralPath $From -Filter '.session.*' -File -Force -ErrorAction SilentlyContinue)) {
         Copy-Item -LiteralPath $session.FullName -Destination (Join-Path $To $session.Name) -Force
     }
+    # Schedule definitions are durable owner configuration, not disposable
+    # runtime state. Carry them through staging, upgrades and removal/reinstall.
+    $schedule = Join-Path $From 'run/scheduled-tasks.json'
+    if (Test-Path -LiteralPath $schedule -PathType Leaf) {
+        foreach ($path in @((Join-Path $From 'run'), $schedule)) {
+            if ((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                throw 'Refusing linked scheduled task state; the existing installation was not replaced.'
+            }
+        }
+        $runDirectory = Join-Path $To 'run'
+        New-Item -ItemType Directory -Force -Path $runDirectory | Out-Null
+        Copy-Item -LiteralPath $schedule -Destination (Join-Path $runDirectory 'scheduled-tasks.json') -Force
+    }
     # Latest reports contain the worker/session mapping needed for resumption;
     # event history and its rotation belong to the same persistent store.
     $reports = Join-Path $From 'worker_reports'

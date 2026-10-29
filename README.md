@@ -60,7 +60,7 @@ Schedules are saved in `run/scheduled-tasks.json` and survive bridge restarts.
 
 Overlord must be running to execute schedules. Tasks use the active brain,
 conversation and current permissions; approvals still require a response.
-They wait for the foreground turn to finish, and results appear in normal chat.
+They wait for foreground turns and background workers to finish, and results appear in normal chat.
 An overdue one-time task runs when the bridge is next idle. Recurring schedules
 use fixed elapsed intervals, so `24h` does not promise the same local wall-clock
 time across daylight-saving changes; missed intervals run once without a backlog.

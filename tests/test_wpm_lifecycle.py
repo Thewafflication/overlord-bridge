@@ -167,6 +167,8 @@ def test_worker_reports_survive_upgrade_and_reinstall_state_round_trips(tmp_path
     (install / '.venv/cache').write_text('replaceable environment')
     (install / 'run/local-control').mkdir(parents=True)
     (install / 'run/local-control/service.json').write_text('{"instance":"stale-service"}')
+    schedule = '{"version":1,"tasks":{"daily":{"prompt":"Continue project work"}}}'
+    (install / 'run/scheduled-tasks.json').write_text(schedule)
     result = run_script(tmp_path, r'''
 $state = Join-Path (Split-Path -Parent $Root) 'persistent-state'
 $replacement = Join-Path (Split-Path -Parent $Root) 'replacement'
@@ -194,8 +196,10 @@ Copy-PersistentState -From $state -To $reinstalled
     assert (restored / 'worker_reports/events.1.jsonl').read_text() == 'older event\n'
     assert (restored / '.session.free').read_text() == 'synthetic-pin'
     assert (reports / 'latest/fixture.json').read_text() == latest
+    assert (restored / 'run/scheduled-tasks.json').read_text() == schedule
+    assert not (restored / 'run/local-control/service.json').exists()
     assert not (restored / '.venv').exists()
-    assert not (restored / 'run').exists()
+    assert sorted(p.name for p in (restored / 'run').iterdir()) == ['scheduled-tasks.json']
 
 
 def test_worker_report_links_fail_before_copying_external_state(tmp_path):
@@ -212,5 +216,22 @@ try { Copy-PersistentState -From $Root -To $destination }
 catch { $rejected = $_.Exception.Message -like 'Refusing linked worker report state*' }
 @{rejected=$rejected; copied=(Test-Path -LiteralPath (Join-Path $destination 'worker_reports'));
   source=(Test-Path -LiteralPath (Join-Path $outside 'sentinel.json'))} | ConvertTo-Json -Compress
+''')
+    assert result == {'rejected': True, 'copied': False, 'source': True}
+
+
+def test_linked_schedule_directory_is_not_copied(tmp_path):
+    result = run_script(tmp_path, r'''
+$outside = Join-Path (Split-Path -Parent $Root) 'external-state'
+$destination = Join-Path (Split-Path -Parent $Root) 'saved'
+New-Item -ItemType Directory -Path $Root, $outside -Force | Out-Null
+[IO.File]::WriteAllText((Join-Path $outside 'scheduled-tasks.json'), '{"version":1,"tasks":{}}')
+$kind = if ($IsWindows) { 'Junction' } else { 'SymbolicLink' }
+New-Item -ItemType $kind -Path (Join-Path $Root 'run') -Target $outside | Out-Null
+$rejected = $false
+try { Copy-PersistentState -From $Root -To $destination }
+catch { $rejected = $_.Exception.Message -like 'Refusing linked scheduled task state*' }
+@{rejected=$rejected; copied=(Test-Path -LiteralPath (Join-Path $destination 'run/scheduled-tasks.json'));
+  source=(Test-Path -LiteralPath (Join-Path $outside 'scheduled-tasks.json'))} | ConvertTo-Json -Compress
 ''')
     assert result == {'rejected': True, 'copied': False, 'source': True}

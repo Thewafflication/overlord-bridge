@@ -141,6 +141,17 @@ def test_commands_are_discoverable():
     assert "/schedule" in bridge.HELP_TEXT
 
 
+def test_scheduled_work_waits_for_background_workers_too():
+    app = bridge.Bridge.__new__(bridge.Bridge)
+    app._active_turn_task = None
+    app.workers = SimpleNamespace(_running={'Free-project': object()})
+    app._start_turn = lambda *args: pytest.fail('must not start another scheduled turn')
+    assert app._scheduled_work_is_active()
+    assert not app._start_scheduled_turn(42, 'next scheduled project')
+    app.workers._running.clear()
+    assert not app._scheduled_work_is_active()
+
+
 def test_scheduler_starts_actual_bridge_turn_and_waits_for_it(scheduler):
     instance, now, _, _, _ = scheduler
 

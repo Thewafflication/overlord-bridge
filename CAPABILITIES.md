@@ -125,6 +125,9 @@ workflow lands.
   dispatch. Recurrence uses elapsed seconds, not wall-clock calendar rules.
   Dispatch is persisted before starting, preventing automatic duplicate replay
   after a crash; use `run <id>` to retry a dispatched task without a result.
+  Windows package lifecycle preserves schedule definitions across upgrades and
+  removal/reinstall while excluding transient service-control state. Due prompts
+  wait for background project workers as well as foreground turns.
 
 - `voice_gateway`: place and manage phone calls, send DTMF, listen to real
   people with local Whisper STT, and speak responses through Azure TTS or

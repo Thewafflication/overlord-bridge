@@ -765,7 +765,7 @@ class Bridge:
         )
         self.scheduled_tasks = ScheduledTasks(
             BASE_DIR / "run" / "scheduled-tasks.json", send=self.telegram.send,
-            start=self._start_scheduled_turn, busy=self._turn_is_active,
+            start=self._start_scheduled_turn, busy=self._scheduled_work_is_active,
         )
 
     # ---------------------------------------------------------------- main loop
@@ -1584,10 +1584,13 @@ class Bridge:
         return self._active_turn_task is not None and not self._active_turn_task.done()
 
     def _start_scheduled_turn(self, chat_id: int, text: str) -> bool:
-        if self._turn_is_active():
+        if self._scheduled_work_is_active():
             return False
         self.chat_mirror.append(ROLE_OWNER, text, source="schedule")
         return self._start_turn(chat_id, text)
+
+    def _scheduled_work_is_active(self) -> bool:
+        return self._turn_is_active() or bool(getattr(getattr(self, "workers", None), "_running", {}))
 
     def _start_turn(self, chat_id: int, text: str) -> bool:
         if self._turn_is_active():
