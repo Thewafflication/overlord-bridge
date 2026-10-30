@@ -1868,3 +1868,65 @@ def test_completion_review_observes_actual_committed_coverage_loss(isolated, tmp
     assert '-def test_rejects_bad_metadata' in files['test_verifier.py']['content']
     assert files['test_verifier_checks.py']['untracked']
     assert 'omitted for brevity' in files['test_verifier_checks.py']['content']
+
+
+def test_worker_git_configuration_preserves_owner_runtime_settings(monkeypatch):
+    monkeypatch.setenv('GIT_CONFIG_COUNT','1')
+    monkeypatch.setenv('GIT_CONFIG_KEY_0','core.safecrlf')
+    monkeypatch.setenv('GIT_CONFIG_VALUE_0','false')
+    environment = workers._worker_command_environment()
+    assert environment['GIT_CONFIG_COUNT'] == '2'
+    assert environment['GIT_CONFIG_KEY_0'] == 'core.safecrlf'
+    assert environment['GIT_CONFIG_VALUE_0'] == 'false'
+    assert environment['GIT_CONFIG_KEY_1'] == 'push.recurseSubmodules'
+    assert environment['GIT_CONFIG_VALUE_1'] == 'check'
+    import os
+    assert os.environ['GIT_CONFIG_COUNT'] == '1'
+
+
+@pytest.mark.parametrize('tool', ['run_command','run_python'])
+def test_worker_push_requires_published_submodule_without_auto_publishing(isolated,tmp_path,tool):
+    import subprocess
+    def git(folder,*args):
+        return subprocess.check_output(['git','-C',str(folder),*args],text=True,stderr=subprocess.STDOUT).strip()
+    def initialize(folder):
+        folder.mkdir(); git(folder,'init'); git(folder,'config','user.name','Publication fixture'); git(folder,'config','user.email','fixture@example.invalid')
+    child = isolated/'child'; initialize(child)
+    (child/'api.py').write_text('value = 1\n'); git(child,'add','.'); git(child,'commit','-m','Seed dependency')
+    child_remote = isolated/'child.git'
+    subprocess.run(['git','init','--bare',str(child_remote)],check=True,capture_output=True)
+    git(child,'remote','add','origin',str(child_remote)); git(child,'push','-u','origin','HEAD')
+    project = isolated/'parent'; initialize(project)
+    git(project,'-c','protocol.file.allow=always','submodule','add',str(child_remote),'dependency')
+    git(project,'add','.'); git(project,'commit','-m','Seed parent')
+    parent_remote = isolated/'parent.git'; legacy_remote = isolated/'legacy.git'
+    for name,remote in [('origin',parent_remote),('legacy',legacy_remote)]:
+        subprocess.run(['git','init','--bare',str(remote)],check=True,capture_output=True)
+        git(project,'remote','add',name,str(remote)); git(project,'push','-u',name,'HEAD')
+    initial_parent = git(project,'rev-parse','HEAD')
+    nested = project/'dependency'
+    git(nested,'config','user.name','Publication fixture'); git(nested,'config','user.email','fixture@example.invalid')
+    (nested/'api.py').write_text('value = 2\n'); git(nested,'add','api.py'); git(nested,'commit','-m','Unpublished dependency repair')
+    child_head = git(nested,'rev-parse','HEAD')
+    git(project,'add','dependency'); git(project,'commit','-m','Reference dependency repair')
+    parent_head = git(project,'rev-parse','HEAD')
+    # Default Git reproduces the observed broken parent-only publication.
+    git(project,'push','legacy','HEAD')
+    assert git(project,'ls-remote','legacy','HEAD').split()[0] == parent_head
+    assert git(nested,'ls-remote','origin','HEAD').split()[0] != child_head
+    mgr,_,_ = manager(tmp_path,None)
+    args = ({'command':'git push origin HEAD'} if tool == 'run_command' else
+            {'code':'import subprocess; subprocess.run(["git","push","origin","HEAD"],check=True)'})
+    result = run(mgr._execute_checked('free',project,tool,args))
+    assert result['exit_code'] != 0 and not result['ok']
+    assert git(project,'ls-remote','origin','HEAD').split()[0] == initial_parent
+    assert git(nested,'ls-remote','origin','HEAD').split()[0] != child_head
+    # Publish the fixture dependency explicitly, then the parent check succeeds.
+    git(nested,'push','origin','HEAD')
+    result = run(mgr._execute_checked('free',project,tool,args))
+    assert result['ok'] and result['exit_code'] == 0
+    assert git(project,'ls-remote','origin','HEAD').split()[0] == parent_head
+    clone = isolated/'verified-clone'
+    subprocess.run(['git','-c','protocol.file.allow=always','clone','--recurse-submodules',str(parent_remote),str(clone)],check=True,capture_output=True)
+    assert git(clone/'dependency','rev-parse','HEAD') == child_head
+    assert (clone/'dependency/api.py').read_text() == 'value = 2\n'

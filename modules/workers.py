@@ -867,7 +867,7 @@ def _local_agent_tools() -> list[dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "run_command",
-                "description": "Run a noninteractive command in the project folder (already the working directory). Stdin is closed: supply arguments or unattended flags instead of answering prompts. Default shell is cmd.exe on Windows, /bin/sh elsewhere. Select shell=powershell on Windows for PowerShell syntax. Do not mix shell dialects or use Bash heredocs on Windows.",
+                "description": "Run a noninteractive command in the project folder (already the working directory). Stdin is closed: supply arguments or unattended flags instead of answering prompts. Default shell is cmd.exe on Windows, /bin/sh elsewhere. Select shell=powershell on Windows for PowerShell syntax. Do not mix shell dialects or use Bash heredocs on Windows. Git pushes check changed submodule commits for remote availability; do not bypass that check or auto-push unrelated nested changes.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -1014,6 +1014,23 @@ def _worker_argument_error(tool_name: str, arguments: Any) -> dict[str, Any] | N
             "message": "No action was executed. Pass one JSON object using these exact parameter names and types. "
                        "For source ranges use start_line and line_count, not start/end/offset. "
                        "For Python use code; for shell commands use command."}
+
+
+def _worker_command_environment() -> dict[str, str]:
+    environment = os.environ.copy()
+    # Git's check mode prevents publishing parent revisions whose changed
+    # submodule commits have no remote-tracking branch. Never auto-push them.
+    # Append rather than replace any owner-provided runtime Git configuration.
+    try:
+        count = int(environment.get("GIT_CONFIG_COUNT", "0"))
+    except ValueError:
+        return environment  # Git itself rejects malformed configuration.
+    if count < 0:
+        return environment
+    environment[f"GIT_CONFIG_KEY_{count}"] = "push.recurseSubmodules"
+    environment[f"GIT_CONFIG_VALUE_{count}"] = "check"
+    environment["GIT_CONFIG_COUNT"] = str(count + 1)
+    return environment
 
 
 def _worker_plan_result(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -1594,7 +1611,7 @@ class WorkerManager:
             except (TypeError, ValueError):
                 timeout_i = DEFAULT_LOCAL_AGENT_COMMAND_TIMEOUT
             log_command("worker", "started", command, folder)
-            environment = os.environ.copy()
+            environment = _worker_command_environment()
             # Tool results are decoded as UTF-8 below. Redirected Python on
             # Windows otherwise uses the legacy code page, corrupting output
             # or crashing while printing Unicode filenames and test results.
