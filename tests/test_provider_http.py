@@ -10,9 +10,12 @@ from tools import overlord_setup as setup
 
 def test_setup_and_inference_identify_the_application():
     seen = []
+    bodies = []
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args): pass
         def respond(self):
+            length = int(self.headers.get("Content-Length", "0"))
+            bodies.append(self.rfile.read(length) if length else b"")
             seen.append((self.command, self.headers.get('User-Agent'), self.headers.get('Authorization')))
             named = self.headers.get('User-Agent') == USER_AGENT
             self.send_response(200 if named else 403)
@@ -28,6 +31,7 @@ def test_setup_and_inference_identify_the_application():
         assert setup._get(url, 'synthetic', 3)[0] == 200
         assert _post_sync(url, {'messages': []}, 'synthetic', 3)[0] == 200
         assert seen == [('GET', USER_AGENT, 'Bearer synthetic'), ('POST', USER_AGENT, 'Bearer synthetic')]
+        assert bodies[0] == b'' and json.loads(bodies[1]) == {'messages': []}
     finally:
         server.shutdown()
         server.server_close()

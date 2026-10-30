@@ -122,7 +122,9 @@ workflow lands.
 - Persistent scheduled tasks: `/schedule` (or the console Schedules button)
   lists tasks; `in 30m <task>`, `at <ISO-time-with-offset> <task>` and
   `every 24h <task>` create one-time or recurring prompts. `pause`, `resume`,
-  `run` and `remove` accept a listed ID. State lives in
+  `run` and `remove` accept a listed ID. `edit <id> <task>` changes future task text
+  without resetting its ID, state, interval, due time or last dispatch; running
+  work keeps its original task. State lives in
   `run/scheduled-tasks.json`; bridge restarts and `/new` preserve it. Due tasks
   wait for an idle foreground turn, then use the active brain and ordinary
   permissions. Overlord must be running. Missed intervals coalesce into one

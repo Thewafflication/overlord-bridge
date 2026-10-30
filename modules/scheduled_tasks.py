@@ -18,6 +18,7 @@ USAGE = """Scheduled tasks (Overlord must be running)
 /schedule in 30m <task> — run once after a delay
 /schedule at 2026-11-01T09:00:00-06:00 <task> — run once at an explicit time
 /schedule every 24h <task> — repeat at a fixed interval
+/schedule edit <id> <task> — change future task text; keep timing and state
 /schedule pause|resume|remove|run <id>
 Durations: seconds (s), minutes (m), hours (h), days (d), minimum 60s.
 Overdue tasks run once when idle; recurring tasks skip missed intervals.
@@ -117,6 +118,14 @@ class ScheduledTasks:
                           "interval": interval if action == "every" else 0, "last_dispatch": None}
             reply = f"Scheduled {key} for {display_time(due)}. " + (
                 f"Repeats every {interval}s." if action == "every" else "Runs once.")
+        elif action == "edit":
+            if len(parts) != 4 or not parts[3].strip():
+                return USAGE
+            key = parts[2]
+            if key not in tasks:
+                raise ValueError("Unknown task ID. Use /schedule to list IDs.")
+            tasks[key]["prompt"] = parts[3]
+            reply = f"Schedule {key}: task updated for future runs; timing and state unchanged."
         elif action in {"pause", "resume", "remove", "run"}:
             if len(parts) != 3:
                 return USAGE

@@ -207,3 +207,56 @@ def test_watch_continues_after_poll_failure_and_cancels(scheduler, monkeypatch):
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(instance.watch(42))
     assert calls == [42, 42]
+
+
+@pytest.mark.parametrize('state', ['active','paused','dispatched','failed'])
+def test_edit_preserves_schedule_identity_timing_state_and_restart(scheduler,state):
+    instance,now,started,_,busy=scheduler
+    key=create(instance,'/schedule every 2h Old worker instruction')
+    instance.tasks[key]['state']=state
+    instance.tasks[key]['last_dispatch']=now[0]-100
+    before=dict(instance.tasks[key]);now[0]+=37;busy[0]=True
+    prompt='/work project Repair the known failure.\nPreserve "quoted" arguments and commit only validated work.'
+    response=instance.command(f'/schedule edit {key} {prompt}')
+    assert 'timing and state unchanged' in response
+    assert instance.tasks[key]=={**before,'prompt':prompt}
+    assert len(instance.tasks)==1 and not started
+    loaded=ScheduledTasks(instance.path,clock=lambda:now[0],send=instance.send,start=instance.start,busy=instance.busy)
+    assert loaded.tasks==instance.tasks
+
+
+def test_edit_changes_next_run_without_retargeting_active_work(scheduler):
+    instance,now,started,_,busy=scheduler
+    key=create(instance,'/schedule every 1h Original task')
+    now[0]+=3600;instance.tick(42)
+    assert started[0][1].split('\n',1)[1]=='Original task'
+    before=dict(instance.tasks[key]);busy[0]=True
+    instance.command(f'/schedule edit {key} Corrected concrete task')
+    instance.tick(42)
+    assert len(started)==1 and instance.tasks[key]=={**before,'prompt':'Corrected concrete task'}
+    now[0]+=3600;busy[0]=False;instance.tick(42)
+    assert [text.split('\n',1)[1] for _,text in started]==['Original task','Corrected concrete task']
+    assert len(instance.tasks)==1
+
+
+def test_invalid_edit_does_not_change_storage_or_memory(scheduler):
+    instance,_,_,_,_=scheduler
+    key=create(instance,'/schedule every 2h Existing task')
+    before=instance.path.read_bytes();original=dict(instance.tasks[key])
+    instance.command(f'/schedule edit {key}')
+    instance.command(f'/schedule edit {key}   ')
+    instance.handle(42,'/schedule edit missing New task')
+    assert instance.tasks[key]==original and instance.path.read_bytes()==before
+
+
+def test_failed_edit_keeps_prior_task_and_file(scheduler,monkeypatch):
+    from pathlib import Path
+    instance,_,_,_,_=scheduler
+    key=create(instance,'/schedule every 2h Original task')
+    before=instance.path.read_bytes();original=dict(instance.tasks[key])
+    def fail_replace(self,target):
+        raise OSError('fixture storage failure')
+    monkeypatch.setattr(Path,'replace',fail_replace)
+    with pytest.raises(OSError):
+        instance.command(f'/schedule edit {key} Corrected task')
+    assert instance.tasks[key]==original and instance.path.read_bytes()==before
