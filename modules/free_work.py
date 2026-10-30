@@ -17,6 +17,7 @@ operator first by default (exact-action "allow for this session" grants apply).
 from __future__ import annotations
 
 import logging
+import asyncio
 import json
 from pathlib import Path
 from typing import Any, Awaitable, Callable
@@ -81,6 +82,7 @@ class FreeWork:
         patience: float = 120.0,
         response_tokens: int = 8192,
         projects: Callable[[], list[Path]] | None = None,
+        wait_for_capacity: bool = True,
     ) -> None:
         self._send, self._roots, self.workers, self.gate = send, roots, workers, gate
         self._pool = pool
@@ -88,6 +90,7 @@ class FreeWork:
         self.patience = patience
         self.response_tokens = max(64, min(int(response_tokens), 32768))
         self._projects = projects or (lambda: [])
+        self.wait_for_capacity = wait_for_capacity
 
     # ------------------------------------------------------------- commands
     def chat_tools(self) -> list[dict[str, Any]]:
@@ -192,7 +195,25 @@ class FreeWork:
     async def complete(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None) -> dict[str, Any]:
         """One assistant turn from the shared pool (waiting out short rate limits)."""
         pool = await self._pool()
-        message, spec, _ = await pool.complete(messages, tools, patience=self.patience, max_tokens=self.response_tokens)
+        from modules.free_brain import FreeUnavailable
+        waiting = False
+        while True:
+            try:
+                message, spec, _ = await pool.complete(messages, tools, patience=self.patience, max_tokens=self.response_tokens)
+                break
+            except FreeUnavailable as exc:
+                if not self.wait_for_capacity or not exc.retryable:
+                    raise
+                if not waiting:
+                    log.info("Free worker waiting for provider capacity; task and context retained")
+                    self._send(getattr(self.workers, "owner", 0),
+                               "Free worker waiting for provider capacity. Task/context retained; "
+                               "work resumes automatically. /stop remains available.")
+                    waiting = True
+                await asyncio.sleep(min(60.0, max(1.0, exc.soonest)))
+                pool = await self._pool()  # settings may have added capacity while waiting
+        if waiting:
+            self._send(getattr(self.workers, "owner", 0), "Provider capacity available; continuing the worker.")
         message["_free_model"] = spec.key
         return message
 

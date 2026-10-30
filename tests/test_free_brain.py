@@ -20,6 +20,43 @@ from modules.free_brain import (
 NV = ModelSpec("nvidia", "openai/gpt-oss-20b")
 NV2 = ModelSpec("nvidia", "meta/llama-3.3-70b-instruct")
 OR = ModelSpec("openrouter", "vendor/model:free")
+GROQ = ModelSpec("groq", "openai/gpt-oss-120b")
+
+
+def test_groq_requires_opt_in_and_uses_native_tools_without_paid_router_policy(tmp_path, monkeypatch):
+    disabled = make(tmp_path, monkeypatch, [], models=(GROQ,), keys={"groq": "synthetic"})
+    assert not disabled.models and 'enable Groq' in disabled.unavailable[0]
+    brain = make(tmp_path, monkeypatch, [reply('ready')], models=(GROQ,),
+                 keys={'groq': 'synthetic'}, groq_enabled=True)
+    message, spec, _ = run(brain.complete([{'role': 'user', 'content': 'test'}], [{'type': 'function', 'function': {'name': 'inspect'}}]))
+    assert message['content'] == 'ready' and spec == GROQ
+    url, payload, key = brain.calls[0]
+    assert url == free_brain.GROQ_BASE + '/chat/completions'
+    assert payload['parallel_tool_calls'] is False and 'provider' not in payload
+    assert key == 'synthetic'
+
+
+def test_groq_token_budget_cools_siblings_and_auth_failure_is_not_capacity(tmp_path, monkeypatch):
+    sibling = ModelSpec('groq', 'openai/gpt-oss-20b')
+    brain = make(tmp_path, monkeypatch, [(401, {}, {})], models=(GROQ, sibling),
+                 keys={'groq': 'synthetic'}, groq_enabled=True)
+    brain._note_rate_headers(GROQ, {'x-ratelimit-remaining-tokens': '0', 'x-ratelimit-reset-tokens': '2m'})
+    assert brain.limiter.availability(sibling)[0] == 120
+    assert brain.limiter.availability(NV)[0] == 0
+    brain.limiter._cooldown.clear()
+    with pytest.raises(free_brain.FreeUnavailable) as failure:
+        run(brain.complete([{'role': 'user', 'content': 'test'}], patience=0))
+    assert failure.value.retryable is False
+
+
+def test_groq_rate_limit_has_retryable_provider_wide_wait(tmp_path, monkeypatch):
+    sibling = ModelSpec('groq', 'openai/gpt-oss-20b')
+    brain = make(tmp_path, monkeypatch, [(429, {'retry-after': '2m'}, {})], models=(GROQ, sibling),
+                 keys={'groq': 'synthetic'}, groq_enabled=True)
+    with pytest.raises(free_brain.FreeUnavailable) as failure:
+        run(brain.complete([{'role': 'user', 'content': 'test'}], patience=0))
+    assert failure.value.retryable and failure.value.soonest == 120
+    assert len(brain.calls) == 1
 
 
 class Clock:
@@ -556,7 +593,7 @@ def test_discovery_picks_priced_at_zero_chat_models_one_per_vendor():
 def test_openrouter_leads_the_default_model_list():
     specs = parse_models(free_brain.DEFAULT_MODELS)
     assert specs[0] == ModelSpec("openrouter", "free")
-    assert {s.provider for s in specs} == {"openrouter", "nvidia", "gemini"}
+    assert {s.provider for s in specs} == {"openrouter", "nvidia", "gemini", "groq"}
 
 
 def test_connect_expands_the_placeholder_from_the_live_catalog(tmp_path, monkeypatch):
@@ -634,7 +671,7 @@ def test_status_lists_every_model_with_its_state_and_marks_the_current_one(tmp_p
     brain = make(tmp_path, monkeypatch, [], models=(NV, NV2))
     brain.limiter.cool_down(NV2.key, 90)
     lines = brain.status_snapshot()["usage_summary"]
-    assert lines[0] == "Keys: nvidia ✓, openrouter ✓, gemini ✗ no key"
+    assert lines[0] == "Keys: nvidia ✓, openrouter ✓, gemini ✗ no key, groq ✗ no key"
     assert f"● {NV.key}: ready" in lines
     assert any(l.startswith(f"○ {NV2.key}: cooling down, back in") for l in lines)
 

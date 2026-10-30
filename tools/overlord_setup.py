@@ -29,6 +29,10 @@ from modules.gui_settings import (  # noqa: E402
 )
 
 GEMINI_KEY = "OVERLORD_FREE_GEMINI_API_KEY"
+GROQ_KEY = "OVERLORD_FREE_GROQ_API_KEY"
+GROQ_ENABLED = "OVERLORD_FREE_GROQ_ENABLED"
+GROQ_MODELS_URL = "https://api.groq.com/openai/v1/models"
+GROQ_KEYS_PAGE = "https://console.groq.com/keys"
 GEMINI_ENABLED = "OVERLORD_FREE_GEMINI_ENABLED"
 GEMINI_MODELS_URL = "https://generativelanguage.googleapis.com/v1beta/openai/models"
 GEMINI_KEYS_PAGE = "https://aistudio.google.com/apikey"
@@ -135,6 +139,8 @@ class SetupWindow:
         self.env_path, self.command_path = env_path, command_path
         current = read_env(env_path, ("OVERLORD_TELEGRAM_ENABLED", "TELEGRAM_BOT_TOKEN", "OWNER_CHAT_ID", GEMINI_KEY, "GEMINI_API_KEY", GEMINI_ENABLED, NVIDIA_KEY, "NVIDIA_API_KEY", OPENROUTER_KEY,
                                       "OVERLORD_WORKER_OPENROUTER_API_KEY", OPENROUTER_ENABLED) + SETTING_NAMES)
+        current.update(read_env(env_path, (GROQ_KEY, "GROQ_API_KEY", GROQ_ENABLED)))
+        self.saved_groq = current.get(GROQ_KEY) or current.get("GROQ_API_KEY", "")
         self.saved_gemini = current.get(GEMINI_KEY) or current.get("GEMINI_API_KEY", "")
         self.saved_nvidia = current.get(NVIDIA_KEY) or current.get("NVIDIA_API_KEY", "")
         self.saved_openrouter = (current.get(OPENROUTER_KEY)
@@ -144,7 +150,7 @@ class SetupWindow:
         self.root = tk.Tk()
         self.root.title(f"Overlord Setup — {display_version()}")
         self.root.configure(bg="#111827")
-        self.root.resizable(False, False)
+        self.root.resizable(True, True)
         style = ttk.Style(self.root)
         try:
             style.theme_use("clam")
@@ -157,8 +163,17 @@ class SetupWindow:
 
         notebook = ttk.Notebook(self.root)
         notebook.pack(fill="both", expand=True, padx=12, pady=12)
-        outer = ttk.Frame(notebook, style="Setup.TFrame", padding=16)
-        notebook.add(outer, text="API keys")
+        keys_page = ttk.Frame(notebook, style="Setup.TFrame")
+        notebook.add(keys_page, text="API keys")
+        key_canvas = tk.Canvas(keys_page, height=450, width=610, bg="#111827", highlightthickness=0)
+        key_scroll = ttk.Scrollbar(keys_page, orient="vertical", command=key_canvas.yview)
+        key_scroll.pack(side="right", fill="y")
+        key_canvas.pack(side="left", fill="both", expand=True)
+        key_canvas.configure(yscrollcommand=key_scroll.set)
+        outer = ttk.Frame(key_canvas, style="Setup.TFrame", padding=16)
+        key_window = key_canvas.create_window((0, 0), window=outer, anchor="nw")
+        outer.bind("<Configure>", lambda event: key_canvas.configure(scrollregion=key_canvas.bbox("all")))
+        key_canvas.bind("<Configure>", lambda event: key_canvas.itemconfigure(key_window, width=event.width))
         integrations = ttk.Frame(notebook, style="Setup.TFrame", padding=16)
         notebook.add(integrations, text="Integrations")
         default_telegram = bool(current.get("TELEGRAM_BOT_TOKEN") and current.get("OWNER_CHAT_ID"))
@@ -238,6 +253,12 @@ class SetupWindow:
                              "do not provide free API access. OpenAI GPT-OSS is available through NVIDIA.",
                   style="Muted.TLabel", wraplength=520).grid(row=13, column=0, columnspan=4, sticky="w", pady=8)
         self.status = tk.StringVar(value="Leave a key blank to keep the saved one.")
+        self.groq = self._key_row(outer, 14, "Groq", self.saved_groq,
+                                  self.test_groq, GROQ_KEYS_PAGE)
+        self.use_groq = tk.BooleanVar(value=truth(GROQ_ENABLED))
+        ttk.Checkbutton(outer, text="Enable Groq (use Free plan; paid accounts can be billed)",
+                        variable=self.use_groq, style="Setup.TCheckbutton").grid(
+                            row=17, column=0, columnspan=4, sticky="w", pady=(8, 0))
         ttk.Label(self.root, textvariable=self.status, style="Muted.TLabel", wraplength=520,
                   justify="left").pack(fill="x", padx=16)
         buttons = ttk.Frame(self.root, style="Setup.TFrame")
@@ -320,6 +341,13 @@ class SetupWindow:
             return
         self._background(lambda: probe_key(GEMINI_MODELS_URL, key, "Gemini"))
 
+    def test_groq(self, key: str) -> None:
+        key = key.strip() or self.saved_groq
+        if not key:
+            self.status.set("Enter a Groq key first.")
+            return
+        self._background(lambda: probe_key(GROQ_MODELS_URL, key, "Groq"))
+
     def test_openrouter(self, key: str) -> None:
         if not key.strip():
             self.status.set("✗ Enter a key first.")
@@ -348,6 +376,8 @@ class SetupWindow:
             "TELEGRAM_BOT_TOKEN": self.telegram_token.get().strip() or None,
             "OWNER_CHAT_ID": self.telegram_owner.get().strip(),
             GEMINI_KEY: self.gemini.get().strip() or None,
+            GROQ_KEY: self.groq.get().strip() or None,
+            GROQ_ENABLED: "1" if self.use_groq.get() else "0",
             GEMINI_ENABLED: "1" if self.use_gemini.get() else "0",
             NVIDIA_KEY: nvidia or None,
             OPENROUTER_KEY: openrouter or None,
@@ -374,7 +404,7 @@ class SetupWindow:
         self.status.set("✓ Saved. " + (
             "Other settings reload now; restart Overlord for Telegram integration changes."
             if reloaded else "Restart Overlord to apply them."))
-        for entry in (self.nvidia, self.openrouter, self.gemini):
+        for entry in (self.nvidia, self.openrouter, self.gemini, self.groq):
             entry.delete(0, "end")
 
     def run(self) -> None:

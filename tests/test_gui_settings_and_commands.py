@@ -178,8 +178,12 @@ def test_setup_window_saves_projects_and_permissions_without_touching_saved_keys
         window.permission_level.set("full")
         window.work_approval.set("commands")
         window.gemini.insert(0, "synthetic-gemini-key")
+        window.groq.insert(0, "synthetic-groq-key")
+        window.use_groq.set(True)
         window.use_gemini.set(True)
         window.save()
+        assert read_env(env, ("OVERLORD_FREE_GROQ_API_KEY", "OVERLORD_FREE_GROQ_ENABLED")) == {
+            "OVERLORD_FREE_GROQ_API_KEY": "synthetic-groq-key", "OVERLORD_FREE_GROQ_ENABLED": "1"}
         values = read_env(env, (PROJECT_FOLDERS, PERMISSION_LEVEL, "OVERLORD_AUTO_APPROVE", "OVERLORD_FREE_WORK_APPROVAL",
                                 "OVERLORD_WORKER_NVIDIA_API_KEY"))
         assert decode_paths(values[PROJECT_FOLDERS]) == [folder.resolve()]

@@ -44,12 +44,14 @@ from modules.workers import (
 
 log = logging.getLogger("overlord.free")
 
-PROVIDERS = ("nvidia", "openrouter", "gemini")
+PROVIDERS = ("nvidia", "openrouter", "gemini", "groq")
+GROQ_BASE = "https://api.groq.com/openai/v1"
+GROQ_MODELS = ("openai/gpt-oss-120b", "openai/gpt-oss-20b")
 GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/openai"
 GEMINI_FREE_MODELS = ("gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-2.5-flash-lite")
 # "openrouter:free" means: discover the best zero-priced chat models from the live
 # catalog (fixed IDs go stale quickly). OpenRouter leads, NVIDIA follows.
-DEFAULT_MODELS = "openrouter:free,nvidia:gpt-oss,nvidia:nemotron,nvidia:nemotron-lightning," + ",".join(f"gemini:{m}" for m in GEMINI_FREE_MODELS)
+DEFAULT_MODELS = "openrouter:free,nvidia:gpt-oss,nvidia:nemotron,nvidia:nemotron-lightning," + ",".join(f"gemini:{m}" for m in GEMINI_FREE_MODELS) + "," + ",".join(f"groq:{m}" for m in GROQ_MODELS)
 DISCOVER = "free"
 DISCOVER_LIMIT = 16
 ADMISSION_TTL = 300.0
@@ -61,7 +63,7 @@ FALLBACK_OPENROUTER = (
 _NOT_CHAT = ("safety", "guard", "embed", "moderation", "rerank")
 # Conservative published-tier defaults: OpenRouter's free tier is about 20/min
 # and 50/day without credits; NIM is rate limited per minute only.
-DEFAULT_LIMITS = {"nvidia": (20, 0), "openrouter": (15, 45), "gemini": (5, 20)}
+DEFAULT_LIMITS = {"nvidia": (20, 0), "openrouter": (15, 45), "gemini": (5, 20), "groq": (10, 250)}
 SYSTEM_PROMPT = (
     "You are the Overlord's chat assistant, reached through Telegram. You are a "
     "text-only model: you cannot run commands, read or edit files, browse, or "
@@ -214,8 +216,9 @@ def _parse_duration(value: Any) -> float | None:
 class FreeUnavailable(RuntimeError):
     """No free model could answer in time; carries why and when one returns."""
 
-    def __init__(self, skipped: list[str], soonest: float) -> None:
+    def __init__(self, skipped: list[str], soonest: float, *, retryable: bool = False) -> None:
         self.skipped, self.soonest = skipped, soonest
+        self.retryable = retryable
         hint = f" Next model free in about {format_wait(soonest)}." if soonest > 0 else ""
         bullets = "\n".join(f"• {s}" for s in skipped)
         super().__init__(f"No free model could answer right now:\n{bullets}{hint}")
@@ -401,6 +404,7 @@ class FreeBrain(Brain):
         bases: dict[str, str] | None = None,
         openrouter_enabled: bool = False,
         gemini_enabled: bool = False,
+        groq_enabled: bool = False,
         max_tokens: int = 2048,
         history_chars: int = 24_000,
         timeout: float = 90.0,
@@ -413,13 +417,14 @@ class FreeBrain(Brain):
         self.limiter = limiter
         self.keys = {k: (v or "").strip() for k, v in keys.items()}
         self.bases = {"nvidia": DEFAULT_NVIDIA_API_BASE, "openrouter": OPENROUTER_BASE,
-                      "gemini": GEMINI_BASE, **(bases or {})}
+                      "gemini": GEMINI_BASE, "groq": GROQ_BASE, **(bases or {})}
         self.max_tokens = max(64, max_tokens)
         self.history_chars = max(2_000, history_chars)
         self.timeout = timeout
         self.max_wait = max_wait
         self._sleep = sleep
         self._admitted: dict[tuple[str, bool], float] = {}  # last successful price check
+        self._retryable: dict[str, bool] = {}
         self.unavailable: list[str] = []
         self.models: list[ModelSpec] = []
         self._discover_at: int | None = None
@@ -435,6 +440,10 @@ class FreeBrain(Brain):
                 continue
             if not self.keys.get(spec.provider):
                 self.unavailable.append(f"{spec.key}: no {spec.provider} API key configured")
+            elif spec.provider == "groq" and not groq_enabled:
+                self.unavailable.append(f"{spec.key}: enable Groq with a Free-plan account (OVERLORD_FREE_GROQ_ENABLED=1)")
+            elif spec.provider == "groq" and spec.model not in GROQ_MODELS:
+                self.unavailable.append(f"{spec.key}: unsupported Groq worker model")
             elif spec.provider == "gemini" and not gemini_enabled:
                 self.unavailable.append(f"{spec.key}: enable Gemini with a free-tier project (OVERLORD_FREE_GEMINI_ENABLED=1)")
             elif spec.provider == "gemini" and spec.model not in GEMINI_FREE_MODELS:
@@ -710,6 +719,8 @@ class FreeBrain(Brain):
                 payload.pop("reasoning_budget", None)
         elif spec.provider == "openrouter":
             payload["provider"] = free_provider_policy()
+        elif spec.provider == "groq" and tools:
+            payload["parallel_tool_calls"] = False
         return payload
 
     @staticmethod
@@ -727,7 +738,11 @@ class FreeBrain(Brain):
         remaining = headers.get("x-ratelimit-remaining-requests")
         if remaining is not None and str(remaining).strip() == "0":
             reset = _parse_duration(headers.get("x-ratelimit-reset-requests")) or 60.0
-            self.limiter.cool_down(spec.key, min(reset, 3600.0))
+            self.limiter.cool_down(spec.provider if spec.provider == "groq" else spec.key,
+                                   min(reset, 86400.0 if spec.provider == "groq" else 3600.0))
+        if spec.provider == "groq" and str(headers.get("x-ratelimit-remaining-tokens", "")).strip() == "0":
+            reset = _parse_duration(headers.get("x-ratelimit-reset-tokens")) or 60.0
+            self.limiter.cool_down(spec.provider, min(reset, 86400.0))
 
     async def _attempt(
         self, spec: ModelSpec, messages: list[dict[str, Any]],
@@ -740,10 +755,12 @@ class FreeBrain(Brain):
             return None, f"{reason}, back in {format_wait(wait)}"
         denied = await self._admit(spec, bool(tools))
         if denied:
+            self._retryable[spec.key] = False
             return None, denied
         if wait > 0:
             await self._sleep(wait)
         self.limiter.record(spec)
+        self._retryable[spec.key] = True
         url = self.bases[spec.provider].rstrip("/") + "/chat/completions"
         started = time.monotonic()
         log.info("Free model request started: %s (tools=%s, input_chars=%s)",
@@ -761,7 +778,7 @@ class FreeBrain(Brain):
                  spec.key, status, time.monotonic() - started)
         if status == 429:
             seconds = _parse_duration(headers.get("retry-after")) or 60.0
-            self.limiter.cool_down(spec.key, min(seconds, 86_400.0))
+            self.limiter.cool_down(spec.provider if spec.provider == "groq" else spec.key, min(seconds, 86_400.0))
             return None, f"rate limited, retry in {format_wait(seconds)}"
         error = body.get("error") if isinstance(body, dict) else None
         detail = error.get("message") if isinstance(error, dict) else None
@@ -769,9 +786,13 @@ class FreeBrain(Brain):
             detail = body.get("detail") or body.get("title")  # NVIDIA problem+json
         suffix = f": {str(detail)[:240]}" if detail else ""
         if status == 401:
+            for sibling in self.models:
+                if sibling.provider == spec.provider:
+                    self._retryable[sibling.key] = False
             self.limiter.cool_down(spec.provider, 3600)
             return None, f"{spec.provider} rejected the API key (HTTP {status})" + suffix
         if status == 403:
+            self._retryable[spec.key] = False
             # Permission can be model-specific (e.g. OpenRouter's agent-harness
             # gate). Do not disable healthy sibling models using the same key.
             self.limiter.cool_down(spec.key, 3600)
@@ -780,12 +801,14 @@ class FreeBrain(Brain):
             self.limiter.cool_down(spec.key, 30)
             return None, f"provider error (HTTP {status})"
         if status != 200:
+            self._retryable[spec.key] = False
             self.limiter.cool_down(spec.key, 600)
             return None, f"HTTP {status}" + suffix
         self._note_rate_headers(spec, headers)
         choices = body.get("choices") if isinstance(body, dict) else None
         choice = choices[0] if isinstance(choices, list) and choices and isinstance(choices[0], dict) else {}
         if tools and choice.get("finish_reason") == "length":
+            self._retryable[spec.key] = False
             self.limiter.cool_down(spec.key, 30)
             log.warning("Free agent response from %s exhausted its output budget; trying fallback", spec.key)
             return None, "agent response truncated at output limit"
@@ -796,6 +819,7 @@ class FreeBrain(Brain):
         message["content"] = self._text_of(body)
         calls = message.get("tool_calls")
         if not message["content"] and not (isinstance(calls, list) and calls):
+            self._retryable[spec.key] = False
             usage = body.get("usage") if isinstance(body, dict) else None
             completion_tokens = usage.get("completion_tokens") if isinstance(usage, dict) else None
             finish_reason = choice.get("finish_reason")
@@ -834,7 +858,11 @@ class FreeBrain(Brain):
             soonest = min(waits) if waits else 0.0
             pause = max(1.0, soonest)
             if not self.models or waited + pause > patience:
-                raise FreeUnavailable(skipped, soonest)
+                retry_waits = [self.limiter.availability(s)[0] for s in self.models
+                               if self._retryable.get(s.key, True)]
+                retryable = bool(retry_waits) and min(retry_waits) > 0
+                raise FreeUnavailable(skipped, min(retry_waits) if retryable else soonest,
+                                      retryable=retryable)
             waited += pause
             await self._sleep(pause)
 

@@ -461,6 +461,7 @@ def build_brain(gate: PermissionGate, brain_name: str | None = None) -> Brain:
             models=parse_models(os.environ.get("OVERLORD_FREE_MODELS") or DEFAULT_MODELS),
             model=os.environ.get("OVERLORD_FREE_MODEL", "").strip() or None,
             keys={
+                "groq": env_first(("OVERLORD_FREE_GROQ_API_KEY", "GROQ_API_KEY")),
                 "gemini": env_first(("OVERLORD_FREE_GEMINI_API_KEY", "GEMINI_API_KEY")),
                 "nvidia": env_first(("OVERLORD_WORKER_NVIDIA_API_KEY", "NVIDIA_API_KEY")),
                 "openrouter": env_first(("OVERLORD_FREE_OPENROUTER_API_KEY",
@@ -470,6 +471,7 @@ def build_brain(gate: PermissionGate, brain_name: str | None = None) -> Brain:
             # A configured OpenRouter key is the consent; set the flag to 0 to opt out.
             openrouter_enabled=env_bool("OVERLORD_FREE_OPENROUTER_ENABLED", True),
             gemini_enabled=env_bool("OVERLORD_FREE_GEMINI_ENABLED", False),
+            groq_enabled=env_bool("OVERLORD_FREE_GROQ_ENABLED", False),
             limiter=UsageLimiter(BASE_DIR / "run" / "free_usage.json", limits),
             max_tokens=env_int("OVERLORD_FREE_MAX_TOKENS", 2048),
             history_chars=env_int("OVERLORD_FREE_HISTORY_CHARS", 24_000),
@@ -760,6 +762,7 @@ class Bridge:
             send=self.telegram.send, roots=project_roots, workers=self.workers,
             gate=self.gate, pool=self._free_pool,
             approval=FREE_WORK_APPROVAL, patience=FREE_WORK_PATIENCE,
+            wait_for_capacity=env_bool("OVERLORD_FREE_WORK_WAIT_FOR_CAPACITY", True),
             response_tokens=env_int("OVERLORD_FREE_WORK_MAX_TOKENS", 8192),
             projects=lambda: configured_paths(PROJECT_FOLDERS),
         )
@@ -1320,7 +1323,7 @@ class Bridge:
     # Settings the setup window may change while the bridge is running.
     _RELOADABLE_ENV = (
         "OVERLORD_FREE_", "OVERLORD_WORKER_NVIDIA_", "OVERLORD_WORKER_OPENROUTER_",
-        "NVIDIA_API_KEY",
+        "NVIDIA_API_KEY", "GROQ_API_KEY",
     )
 
     async def _reload_env(self) -> None:
