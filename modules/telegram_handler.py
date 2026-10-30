@@ -37,7 +37,7 @@ from telegram import (
     Update,
 )
 from telegram.constants import ChatAction
-from modules.output_text import telegram_blocks, expandable_html
+from modules.output_text import telegram_blocks, expandable_html, telegram_code_blocks, code_html
 from telegram.error import BadRequest, Conflict, NetworkError, RetryAfter, TelegramError
 from telegram.ext import (
     Application,
@@ -495,20 +495,27 @@ class TelegramHandler(threading.Thread):
 
     async def _send(self, chat_id: int, text: str) -> None:
         for block, expandable in telegram_blocks(text):
-            for chunk in _chunks(block):
-                if not chunk.strip():
-                    continue
-                await self._telegram_call(
-                    "send_message",
-                    lambda chunk=chunk, expandable=expandable: self.bot.send_message(
-                        chat_id=chat_id,
-                        text=expandable_html(chunk) if expandable else chunk,
-                        **({"parse_mode": "HTML"} if expandable else {}),
-                    ),
-                )
-                wakeup = getattr(self, "_typing_wakeups", {}).get(chat_id)
-                if wakeup is not None:
-                    wakeup.set()
+            if expandable:
+                await self._send_formatted_block(chat_id, block, expandable=True)
+            else:
+                for source, language in telegram_code_blocks(block):
+                    await self._send_formatted_block(chat_id, source, language=language)
+
+    async def _send_formatted_block(self, chat_id, block, *, expandable=False, language=None):
+        # Escaping can expand each character up to fivefold. Keep every HTML
+        # message independently balanced and below Telegram's UTF-16 limit.
+        chunks = (block[i:i + 500] for i in range(0, len(block), 500)) if language is not None else _chunks(block)
+        for chunk in chunks:
+            if language is None and not chunk.strip():
+                continue
+            rendered = (code_html(chunk, language) if language is not None else
+                        expandable_html(chunk) if expandable else chunk)
+            await self._telegram_call("send_message", lambda rendered=rendered: self.bot.send_message(
+                chat_id=chat_id, text=rendered,
+                **({"parse_mode": "HTML"} if expandable or language is not None else {})))
+            wakeup = getattr(self, "_typing_wakeups", {}).get(chat_id)
+            if wakeup is not None:
+                wakeup.set()
 
     async def _telegram_call(
         self,

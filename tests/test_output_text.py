@@ -31,6 +31,27 @@ def test_telegram_sends_logs_with_native_expandable_format():
     assert messages[1]["text"].startswith("<blockquote expandable>")
 
 
+def test_telegram_code_is_escaped_highlighted_and_independently_balanced():
+    import html
+    import re
+    messages = []
+    handler = TelegramHandler.__new__(TelegramHandler)
+    async def send_message(**kwargs):
+        messages.append(kwargs)
+    async def call(label, operation):
+        await operation()
+    handler.bot = SimpleNamespace(send_message=send_message)
+    handler._telegram_call = call
+    source = 'print("<tag> & value")\n' * 300
+    asyncio.run(handler._send(42, 'Code:\n```python\n' + source + '```\nDone'))
+    code_messages = [m for m in messages if m['text'].startswith('<pre>')]
+    assert code_messages
+    assert all(m['parse_mode'] == 'HTML' and m['text'].endswith('</code></pre>') for m in code_messages)
+    assert all(len(m['text'].encode('utf-16-le')) // 2 < 4096 for m in code_messages)
+    assert ''.join(html.unescape(re.sub('<[^>]+>', '', m['text'])) for m in code_messages) == source
+    assert messages[-1]['text'] == 'Done'
+
+
 def test_activity_summary_preserves_command_and_failure():
     assert activity_summary("2026 INFO COMMAND worker completed | cwd=C:/repo | make test | exit=0") == "Finished: make test · worker"
     assert "Failed (exit 2): make" in activity_summary("INFO COMMAND worker completed | cwd=C:/repo | make | exit=2")

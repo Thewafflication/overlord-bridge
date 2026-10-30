@@ -21,7 +21,7 @@ from modules.chat_requests import append_request  # noqa: E402
 from modules.commands import format_brain_card  # noqa: E402
 from modules.version import display_version  # noqa: E402
 from modules.output_text import activity_summary  # noqa: E402
-from modules.message_formatting import message_spans  # noqa: E402
+from modules.message_formatting import message_spans, SYNTAX_COLORS  # noqa: E402
 
 POLL_MS = 300
 INITIAL_TAIL_BYTES = 160_000
@@ -401,6 +401,9 @@ class OverlordConsole:
             self.chat_text.tag_configure("md_italic", font=("Segoe UI", 11, "italic"))
             self.chat_text.tag_configure("md_heading", font=("Segoe UI", 14, "bold"), spacing1=8, spacing3=4)
             self.chat_text.tag_configure("md_code", font=("Consolas", 10), background="#172033")
+            self.chat_text.tag_configure("md_code_block", lmargin1=12, lmargin2=12, rmargin=12)
+            for name, color in SYNTAX_COLORS.items():
+                self.chat_text.tag_configure("syntax_" + name, foreground=color)
             self.chat_text.tag_configure("md_link", foreground="#93c5fd", underline=True)
 
     def _seek_initial_tail(self) -> None:

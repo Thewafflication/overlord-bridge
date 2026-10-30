@@ -32,6 +32,25 @@ def expandable_html(text: str) -> str:
     return "<blockquote expandable>" + html.escape(text, quote=False) + "</blockquote>"
 
 
+def telegram_code_blocks(text: str):
+    """Split fenced source from prose; model HTML is always inert."""
+    offset = 0
+    for match in re.finditer(r"(?m)^```([A-Za-z0-9_+.#-]*)[ \t]*\n(.*?)^```[ \t]*(?:\n|$)", text, re.S):
+        if match.start() > offset:
+            yield text[offset:match.start()], None
+        yield match[2], match[1]
+        offset = match.end()
+    if offset < len(text):
+        yield text[offset:], None
+
+
+def code_html(text: str, language: str) -> str:
+    escaped = html.escape(text, quote=False)
+    if language and len(language) <= 40 and re.fullmatch(r"[A-Za-z0-9_+.#-]+", language):
+        return '<pre><code class="language-' + language + '">' + escaped + '</code></pre>'
+    return '<pre>' + escaped + '</pre>'
+
+
 def activity_summary(line: str) -> str:
     """Translate the bridge's mechanical log envelope, retaining its message."""
     command = re.search(r"COMMAND (.+?) (started|completed|failed|denied) \| cwd=(.*?) \| (.*)", line)

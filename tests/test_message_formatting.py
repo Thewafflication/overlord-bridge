@@ -12,7 +12,29 @@ def test_styles_and_lists_render_without_markdown_delimiters():
 def test_code_fences_preserve_literal_markdown_and_blank_lines():
     text = "```python\n**literal** <tag>\n\n```\nAfter"
     spans = list(message_spans(text))
-    assert spans == [("**literal** <tag>\n", ("md_code",)), ("\n", ("md_code",)), ("After", ())]
+    assert ''.join(part for part, _ in spans) == '**literal** <tag>\n\nAfter'
+    assert spans[-1] == ('After', ())
+    assert all('md_code_block' in tags for _, tags in spans[:-1])
+
+
+def test_multiline_python_highlighting_preserves_source():
+    source = 'def answer():\n    """line one\nline two"""\n    return 42 # comment\n'
+    spans = list(message_spans('```python\n' + source + '```'))
+    assert ''.join(text for text, _ in spans) == source
+    for tag in ('keyword', 'string', 'number', 'comment', 'function'):
+        assert any('syntax_' + tag in tags for _, tags in spans)
+
+
+def test_unknown_language_and_unclosed_fences_remain_literal():
+    source = '\t**literal** <script> & `ticks`\n'
+    spans = list(message_spans('~~~unknown-language\n' + source))
+    assert ''.join(text for text, _ in spans) == source
+    assert all('md_code_block' in tags for _, tags in spans)
+
+
+def test_highlighter_keeps_tabs_crlf_and_missing_final_newline():
+    source = 'if True:\r\n\tprint("✓")'
+    assert ''.join(text for text, _ in message_spans('```python\n' + source)) == source
 
 
 def test_paths_unclosed_markup_and_html_remain_literal():
