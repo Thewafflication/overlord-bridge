@@ -718,3 +718,40 @@ def test_discovery_keeps_siblings_after_vendor_diversity():
     models = free_brain.discover_free_models(CATALOG, limit=5)
     assert len(models) == 5 and models[-1] == "big/model-b:free"
     assert free_brain.discover_free_models(CATALOG, limit=0) == []
+
+
+@pytest.mark.parametrize("bad", [
+    {"content": "I will inspect the repository next."},
+    {"tool_calls": [{"function": {"name": "run_command", "arguments": '{"command":"echo must-not-run"}'}}]},
+    {"tool_calls": [{"function": {"name": "update_plan", "arguments": "not json"}}]},
+    {"tool_calls": [{"function": {"name": "update_plan", "arguments": '{"plan":"inspect first"}'}}]},
+    {"tool_calls": [{"function": {"name": "update_plan", "arguments": '{"plan":[{"step":"inspect","status":"done"}]}'}}]},
+    {"tool_calls": [{"function": {"name": "update_plan", "arguments": '{"plan":[{"step":"inspect","status":"in_progress"}]}'}}]},
+])
+def test_invalid_checkpoint_reply_falls_back_before_worker_retries(tmp_path, monkeypatch, bad):
+    from modules.workers import _local_agent_tools
+    tools = [t for t in _local_agent_tools() if t["function"]["name"] == "update_plan"]
+    valid = {"content": "", "tool_calls": [{"function": {"name": "update_plan", "arguments": json.dumps({
+        "explanation": "Regression failed in queue.py; repair that branch then validate and commit.",
+        "plan": [{"step": "Repair queue and validate", "status": "in_progress"}]})}}]}
+    brain = make(tmp_path, monkeypatch, [
+        (200, {}, {"choices": [{"message": bad}]}),
+        (200, {}, {"choices": [{"message": valid}]}),
+    ])
+    message, spec, skipped = run(brain.complete([{"role": "user", "content": "Record checkpoint"}], tools))
+    assert spec == NV2 and message["tool_calls"] == valid["tool_calls"]
+    assert len(brain.calls) == 2 and "invalid planning response" in skipped[0]
+    for _, payload, _ in brain.calls:
+        assert payload["tool_choice"] == {"type": "function", "function": {"name": "update_plan"}}
+        assert payload["parallel_tool_calls"] is False
+    assert brain.limiter.cooling(NV) > 0
+
+
+def test_planning_failure_does_not_manufacture_a_plan(tmp_path, monkeypatch):
+    from modules.workers import _local_agent_tools
+    tools = [t for t in _local_agent_tools() if t["function"]["name"] == "update_plan"]
+    brain = make(tmp_path, monkeypatch, [reply("I cannot provide a plan."), reply("Not a plan either.")])
+    with pytest.raises(free_brain.FreeUnavailable) as exc:
+        run(brain.complete([], tools, patience=120))
+    assert not exc.value.retryable
+    assert len(brain.calls) == 2

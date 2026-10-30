@@ -1016,6 +1016,73 @@ def _worker_argument_error(tool_name: str, arguments: Any) -> dict[str, Any] | N
                        "For Python use code; for shell commands use command."}
 
 
+def _worker_plan_result(arguments: dict[str, Any]) -> dict[str, Any]:
+    plan = arguments.get("plan")
+    explanation = arguments.get("explanation", "")
+    issues = []
+    if not isinstance(explanation, str):
+        issues.append("explanation must be a string")
+    elif len(explanation) > WORKER_PLAN_EXPLANATION_CHARS:
+        issues.append(f"explanation has {len(explanation)} characters; maximum is {WORKER_PLAN_EXPLANATION_CHARS}")
+    if not isinstance(plan, list):
+        issues.append("plan must be an array of step objects, not a string or object")
+    elif not 1 <= len(plan) <= WORKER_PLAN_MAX_STEPS:
+        issues.append(f"plan contains {len(plan)} steps; supply 1-{WORKER_PLAN_MAX_STEPS} steps")
+    else:
+        for index, item in enumerate(plan):
+            prefix = f"plan[{index}]"
+            if not isinstance(item, dict):
+                issues.append(prefix + " must be an object with step and status")
+                continue
+            if not isinstance(item.get("step"), str) or not 1 <= len(item["step"].strip()) <= 200:
+                issues.append(prefix + ".step must be a nonempty string of at most 200 characters")
+            if not isinstance(item.get("status"), str) or item["status"] not in {"pending", "in_progress", "completed"}:
+                issues.append(prefix + ".status must be pending, in_progress or completed")
+            if set(item) - {"step", "status"}:
+                issues.append(prefix + " allows only step and status fields")
+    if issues:
+        return {"ok": False, "error": "invalid_plan", "issues": issues,
+                "message": "; ".join(issues)}
+    return {"ok": True, "tool": "update_plan", "plan": {"explanation": explanation,
+            "plan": [{"step": item["step"], "status": item["status"]} for item in plan]}}
+
+
+def _worker_plan_response(planned: dict[str, Any]) -> dict[str, Any]:
+    calls = planned.get("tool_calls") or []
+    if not isinstance(calls, list):
+        calls = [{}]
+    arguments = {}
+    if len(calls) == 1 and isinstance(calls[0], dict):
+        function = calls[0].get("function") or {}
+        if not isinstance(function, dict):
+            function = {}
+        if worker_tool_name(function.get("name")) == "update_plan":
+            try:
+                raw = function.get("arguments") or {}
+                arguments = json.loads(raw) if isinstance(raw, str) else raw
+            except (TypeError, ValueError):
+                pass
+    elif not calls:
+        data = _extract_json_object(str(planned.get("content") or "")) or {}
+        arguments = (data.get("arguments", data)
+                     if worker_tool_name(data.get("tool") or data.get("name") or "update_plan") == "update_plan"
+                     else {})
+    if not isinstance(arguments, dict):
+        arguments = {}
+    response_error = None
+    if calls and (len(calls) != 1 or not isinstance(calls[0], dict) or
+                  worker_tool_name((calls[0].get("function") or {}).get("name")
+                                   if isinstance(calls[0].get("function"), dict) else "") != "update_plan"):
+        response_error = {"ok": False, "error": "unexpected_planning_call",
+                          "message": "Only one update_plan call is accepted here. "
+                                     "No requested commands, reads or writes were executed."}
+    elif not arguments:
+        response_error = {"ok": False, "error": "missing_plan_arguments",
+                          "message": "No update_plan argument object was received. "
+                                     "Submit the plan using the provided function schema."}
+    return response_error or _worker_argument_error("update_plan", arguments) or _worker_plan_result(arguments)
+
+
 def _local_agent_command_denial(command: str, folder: Path) -> str | None:
     # Windows-style separators must not slip past the "/"-based fragments.
     lowered = command.lower().replace("\\", "/")
@@ -1502,34 +1569,7 @@ class WorkerManager:
         tool_name = worker_tool_name(tool_name)
 
         if tool_name == "update_plan":
-            plan = arguments.get("plan")
-            explanation = arguments.get("explanation", "")
-            issues = []
-            if not isinstance(explanation, str):
-                issues.append("explanation must be a string")
-            elif len(explanation) > WORKER_PLAN_EXPLANATION_CHARS:
-                issues.append(f"explanation has {len(explanation)} characters; maximum is {WORKER_PLAN_EXPLANATION_CHARS}")
-            if not isinstance(plan, list):
-                issues.append("plan must be an array of step objects, not a string or object")
-            elif not 1 <= len(plan) <= WORKER_PLAN_MAX_STEPS:
-                issues.append(f"plan contains {len(plan)} steps; supply 1-{WORKER_PLAN_MAX_STEPS} steps")
-            else:
-                for index, item in enumerate(plan):
-                    prefix = f"plan[{index}]"
-                    if not isinstance(item, dict):
-                        issues.append(prefix + " must be an object with step and status")
-                        continue
-                    if not isinstance(item.get("step"), str) or not 1 <= len(item["step"].strip()) <= 200:
-                        issues.append(prefix + ".step must be a nonempty string of at most 200 characters")
-                    if not isinstance(item.get("status"), str) or item["status"] not in {"pending", "in_progress", "completed"}:
-                        issues.append(prefix + ".status must be pending, in_progress or completed")
-                    if set(item) - {"step", "status"}:
-                        issues.append(prefix + " allows only step and status fields")
-            if issues:
-                return {"ok": False, "error": "invalid_plan", "issues": issues,
-                        "message": "; ".join(issues)}
-            return {"ok": True, "tool": tool_name, "plan": {"explanation": explanation,
-                    "plan": [{"step": item["step"], "status": item["status"]} for item in plan]}}
+            return _worker_plan_result(arguments)
 
         if tool_name in {"run_command", "run_python"}:
             command = str(arguments.get("command") or arguments.get("cmd") or "").strip()
@@ -2278,40 +2318,7 @@ class WorkerManager:
                 used = str(planned.get("_free_model") or "")
                 if used:
                     free_models.append(used)
-                calls = planned.get("tool_calls") or []
-                if not isinstance(calls, list):
-                    calls = [{}]
-                arguments = {}
-                if len(calls) == 1 and isinstance(calls[0], dict):
-                    function = calls[0].get("function") or {}
-                    if not isinstance(function, dict):
-                        function = {}
-                    if worker_tool_name(function.get("name")) == "update_plan":
-                        try:
-                            raw = function.get("arguments") or {}
-                            arguments = json.loads(raw) if isinstance(raw, str) else raw
-                        except (TypeError, ValueError):
-                            pass
-                elif not calls:
-                    data = _extract_json_object(str(planned.get("content") or "")) or {}
-                    arguments = (data.get("arguments", data)
-                                 if worker_tool_name(data.get("tool") or data.get("name") or "update_plan") == "update_plan"
-                                 else {})
-                if not isinstance(arguments, dict):
-                    arguments = {}
-                response_error = None
-                if calls and (len(calls) != 1 or not isinstance(calls[0], dict) or
-                              worker_tool_name((calls[0].get("function") or {}).get("name")
-                                               if isinstance(calls[0].get("function"), dict) else "") != "update_plan"):
-                    response_error = {"ok": False, "error": "unexpected_planning_call",
-                                      "message": "Only one update_plan call is accepted here. "
-                                                 "No requested commands, reads or writes were executed."}
-                elif not arguments:
-                    response_error = {"ok": False, "error": "missing_plan_arguments",
-                                      "message": "No update_plan argument object was received. "
-                                                 "Submit the plan using the provided function schema."}
-                result = (response_error or _worker_argument_error("update_plan", arguments) or
-                          await self._local_agent_execute_tool(folder, "update_plan", arguments))
+                result = _worker_plan_response(planned)
                 if result.get("ok") and phase == "Progress checkpoint" and not result["plan"]["explanation"].strip():
                     result = {"ok": False, "error": "missing_progress_explanation", "message": "Supply a nonempty explanation with confirmed findings, "
                               "remaining uncertainty and the next concrete action. Do not just repeat the initial plan."}

@@ -1783,3 +1783,53 @@ def test_plan_size_diagnostics_distinguish_shape_and_actual_counts(tmp_path, arg
     result = run(mgr._local_agent_execute_tool(tmp_path, 'update_plan', args))
     assert result['error'] == 'invalid_plan' and expected in result['message']
     assert 'PRIVATE-PLAN' not in json.dumps(result)
+
+
+def test_real_pool_checkpoint_fallback_reaches_validated_commit_and_push(isolated, tmp_path, monkeypatch):
+    import subprocess
+    project = isolated / 'checkpoint-publication'
+    project.mkdir()
+    remote = isolated / 'checkpoint-remote.git'
+    def git(*args):
+        return subprocess.check_output(['git', '-C', str(project), *args], text=True).strip()
+    subprocess.run(['git', 'init', '--bare', str(remote)], check=True, capture_output=True)
+    git('init'); git('config', 'user.name', 'Worker evaluation'); git('config', 'user.email', 'worker@example.invalid')
+    (project / 'value.py').write_text('def answer():\n    return 0\n')
+    git('add', 'value.py'); git('commit', '-m', 'Seed failing implementation')
+    git('remote', 'add', 'origin', str(remote)); git('push', '-u', 'origin', 'HEAD')
+    seed = git('rev-parse', 'HEAD')
+    actions = [*context_pressure_actions(project),
+        call('edit_file', {'path': 'value.py', 'old_text': 'return 0', 'new_text': 'return 42'}),
+        call('run_python', {'code': 'from value import answer; assert answer() == 42; print("regression passed")'}),
+        call('run_python', {'code': 'import subprocess; subprocess.run(["git","add","value.py"],check=True); subprocess.run(["git","commit","-m","Repair answer regression"],check=True); subprocess.run(["git","push","origin","HEAD"],check=True)'}),
+        final_result('Regression passed; repair committed and pushed.')]
+    planning = []
+    valid = call('update_plan', {'plan': [{'step': 'Repair answer, validate and publish', 'status': 'in_progress'}],
+                                'explanation': 'Source inspected; repair answer and run its regression before committing and pushing.'})
+    async def post(url, payload, key, timeout):
+        if len(payload.get('tools', [])) == 1:
+            planning.append(payload)
+            # Replay the observed forbidden-action response at the checkpoint.
+            message = call('run_command', {'command': 'echo must-not-run'}) if len(planning) >= 2 and payload['model'] == NV.model else valid
+        elif payload.get('tools'):
+            message = actions.pop(0)
+        else:
+            message = {'content': '{"complete":true,"reason":"Regression and commit/push commands succeeded."}'}
+        return 200, {}, {'choices': [{'message': message}]}
+    monkeypatch.setattr(free_brain, '_post', post)
+    pool = FreeBrain(session_file=tmp_path / 'pool-session', models=[NV, NV2], keys={'nvidia': 'synthetic'},
+                     limiter=UsageLimiter(None, {'nvidia': (100, 0)}))
+    work, *_ = make_work(tmp_path)
+    async def get_pool():
+        return pool
+    work._pool = get_pool
+    mgr, _, _ = manager(tmp_path, work.complete)
+    start(mgr, project)
+    assert events(mgr)[-1]['status'] == 'finished'
+    assert len(planning) == 3 and not actions
+    assert all(p['tool_choice']['function']['name'] == 'update_plan' for p in planning)
+    head = git('rev-parse', 'HEAD')
+    assert head != seed
+    assert subprocess.check_output(['git', '--git-dir', str(remote), 'rev-parse', 'HEAD'], text=True).strip() == head
+    assert git('show', '--format=', '--name-only', 'HEAD') == 'value.py'
+    assert not git('diff', '--name-only')

@@ -36,6 +36,7 @@ from modules.host_context import host_instructions
 from modules.output_text import OUTPUT_INSTRUCTIONS
 from modules.free_services import OPENROUTER_BASE, free_provider_policy, validate_free_model
 from modules.workers import (
+    _worker_plan_response,
     DEFAULT_NVIDIA_API_BASE,
     _NVIDIA_MODEL_ALIASES,
     _NVIDIA_MODEL_PAYLOAD_OVERRIDES,
@@ -213,6 +214,11 @@ def _parse_duration(value: Any) -> float | None:
         return max(0.0, when.timestamp() - time.time())
     except (TypeError, ValueError):
         return None
+
+
+def _planning_tools(tools: list[dict[str, Any]] | None) -> bool:
+    return bool(tools and len(tools) == 1 and
+                tools[0].get("function", {}).get("name") == "update_plan")
 
 
 class FreeUnavailable(RuntimeError):
@@ -708,7 +714,10 @@ class FreeBrain(Brain):
         }
         if tools:
             payload["tools"] = tools
-            payload["tool_choice"] = "auto"
+            payload["tool_choice"] = ({"type": "function", "function": {"name": "update_plan"}}
+                if _planning_tools(tools) else "auto")
+            if _planning_tools(tools):
+                payload["parallel_tool_calls"] = False
             payload["temperature"] = 0.2  # steadier tool use
         if spec.provider == "nvidia":
             override = dict(_NVIDIA_MODEL_PAYLOAD_OVERRIDES.get(spec.model.lower(), {}))
@@ -834,6 +843,16 @@ class FreeBrain(Brain):
             return None, "empty reply"
         usage = body.get("usage") if isinstance(body, dict) else None
         self.last_turn_usage = dict(usage) if isinstance(usage, dict) else None
+        if _planning_tools(tools):
+            result = _worker_plan_response(message)
+            if not result.get("ok") or not result["plan"]["explanation"].strip():
+                # An HTTP200 is not a usable plan. Try another model without
+                # executing the rejected call or spending all repairs on it.
+                self._retryable[spec.key] = False
+                self.limiter.cool_down(spec.key, 30)
+                reason = result.get("error") or "missing_progress_explanation"
+                log.warning("Free model plan rejected: %s (%s)", spec.key, reason)
+                return None, "invalid planning response: " + reason
         return message, ""
 
     async def complete(
@@ -856,10 +875,11 @@ class FreeBrain(Brain):
                 if message is not None:
                     return message, spec, skipped
                 skipped.append(f"{spec.key} ({why})")
-            waits = [self.limiter.availability(s)[0] for s in self.models]
+            waits = [self.limiter.availability(s)[0] for s in self.models
+                     if self._retryable.get(s.key, True)]
             soonest = min(waits) if waits else 0.0
             pause = max(1.0, soonest)
-            if not self.models or waited + pause > patience:
+            if not waits or waited + pause > patience:
                 retry_waits = [self.limiter.availability(s)[0] for s in self.models
                                if self._retryable.get(s.key, True)]
                 retryable = bool(retry_waits) and min(retry_waits) > 0
