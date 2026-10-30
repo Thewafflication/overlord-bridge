@@ -1,5 +1,14 @@
 # Live worker evaluations
 
+## 2026-10-29: isolated planning and commit-focused queue evaluation
+
+Repeated scheduled runs exhausted checkpoint retries; planning reused live execution-role history and discarded rejected replies. Version 1.0.68 supplies bounded execution history as read-only evidence in a fresh planning conversation, retains rejected reply feedback for retries and distinguishes unexpected calls/missing arguments from invalid plan arrays. No command/read/write can execute in the planning phase; validation remains strict. The dedicated regression exercises context pressure, a rejected write request, specific correction and valid recovery. Canonical checks: 1,392 passed, two skips; release wheel/version match verified. Windows/Linux tag CI and signed package verification passed (commit 2ec713a).
+
+A fresh isolated Git fixture out/evals/queue-commit-20261029 (seed 67b2798, no remote) tested process_one failure preserving a retry queue, success removal/return and empty behavior. Initial real worker reproduced the failing test, fixed job_queue.py and passed three original tests, then correctly reported incomplete after the probe's eight/minute limiter exhausted before commit. Continuation reconciled existing edits, reran tests, committed only job_queue.py as c1fd7d3 and passed completion review. Independent verification passed all three tests and confirmed test_queue.py unchanged from seed. Only Python cache remains untracked. This establishes bounded implementation/test/commit capability, not universal scheduled-project success. Do not redispatch the completed fixture as fresh work.
+
+Release 1.0.68 is pushed, tagged, signed, installed and online (instance 1bb7a59a9a3948588c53216a09249c1a). Healthy workers finished naturally. Sixteen schedules were temporarily paused via normal handlers to secure an idle maintenance window, preserved through the package update, and all sixteen original IDs/prompts/7200-second intervals were restored active and independently verified. Installed workers.py matches the tested source. No unfinished deployment remains. Continue auditing actual scheduled-project outcomes before claiming the repeated failures eliminated.
+
+
 ## 2026-10-29: scheduled-project audit and inaccessible-file recovery
 
 The two-hour monitor retained all sixteen active 7200-second project schedules and their exclusions. cv2pdb_package reported commit 173692b; independent inspection confirmed the committed PowerShell test harness and rerunning it passed package verification. This establishes a positive synthetic-package test only, not negative-case coverage. Other scheduled reports were explicitly incomplete (invalid progress plans or unavailable provider pool), rather than false successes. Healthy subsequent workers were left running. Detailed report IDs and follow-ups live in out/monitoring/overlord-project-work.json.
