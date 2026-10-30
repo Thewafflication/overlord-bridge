@@ -203,7 +203,7 @@ def test_reload_request_is_an_atomic_command_file(tmp_path):
 
 
 @pytest.mark.parametrize("status, ok, text", [
-    (200, True, "accepted"), (401, False, "rejected"), (403, False, "rejected"),
+    (200, True, "accepted"), (401, False, "rejected"), (403, False, "denied access"),
     (429, True, "rate limiting"), (500, False, "HTTP 500"),
 ])
 def test_key_probe_interprets_provider_answers(monkeypatch, status, ok, text):

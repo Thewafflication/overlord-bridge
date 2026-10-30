@@ -42,6 +42,8 @@ from modules.workers import (
     _http_get_json,
 )
 
+from modules.provider_http import USER_AGENT
+
 log = logging.getLogger("overlord.free")
 
 PROVIDERS = ("nvidia", "openrouter", "gemini", "groq")
@@ -373,7 +375,7 @@ def _post_sync(url: str, payload: dict[str, Any], api_key: str, timeout: float):
     request = urllib.request.Request(
         url, data=json.dumps(payload).encode("utf-8"),
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json",
-                 "Accept": "application/json", "Connection": "close"},
+                 "Accept": "application/json", "Connection": "close", "User-Agent": USER_AGENT},
     )
     opener = urllib.request.build_opener(_NoRedirect())
     try:

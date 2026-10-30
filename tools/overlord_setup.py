@@ -22,6 +22,7 @@ from typing import Callable
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from modules.commands import _decode_dotenv, set_env_value  # noqa: E402
 from modules.version import display_version  # noqa: E402
+from modules.provider_http import USER_AGENT  # noqa: E402
 from modules.gui_settings import (  # noqa: E402
     PROJECT_FOLDERS, PROJECT_ROOTS, AUTO_APPROVE, AUTO_EDITS, WORK_APPROVAL,
     SETTING_NAMES, decode_paths, encode_paths, PERMISSION_LEVEL, PERMISSION_LEVELS, permission_level,
@@ -88,7 +89,7 @@ def check_nvidia_format(key: str) -> str | None:
 
 def _get(url: str, key: str, timeout: float) -> tuple[int, str]:
     request = urllib.request.Request(
-        url, headers={"Authorization": f"Bearer {key}", "Accept": "application/json"}
+        url, headers={"Authorization": f"Bearer {key}", "Accept": "application/json", "User-Agent": USER_AGENT}
     )
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -105,8 +106,16 @@ def probe_key(url: str, key: str, label: str, timeout: float = 15.0) -> tuple[bo
         return False, f"Could not reach {label}: {getattr(exc, 'reason', exc)}"
     if status == 200:
         return True, f"{label} accepted the key."
-    if status in (401, 403):
+    if status == 401:
         return False, f"{label} rejected the key (HTTP {status}). Check it was copied completely."
+    if status == 403:
+        try:
+            detail = json.loads(body)
+        except (ValueError, TypeError):
+            detail = {}
+        if isinstance(detail, dict) and detail.get("error_code") == 1010:
+            return False, f"{label}'s security filter blocked the client (HTTP 403, code 1010). This does not mean the key is invalid."
+        return False, f"{label} denied access (HTTP 403). Check account or model permissions; the key is not necessarily invalid."
     if status == 429:
         return True, f"{label} is rate limiting right now, but the key was recognised."
     return False, f"{label} answered HTTP {status}."
