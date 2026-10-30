@@ -1,5 +1,14 @@
 # Live worker evaluations
 
+## 2026-10-29: Groq security-filter 403 in 1.0.71
+
+Owner's newly configured Groq key test returned HTTP403. Controlled saved-key catalog requests reproduced default urllib client HTTP403/Cloudflare code1010 (browser_signature_banned) and named Overlord client HTTP200 with eleven models. Corrected source key probe succeeded and a small live GPT-OSS20B inference returned HTTP200 with one choice and 97 total tokens. No credentials were displayed. Provider usage state had no Groq cooldown to clear. This was a client identity failure, not an invalid key or exhausted free quota.
+
+Commit be9c2c4/tag1.0.71 adds a shared public Overlord User-Agent to setup GET and completion POST, and distinguishes 401 invalid authentication from 403 access/security filtering without echoing response bodies. Local HTTP-server regression verifies real GET/POST headers; diagnostic regression avoids credential-copy advice for code1010. Focused checks:108 passed. Canonical syntax/inventory/wheel/full suite:1,406 passed,two skips. Windows/Linux tag checks and signed package verification passed.
+
+Release 1.0.71 is installed and online as instance c121dbf9be034630911019fb51b1b462. Installed saved-key catalog test succeeded and GPT-OSS20B inference returned HTTP200; installed client source matches the tested release. All sixteen original active states and due times were restored offline before restart, and IDs, prompts and 7200-second intervals were verified afterward. Scheduled wsh work dispatched automatically. Active WPM work was explicitly stopped through acknowledged local control for this upgrade; its existing files were preserved. Signed installation completed successfully; no deployment remains pending.
+
+
 ## 2026-10-29: Groq and continuous capacity recovery in 1.0.70
 
 Owner requested Groq capacity, continuous scheduled work and Cloudflare/Mistral roadmap entries. Commit fa2d1c9/tag 1.0.70 is pushed; Windows/Linux tag checks and signed package verification passed. Groq GPT-OSS 120B/20B use existing local tools, explicit key/enable settings and provider-wide request/token cooldowns. Setup key controls scroll, preserve masked saved keys and test the model catalog. Conservative local request caps are configurable; actual account quotas and billing eligibility remain provider-owned. Owner is creating a key; no real Groq inference or live throughput qualification has been claimed.
