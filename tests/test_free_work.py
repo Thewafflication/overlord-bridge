@@ -1833,3 +1833,38 @@ def test_real_pool_checkpoint_fallback_reaches_validated_commit_and_push(isolate
     assert subprocess.check_output(['git', '--git-dir', str(remote), 'rev-parse', 'HEAD'], text=True).strip() == head
     assert git('show', '--format=', '--name-only', 'HEAD') == 'value.py'
     assert not git('diff', '--name-only')
+
+
+def test_completion_review_observes_actual_committed_coverage_loss(isolated, tmp_path):
+    import subprocess
+    project = isolated / 'review-coverage-loss'
+    project.mkdir()
+    def git(*args):
+        return subprocess.check_output(['git','-C',str(project),*args],text=True).strip()
+    git('init'); git('config','user.name','Review fixture'); git('config','user.email','fixture@example.invalid')
+    (project/'test_verifier.py').write_text('def test_rejects_bad_metadata():\n    assert verify("bad") is False\n')
+    git('add','.'); git('commit','-m','Seed verifier coverage')
+    actions, _ = scripted_pool([
+        call('run_python', {'code': 'from pathlib import Path; import subprocess; Path("test_verifier.py").unlink(); Path("test_verifier_checks.py").write_text("# rest omitted for brevity\\n"); subprocess.run(["git","add","test_verifier.py"],check=True); subprocess.run(["git","commit","-m","Remove claimed duplicate"],check=True); print("26 passed")'}),
+        final_result('Removed duplicate test; all26 tests passed; change committed.'),
+        {'content': json.dumps({'final':'Coverage preservation is unverified; repair required.','outcome':'blocked'})},
+    ])
+    reviews = []
+    async def complete(messages, tools):
+        if tools is None and messages[0]['content'].startswith('You are the completion reviewer'):
+            payload = json.loads(messages[1]['content']); reviews.append(payload)
+            # The old boundary supplied only successful tool/worker narratives.
+            # A reviewer can challenge the false claim only with actual changes.
+            changes = payload.get('independent_git_changes', {})
+            if changes.get('files'):
+                return {'content':'{"complete":false,"reason":"Deleted assertion has no tracked equivalent; replacement is an untracked placeholder."}'}
+            return {'content':'{"complete":true,"reason":"Recorded26 passing tests and commit support report."}'}
+        return await actions(messages, tools)
+    mgr, _, _ = manager(tmp_path, complete)
+    start(mgr, project)
+    assert events(mgr)[-1]['status'] == 'incomplete'
+    evidence = reviews[0]['independent_git_changes']
+    files = {f['path']:f for f in evidence['files']}
+    assert '-def test_rejects_bad_metadata' in files['test_verifier.py']['content']
+    assert files['test_verifier_checks.py']['untracked']
+    assert 'omitted for brevity' in files['test_verifier_checks.py']['content']
