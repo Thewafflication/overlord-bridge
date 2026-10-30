@@ -1,5 +1,12 @@
 # Live worker evaluations
 
+## 2026-10-29: code blocks and owner-authorized project pushes in 1.0.69
+
+User requested syntax highlighting/code blocks and corrected the previous local-only publication goal. Release 1.0.69 (a8e1454) is pushed, tagged, signed, installed and online as instance 91c345bad1aa4ef8a54e7c468b59e898. Desktop fenced code uses Pygments with literal content preservation and plain fallback; Telegram source uses escaped native pre/code language tags with balanced long-message splitting. Native Tk style/source smoke passed; canonical checks passed 1,397 tests with one skip; Windows/Linux tag CI and signed package verification passed. Installed renderers passed source/color/escaping smoke. Installed source matches tested source (message_formatting.py differs only by Git CRLF normalization).
+
+All sixteen existing schedule IDs and 7200-second intervals were preserved. Their prompts now explicitly require reviewing outstanding worker commits/edits, selecting a meaningful requirement-based deliverable, validation, local commit, push to intended configured upstream and remote SHA verification. They forbid force pushes, history rewrites, unrelated owner publication and project tagging/releasing/installing. Local commits alone are not completion. All sixteen were restored active after maintenance and independently verified. Existing unpushed project commits were audited for upstream/ahead/dirty status; they were not blindly published. Known project validation failures in the durable monitoring record must be repaired/reconciled by Overlord before pushing. No unfinished install remains.
+
+
 ## 2026-10-29: isolated planning and commit-focused queue evaluation
 
 Repeated scheduled runs exhausted checkpoint retries; planning reused live execution-role history and discarded rejected replies. Version 1.0.68 supplies bounded execution history as read-only evidence in a fresh planning conversation, retains rejected reply feedback for retries and distinguishes unexpected calls/missing arguments from invalid plan arrays. No command/read/write can execute in the planning phase; validation remains strict. The dedicated regression exercises context pressure, a rejected write request, specific correction and valid recovery. Canonical checks: 1,392 passed, two skips; release wheel/version match verified. Windows/Linux tag CI and signed package verification passed (commit 2ec713a).
