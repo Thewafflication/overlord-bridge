@@ -1930,3 +1930,45 @@ def test_worker_push_requires_published_submodule_without_auto_publishing(isolat
     subprocess.run(['git','-c','protocol.file.allow=always','clone','--recurse-submodules',str(parent_remote),str(clone)],check=True,capture_output=True)
     assert git(clone/'dependency','rev-parse','HEAD') == child_head
     assert (clone/'dependency/api.py').read_text() == 'value = 2\n'
+
+
+def test_groq_input_fit_continues_worker_through_validation_commit_and_push(isolated,tmp_path,monkeypatch):
+    import subprocess
+    from modules.request_budget import size
+    from modules.free_brain import GROQ_MODELS
+    project=isolated/'groq-budget-worker';project.mkdir();remote=isolated/'groq-budget-remote.git'
+    def git(*args):return subprocess.check_output(['git','-C',str(project),*args],text=True).strip()
+    subprocess.run(['git','init','--bare',str(remote)],check=True,capture_output=True)
+    git('init');git('config','user.name','Budget fixture');git('config','user.email','fixture@example.invalid')
+    (project/'value.py').write_text('def answer():\n    return 0\n');git('add','value.py');git('commit','-m','Seed regression')
+    git('remote','add','origin',str(remote));git('push','-u','origin','HEAD')
+    actions=[*context_pressure_actions(project),call('edit_file',{'path':'value.py','old_text':'return 0','new_text':'return 42'}),
+        call('run_python',{'code':'from value import answer; assert answer()==42; print("regression passed")'}),
+        call('run_python',{'code':'import subprocess; subprocess.run(["git","add","value.py"],check=True); subprocess.run(["git","commit","-m","Repair verified answer"],check=True); subprocess.run(["git","push","origin","HEAD"],check=True)'}),final_result('Regression passed; owned repair committed and pushed.')]
+    rejected=[];accepted=[]
+    async def post(url,payload,key,timeout):
+        if size([payload['messages'],payload.get('tools')])>28000:
+            rejected.append(payload)
+            return 413,{}, {'error':{'message':'Request too large on tokens per minute (TPM): Limit 8000, Requested 11978, reduce message size.'}}
+        accepted.append(payload)
+        if len(payload.get('tools',[]))==1:
+            message=call('update_plan',{'plan':[{'step':'Repair, validate and publish answer','status':'in_progress'}],
+                'explanation':'Source evidence retained; validate answer repair and publish only owned source.'})
+        elif payload.get('tools'):message=actions.pop(0)
+        else:message={'content':'{"complete":true,"reason":"Actual repair and validation/commit/push evidence support completion."}'}
+        return 200,{}, {'choices':[{'message':message}]}
+    monkeypatch.setattr(free_brain,'_post',post)
+    spec=ModelSpec('groq',GROQ_MODELS[0])
+    pool=FreeBrain(session_file=tmp_path/'pool-session',models=[spec],keys={'groq':'synthetic'},groq_enabled=True,
+        limiter=UsageLimiter(None,{'groq':(1000,0)}))
+    work,*_=make_work(tmp_path)
+    async def get_pool():return pool
+    work._pool=get_pool
+    mgr,_,_=manager(tmp_path,work.complete)
+    start(mgr,project)
+    assert events(mgr)[-1]['status']=='finished' and not actions
+    assert rejected and all(p['max_tokens']==8192 for p in rejected+accepted)
+    assert any('Worker context checkpoint' in str(p['messages']) for p in accepted)
+    assert git('rev-list','--count','HEAD')=='2'
+    assert git('show','--format=','--name-only','HEAD')=='value.py'
+    assert git('ls-remote','origin','HEAD').split()[0]==git('rev-parse','HEAD')

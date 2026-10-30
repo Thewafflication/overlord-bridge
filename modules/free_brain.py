@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import datetime
 import json
+import re
 import logging
 import time
 import urllib.error
@@ -31,6 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, AsyncIterator, Awaitable, Callable
 
+from modules.request_budget import BudgetedMessages, size as request_size
 from modules.brain import Brain
 from modules.host_context import host_instructions
 from modules.output_text import OUTPUT_INSTRUCTIONS
@@ -214,6 +216,20 @@ def _parse_duration(value: Any) -> float | None:
         return max(0.0, when.timestamp() - time.time())
     except (TypeError, ValueError):
         return None
+
+
+def _groq_request_budget(body: Any, current_size: int) -> int | None:
+    error = body.get("error") if isinstance(body, dict) else None
+    message = error.get("message") if isinstance(error, dict) else None
+    if not isinstance(message, str) or "tokens per minute (TPM)" not in message:
+        return None
+    match = re.search(r"\bLimit ([0-9]{1,12}), Requested ([0-9]{1,12})\b", message)
+    if not match:
+        return None
+    limit, requested = map(int, match.groups())
+    if limit <= 0 or requested <= limit:
+        return None
+    return min(current_size - 256, int(current_size * limit / requested * 0.8))
 
 
 def _planning_tools(tools: list[dict[str, Any]] | None) -> bool:
@@ -433,6 +449,7 @@ class FreeBrain(Brain):
         self._sleep = sleep
         self._admitted: dict[tuple[str, bool], float] = {}  # last successful price check
         self._retryable: dict[str, bool] = {}
+        self._request_budgets: dict[str, int] = {}
         self.unavailable: list[str] = []
         self.models: list[ModelSpec] = []
         self._discover_at: int | None = None
@@ -758,7 +775,7 @@ class FreeBrain(Brain):
     async def _attempt(
         self, spec: ModelSpec, messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
-        *, max_tokens: int | None = None,
+        *, max_tokens: int | None = None, _budget_retries: int = 0,
     ) -> tuple[dict[str, Any] | None, str]:
         """(assistant message, why-not). Records usage and cooldowns as a side effect."""
         wait, reason = self.limiter.availability(spec)
@@ -768,6 +785,16 @@ class FreeBrain(Brain):
         if denied:
             self._retryable[spec.key] = False
             return None, denied
+        request_messages = messages
+        tools_size = request_size(tools)
+        if isinstance(messages, BudgetedMessages) and spec.key in self._request_budgets:
+            try:
+                request_messages = messages.fit(self._request_budgets[spec.key] - tools_size - 128)
+            except ValueError:
+                # Character budgets are hints, not tokenizer measurements. A
+                # different request may fit; never reject its protected task
+                # solely because a prior request needed a smaller budget.
+                request_messages = messages
         if wait > 0:
             await self._sleep(wait)
         self.limiter.record(spec)
@@ -775,10 +802,10 @@ class FreeBrain(Brain):
         url = self.bases[spec.provider].rstrip("/") + "/chat/completions"
         started = time.monotonic()
         log.info("Free model request started: %s (tools=%s, input_chars=%s)",
-                 spec.key, bool(tools), len(json.dumps(messages, ensure_ascii=False)))
+                 spec.key, bool(tools), len(json.dumps(request_messages, ensure_ascii=False)))
         try:
             status, headers, body = await _post(
-                url, self._payload(spec, messages, tools, max_tokens=max_tokens), self.keys[spec.provider], self.timeout
+                url, self._payload(spec, request_messages, tools, max_tokens=max_tokens), self.keys[spec.provider], self.timeout
             )
         except (OSError, TimeoutError, urllib.error.URLError) as exc:
             log.info("Free model request failed: %s (%s, %.2fs)",
@@ -787,6 +814,21 @@ class FreeBrain(Brain):
             return None, f"unreachable ({exc})"
         log.info("Free model request completed: %s (HTTP %s, %.2fs)",
                  spec.key, status, time.monotonic() - started)
+        if status == 413 and spec.provider == "groq" and isinstance(messages, BudgetedMessages) and _budget_retries < 2:
+            current_size = request_size([request_messages, tools])
+            budget = _groq_request_budget(body, current_size)
+            if budget is not None:
+                try:
+                    fitted = messages.fit(budget - tools_size - 128)
+                except ValueError:
+                    fitted = None
+                if fitted is not None and request_size(fitted) < request_size(request_messages):
+                    self._request_budgets[spec.key] = budget
+                    self._note_rate_headers(spec, headers)
+                    log.info("Groq worker input fitted: %s (%s -> %s chars)",
+                             spec.key, request_size(request_messages), request_size(fitted))
+                    return await self._attempt(spec, messages, tools, max_tokens=max_tokens,
+                                               _budget_retries=_budget_retries + 1)
         if status == 429:
             seconds = _parse_duration(headers.get("retry-after")) or 60.0
             self.limiter.cool_down(spec.provider if spec.provider == "groq" else spec.key, min(seconds, 86_400.0))

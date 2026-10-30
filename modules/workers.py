@@ -56,6 +56,7 @@ import time
 import uuid
 
 from modules import shared_job
+from modules.request_budget import BudgetedMessages, review_messages as budget_review_messages, size as request_size
 from modules.command_activity import log_command, redact_text
 from modules.host_context import host_instructions
 from modules.output_text import OUTPUT_INSTRUCTIONS, worker_action, worker_tool_name
@@ -1330,6 +1331,24 @@ class WorkerReportStore:
             log.warning("Could not rotate worker report log: %s", exc)
 
 
+def _budgeted_planning_request(request, context, evidence, *, prefix_count, plan,
+                              mutations, completion_feedback):
+    def fit(limit):
+        context_limit = min(43000, limit)
+        for _ in range(8):
+            bounded = _bounded_worker_messages(context, evidence, limit=context_limit,
+                prefix_count=prefix_count, plan=plan, mutations=mutations,
+                completion_feedback=completion_feedback)
+            fitted = [dict(message) for message in request]
+            fitted[1]["content"] = "Read-only worker context:\n" + json.dumps(bounded, ensure_ascii=False)
+            excess = request_size(fitted) - limit
+            if excess <= 0:
+                return fitted
+            context_limit -= excess + 128
+        raise ValueError("Protected planning context cannot fit")
+    return BudgetedMessages(request, fit)
+
+
 class WorkerManager:
     """Watches a dispatch dir, runs workers, pushes their results to the owner."""
 
@@ -2324,6 +2343,10 @@ class WorkerManager:
                 ]
                 if correction:
                     request_messages.append({"role": "user", "content": correction})
+                request_messages = _budgeted_planning_request(
+                    request_messages, planning_messages, completion_evidence + completion_commands,
+                    prefix_count=initial_context_count, plan=worker_plan, mutations=mutation_evidence,
+                    completion_feedback=completion_feedback)
                 try:
                     planned = await self.free_completer(request_messages, plan_tools)
                 except FreeUnavailable as exc:
@@ -2486,7 +2509,11 @@ class WorkerManager:
                     # Imported here because FreeBrain also uses worker helpers.
                     from modules.free_brain import FreeUnavailable
                     try:
-                        free_message = await self.free_completer(messages, payload.get("tools"))
+                        request_messages = BudgetedMessages(messages, lambda limit: _bounded_worker_messages(
+                            messages, completion_evidence + completion_commands, limit=limit,
+                            prefix_count=initial_context_count, plan=worker_plan, mutations=mutation_evidence,
+                            completion_feedback=completion_feedback))
+                        free_message = await self.free_completer(request_messages, payload.get("tools"))
                     except FreeUnavailable as exc:
                         final_text = ("Stopped before completion: the free-model pool is unavailable. "
                                       "Existing edits and commits remain on disk; requested remaining work and "
@@ -2671,7 +2698,7 @@ class WorkerManager:
                                 }, ensure_ascii=False)},
                             ]
                             try:
-                                reviewed = await self.free_completer(review_messages, None)
+                                reviewed = await self.free_completer(budget_review_messages(review_messages), None)
                                 used = str(reviewed.get("_free_model") or "")
                                 if used:
                                     free_models.append(used)

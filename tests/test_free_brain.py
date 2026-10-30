@@ -755,3 +755,81 @@ def test_planning_failure_does_not_manufacture_a_plan(tmp_path, monkeypatch):
         run(brain.complete([], tools, patience=120))
     assert not exc.value.retryable
     assert len(brain.calls) == 2
+
+
+def groq_input_too_large(headers=None):
+    return 413,headers or {},{'error':{'type':'tokens','code':'rate_limit_exceeded',
+        'message':'Request too large on tokens per minute (TPM): Limit 8000, Requested 11978, reduce message size.'}}
+
+
+def budgeted_context():
+    from modules.request_budget import BudgetedMessages
+    from modules.workers import _bounded_worker_messages
+    original=[{'role':'system','content':'Protected owner instructions'},{'role':'user','content':'Specific task'},
+        {'role':'assistant','content':'Earlier source and findings. '*2000},
+        {'role':'user','content':'Continue from the latest confirmed result.'}]
+    return BudgetedMessages(original,lambda limit:_bounded_worker_messages(original,['known failure'],limit=limit,prefix_count=2))
+
+
+def test_groq_fits_worker_input_without_reducing_output_or_losing_task(tmp_path,monkeypatch):
+    messages=budgeted_context()
+    brain=make(tmp_path,monkeypatch,[groq_input_too_large(),reply('OK')],models=(GROQ,),keys={'groq':'synthetic'},groq_enabled=True,limits={'groq':(10,250)})
+    result,_,_=run(brain.complete(messages,max_tokens=8192))
+    assert result['content']=='OK' and len(brain.calls)==2
+    first,second=[c[1] for c in brain.calls]
+    assert first['max_tokens']==second['max_tokens']==8192
+    assert first['messages'][:2]==second['messages'][:2]==list(messages)[:2]
+    assert len(json.dumps(second['messages']))<len(json.dumps(first['messages']))
+    assert brain.limiter.daily_count('groq')==2 and brain.limiter.cooling(GROQ)<=0
+    assert len(json.dumps(messages))>40000
+
+
+def test_groq_learned_input_fit_survives_capacity_wait(tmp_path,monkeypatch):
+    clock=Clock();messages=budgeted_context()
+    brain=make(tmp_path,monkeypatch,[groq_input_too_large({'x-ratelimit-remaining-requests':'0','x-ratelimit-reset-requests':'60s'}),reply('recovered')],models=(GROQ,),keys={'groq':'synthetic'},groq_enabled=True,clock=clock,limits={'groq':(10,250)},max_wait=0)
+    with pytest.raises(free_brain.FreeUnavailable) as exc:run(brain.complete(messages,max_tokens=8192))
+    assert exc.value.retryable and len(brain.calls)==1
+    clock.now+=61
+    assert run(brain.complete(messages,max_tokens=8192))[0]['content']=='recovered'
+    assert len(brain.calls)==2 and brain.calls[-1][1]['max_tokens']==8192
+    assert len(json.dumps(brain.calls[-1][1]['messages']))<30000
+
+
+def test_groq_fitted_retry_does_not_shorten_fallback_model_input(tmp_path,monkeypatch):
+    messages=budgeted_context()
+    brain=make(tmp_path,monkeypatch,[groq_input_too_large(),(503,{},{}),reply('fallback')],models=(GROQ,NV),keys={'groq':'synthetic','nvidia':'synthetic'},groq_enabled=True,limits={'groq':(10,250),'nvidia':(20,0)})
+    _,spec,_=run(brain.complete(messages,max_tokens=8192))
+    assert spec==NV and brain.calls[-1][1]['messages']==messages
+    assert len(brain.calls)==3
+
+
+def test_groq_does_not_silently_crop_plain_chat_or_protected_task(tmp_path,monkeypatch):
+    from modules.request_budget import BudgetedMessages
+    messages=budgeted_context()
+    for index,request in enumerate([list(messages),BudgetedMessages([{'role':'system','content':'protected '*5000}],lambda limit: (_ for _ in ()).throw(ValueError('cannot fit'))) ]):
+        brain=make(tmp_path/str(index),monkeypatch,[groq_input_too_large()],models=(GROQ,),keys={'groq':'synthetic'},groq_enabled=True,limits={'groq':(10,250)})
+        with pytest.raises(free_brain.FreeUnavailable):run(brain.complete(request,max_tokens=8192))
+        assert len(brain.calls)==1
+
+
+def test_learned_character_hint_cannot_reject_a_different_protected_task(tmp_path,monkeypatch):
+    from modules.request_budget import BudgetedMessages
+    original=[{'role':'system','content':'Important instruction '*800},{'role':'user','content':'Actual task'}]
+    request=BudgetedMessages(original,lambda limit: (_ for _ in ()).throw(ValueError('pinned task')))
+    brain=make(tmp_path,monkeypatch,[reply('fits tokenizer budget')],models=(GROQ,),keys={'groq':'synthetic'},groq_enabled=True,limits={'groq':(10,250)})
+    brain._request_budgets[GROQ.key]=10000
+    assert run(brain.complete(request,max_tokens=8192))[0]['content']=='fits tokenizer budget'
+    assert brain.calls[0][1]['messages']==original
+
+
+def test_groq_input_fitting_has_a_bounded_retry_count(tmp_path,monkeypatch):
+    from modules.request_budget import BudgetedMessages
+    from modules.workers import _bounded_worker_messages
+    original=[{'role':'system','content':'Protected instructions'},{'role':'user','content':'Specific task'}]
+    for i in range(14):original.extend([{'role':'assistant','content':f'Historical source{i}: '+'context '*800},{'role':'user','content':'Continue the task'}])
+    request=BudgetedMessages(original,lambda limit:_bounded_worker_messages(original,[],limit=limit,prefix_count=2))
+    brain=make(tmp_path,monkeypatch,[groq_input_too_large()]*3,models=(GROQ,),keys={'groq':'synthetic'},groq_enabled=True,limits={'groq':(20,0)})
+    with pytest.raises(free_brain.FreeUnavailable):run(brain.complete(request,max_tokens=8192))
+    assert len(brain.calls)==3 and brain.limiter.daily_count('groq')==3
+    lengths=[len(json.dumps(c[1]['messages'])) for c in brain.calls]
+    assert lengths[0]>lengths[1]>lengths[2]
