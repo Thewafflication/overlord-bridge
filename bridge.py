@@ -1590,12 +1590,14 @@ class Bridge:
         if self._scheduled_work_is_active():
             return False
         self.chat_mirror.append(ROLE_OWNER, text, source="schedule")
+        if text.split(maxsplit=1)[0:1] == ["/work"]:
+            return self._start_turn(chat_id, text, handler=self.free_work.handle)
         return self._start_turn(chat_id, text)
 
     def _scheduled_work_is_active(self) -> bool:
         return self._turn_is_active() or bool(getattr(getattr(self, "workers", None), "_running", {}))
 
-    def _start_turn(self, chat_id: int, text: str) -> bool:
+    def _start_turn(self, chat_id: int, text: str, *, handler=None) -> bool:
         if self._turn_is_active():
             self.telegram.send(
                 chat_id,
@@ -1603,7 +1605,7 @@ class Bridge:
                 "or /stop to cancel it.",
             )
             return False
-        self._active_turn_task = asyncio.create_task(self._handle_turn(chat_id, text))
+        self._active_turn_task = asyncio.create_task((handler or self._handle_turn)(chat_id, text))
         self._write_console_status()
         self._active_turn_task.add_done_callback(
             lambda _task: self._write_console_status()

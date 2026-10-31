@@ -229,13 +229,13 @@ def test_edit_changes_next_run_without_retargeting_active_work(scheduler):
     instance,now,started,_,busy=scheduler
     key=create(instance,'/schedule every 1h Original task')
     now[0]+=3600;instance.tick(42)
-    assert started[0][1].split('\n',1)[1]=='Original task'
+    assert started[0][1]=='Original task'
     before=dict(instance.tasks[key]);busy[0]=True
     instance.command(f'/schedule edit {key} Corrected concrete task')
     instance.tick(42)
     assert len(started)==1 and instance.tasks[key]=={**before,'prompt':'Corrected concrete task'}
     now[0]+=3600;busy[0]=False;instance.tick(42)
-    assert [text.split('\n',1)[1] for _,text in started]==['Original task','Corrected concrete task']
+    assert [text for _,text in started]==['Original task','Corrected concrete task']
     assert len(instance.tasks)==1
 
 
@@ -260,3 +260,41 @@ def test_failed_edit_keeps_prior_task_and_file(scheduler,monkeypatch):
     with pytest.raises(OSError):
         instance.command(f'/schedule edit {key} Corrected task')
     assert instance.tasks[key]==original and instance.path.read_bytes()==before
+
+
+def test_explicit_scheduled_work_reaches_worker_without_chat_inference(scheduler, tmp_path):
+    from modules.free_work import FreeWork
+    instance, now, _, _, _ = scheduler
+    project = tmp_path / 'project'
+    project.mkdir()
+
+    async def scenario():
+        app = bridge.Bridge.__new__(bridge.Bridge)
+        app._active_turn_task = None
+        app._write_console_status = lambda: None
+        app.chat_mirror = SimpleNamespace(append=lambda *args, **kwargs: None)
+        app.telegram = SimpleNamespace(send=instance.send)
+        accepted = []
+        running = {}
+        def accept(request):
+            accepted.append(request)
+            running[request['name']] = object()
+        app.workers = SimpleNamespace(_running=running, _accept=accept)
+        app.free_work = FreeWork(send=instance.send, roots=lambda: [tmp_path],
+            workers=app.workers, gate=None, pool=lambda: pytest.fail('no model inference'))
+        async def chat(*args):
+            pytest.fail('explicit /work must not become a chat request')
+        app._handle_turn = chat
+        instance.start = app._start_scheduled_turn
+        instance.busy = app._scheduled_work_is_active
+        task = 'Repair actual queue behavior; validate, commit and push.'
+        create(instance, '/schedule in 1m /work project ' + task)
+        second = create(instance, '/schedule in 1m /work project Another task')
+        now[0] += 61
+        instance.tick(42)
+        await app._active_turn_task
+        assert accepted == [{'name':'Free-project','folder':str(project),'task':task,'brain':'free'}]
+        instance.tick(42)
+        assert len(accepted) == 1
+        assert instance.tasks[second]['state'] == 'active'
+    asyncio.run(scenario())

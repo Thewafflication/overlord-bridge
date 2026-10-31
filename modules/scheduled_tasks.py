@@ -165,7 +165,7 @@ class ScheduledTasks:
         # Persist before starting: a crash must not silently replay work already started.
         self._save(tasks)
         try:
-            if not self.start(chat_id, f"Scheduled task {row['id']}:\n{row['prompt']}"):
+            if not self.start(chat_id, row["prompt"]):
                 raise RuntimeError("The active brain did not accept the task")
         except Exception as exc:
             tasks = copy.deepcopy(self.tasks)
