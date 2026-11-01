@@ -818,10 +818,11 @@ def _extract_xmlish_tool_call(text: str) -> dict[str, Any] | None:
 
 
 def _worker_python(folder: Path) -> Path:
-    """Prefer the project's existing environment without activating a shell."""
+    """Prefer a configured project environment, not an incomplete launcher copy."""
     relative = "Scripts/python.exe" if sys.platform == "win32" else "bin/python"
     candidate = folder / ".venv" / relative
-    return candidate if candidate.is_file() else Path(sys.executable)
+    return (candidate if candidate.is_file() and (folder / ".venv" / "pyvenv.cfg").is_file()
+            else Path(sys.executable))
 
 
 def _prepare_worker_edit(folder: Path, arguments: dict[str, Any]) -> tuple[Path | None, str | None, str | None]:
@@ -1699,12 +1700,14 @@ class WorkerManager:
                     "Read stderr/stdout to distinguish command syntax from a program/test failure. "
                     "Commands are noninteractive and stdin is closed; use explicit arguments or "
                     "unattended flags instead of input prompts. "
-                    "The project interpreter directory is already first on PATH: use run_command with "
+                    "The selected interpreter directory is already first on PATH: use run_command with "
                     "command='python -m pytest ...' or command='python tools/check.py all'. "
                     "Use run_python for Python code. On Windows, run_command defaults to cmd.exe; "
                     "set shell='powershell' for PowerShell syntax. Avoid nested shells and Unix-only "
                     "tail/head/grep pipelines on Windows; tool output is bounded automatically. "
-                    "An ignored .venv listing is not evidence that the interpreter is unavailable."
+                    "An ignored .venv listing is not evidence that the interpreter is unavailable. "
+                    "An incomplete .venv without pyvenv.cfg is skipped; use the selected Python to repair "
+                    "the project environment before installing project dependencies."
                 )
             return result
 
@@ -2142,6 +2145,9 @@ class WorkerManager:
                     f"Worker folder: {folder}\n"
                     f"Python interpreter: {_worker_python(folder)}\n"
                     "Commands use this interpreter directory first on PATH. "
+                    "Project .venv selection requires both its Python executable and pyvenv.cfg and is recalculated for each tool call. "
+                    "If incomplete, the bridge interpreter is a bootstrap fallback; repair the project-local "
+                    "environment before installing project test dependencies, instead of installing them into Overlord. "
                     "Use run_python for code, or run_command for python -m pytest or python tools/check.py. "
                     "Use list_files with path/pattern (for example path=modules, pattern=*.py) to narrow discovery; "
                     "do not use recursive shell listings that filter generated folders only after traversal. "

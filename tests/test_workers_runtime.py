@@ -821,6 +821,7 @@ def test_project_environment_is_selected_and_used_for_python(isolated, monkeypat
     interpreter = folder / '.venv' / relative
     interpreter.parent.mkdir(parents=True)
     interpreter.touch()
+    (folder / ".venv" / "pyvenv.cfg").write_text("home = " + sys.base_prefix)
     assert workers._worker_python(folder) == interpreter
     original = workers.asyncio.create_subprocess_exec
     calls = []
@@ -1174,3 +1175,28 @@ def test_missing_command_reports_the_actual_parameter(isolated, tool, wrong, req
     result = execute(tool, wrong, isolated)
     assert result['error'] == 'missing_command' and result['required_argument'] == required
     assert required in result['message']
+
+
+def test_incomplete_project_environment_falls_back_and_recovers_after_repair(isolated):
+    import venv
+    folder = isolated / 'partial-environment'
+    folder.mkdir()
+    environment = folder / '.venv'
+    venv.EnvBuilder(with_pip=False).create(environment)
+    config = environment / 'pyvenv.cfg'
+    saved = config.read_bytes()
+    config.unlink()
+    assert workers._worker_python(folder) == Path(sys.executable)
+    for tool, args in [('run_python', {'code': "print('bootstrap works')"}),
+                       ('run_command', {'command': 'python -c "print(12345)"'})]:
+        result = execute(tool,args,folder)
+        assert result['ok'],result
+        assert 'No pyvenv.cfg' not in result['stderr']
+    assert not config.exists()  # Selection never mutates the project environment.
+    config.write_bytes(saved)
+    interpreter = environment / ('Scripts/python.exe' if sys.platform=='win32' else 'bin/python')
+    assert workers._worker_python(folder) == interpreter
+    result = execute('run_python', {'code': 'import sys; print(sys.prefix)'}, folder)
+    assert result['ok'] and str(environment).lower() in result['stdout'].lower()
+    interpreter.unlink()
+    assert config.exists() and workers._worker_python(folder)==Path(sys.executable)
