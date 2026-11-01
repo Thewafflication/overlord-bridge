@@ -21,6 +21,7 @@ model is spent the owner is told when the first becomes available again.
 from __future__ import annotations
 
 import asyncio
+import copy
 import datetime
 import json
 import re
@@ -731,6 +732,16 @@ class FreeBrain(Brain):
         }
         if tools:
             payload["tools"] = tools
+            if _planning_tools(tools):
+                # Match the admission contract: a standalone planning response
+                # must explain its findings, not merely enumerate steps. Keep
+                # ordinary execution tools and caller-owned schemas unchanged.
+                payload["tools"] = copy.deepcopy(tools)
+                parameters = payload["tools"][0]["function"]["parameters"]
+                required = parameters.setdefault("required", [])
+                if "explanation" not in required:
+                    required.append("explanation")
+                parameters["properties"]["explanation"]["minLength"] = 1
             payload["tool_choice"] = ({"type": "function", "function": {"name": "update_plan"}}
                 if _planning_tools(tools) else "auto")
             if _planning_tools(tools):

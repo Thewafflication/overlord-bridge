@@ -833,3 +833,22 @@ def test_groq_input_fitting_has_a_bounded_retry_count(tmp_path,monkeypatch):
     assert len(brain.calls)==3 and brain.limiter.daily_count('groq')==3
     lengths=[len(json.dumps(c[1]['messages'])) for c in brain.calls]
     assert lengths[0]>lengths[1]>lengths[2]
+
+
+@pytest.mark.parametrize('provider,model', [('nvidia','openai/gpt-oss-20b'),('groq','openai/gpt-oss-20b'),('gemini','gemini-2.5-flash'),('openrouter','vendor/model:free')])
+def test_planning_wire_schema_requires_the_explanation_that_admission_requires(tmp_path,provider,model):
+    import copy
+    from modules.workers import _local_agent_tools
+    brain=FreeBrain(session_file=tmp_path/'session.json',models=[ModelSpec(provider,model)],
+        keys={provider:'test'},limiter=UsageLimiter(None,{}))
+    all_tools=_local_agent_tools()
+    tools=[t for t in all_tools if t['function']['name']=='update_plan']
+    original=copy.deepcopy(all_tools)
+    payload=brain._payload(ModelSpec(provider,model),[],tools)
+    schema=payload['tools'][0]['function']['parameters']
+    assert 'explanation' in schema['required'] and 'plan' in schema['required']
+    assert schema['properties']['explanation']['minLength']==1
+    assert all_tools==original
+    execution=brain._payload(ModelSpec(provider,model),[],all_tools)
+    assert execution['tools']==original
+    assert execution['tool_choice']=='auto'
