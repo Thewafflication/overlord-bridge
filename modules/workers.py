@@ -79,6 +79,7 @@ _CODEX_SID_RE = re.compile(r"session id:\s*([0-9a-fA-F][0-9a-fA-F-]{6,})")
 _CODEX_APPROVAL_POLICIES = {"untrusted", "on-failure", "on-request", "never"}
 _CODEX_SANDBOXES = {"read-only", "workspace-write", "danger-full-access"}
 _THREAD_REPORT_STATUSES = {
+    "stalled",
     "finished",
     "failed",
     "timed_out",
@@ -2314,7 +2315,7 @@ class WorkerManager:
             return result
 
         async def record_worker_plan(prompt: str, phase: str) -> bool:
-            nonlocal worker_plan, final_text, step_limited
+            nonlocal worker_plan, final_text, step_limited, provider_stalled
             from modules.free_brain import FreeUnavailable
             plan_tools = [t for t in _local_agent_tools() if t["function"]["name"] == "update_plan"]
             planning_messages = list(messages)
@@ -2350,6 +2351,7 @@ class WorkerManager:
                 try:
                     planned = await self.free_completer(request_messages, plan_tools)
                 except FreeUnavailable as exc:
+                    provider_stalled = bool(getattr(exc, "stalled", False))
                     final_text = ("Stopped before completion: the free-model pool is unavailable during plan recording. "
                                   "Existing edits and commits remain on disk; publication have not been confirmed.\n" +
                                   redact_text(str(exc)))
@@ -2453,6 +2455,7 @@ class WorkerManager:
             review_baseline = (await worker_changes.baseline(folder, review_allowed)
                                if is_free and not answer_only else {})
             final_text = ""
+            provider_stalled = False
             step_limited = False
             empty_responses = 0
             completion_checkpoint = False
@@ -2515,6 +2518,7 @@ class WorkerManager:
                             completion_feedback=completion_feedback))
                         free_message = await self.free_completer(request_messages, payload.get("tools"))
                     except FreeUnavailable as exc:
+                        provider_stalled = bool(getattr(exc, "stalled", False))
                         final_text = ("Stopped before completion: the free-model pool is unavailable. "
                                       "Existing edits and commits remain on disk; requested remaining work and "
                                       "publication have not been confirmed.\n" + redact_text(str(exc)))
@@ -2704,6 +2708,11 @@ class WorkerManager:
                                     free_models.append(used)
                                 review = _extract_json_object(str(reviewed.get("content") or "")) or {}
                             except Exception as exc:
+                                if getattr(exc, "stalled", False):
+                                    provider_stalled = True
+                                    step_limited = True
+                                    final_text = "Stopped before completion review: " + redact_text(str(exc))
+                                    break
                                 log.warning("Worker completion review unavailable: %s", type(exc).__name__)
                                 review = {"reason": "Completion review unavailable; completion was not verified."}
                             reason = redact_text(str(review.get("reason") or "Reviewer did not return a valid completion decision."))[:1500]
@@ -2801,7 +2810,12 @@ class WorkerManager:
                     folder=folder,
                     brain=brain,
                     session=sid,
-                    status="incomplete" if step_limited else "finished",
+                    status="stalled" if provider_stalled else ("incomplete" if step_limited else "finished"),
+                    continuation=({"task": redact_text(task), "plan": worker_plan,
+                        "recent_evidence": redact_text("\n".join(completion_evidence + completion_commands)[-12000:]),
+                        "completion_feedback": completion_feedback,
+                        "note": "Reconcile preserved checkout, commits and this evidence before continuing; not completed."}
+                        if provider_stalled else None),
                     started_at=started_at,
                     finished_at=finished_at,
                     duration_seconds=duration,

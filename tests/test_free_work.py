@@ -1972,3 +1972,121 @@ def test_groq_input_fit_continues_worker_through_validation_commit_and_push(isol
     assert git('rev-list','--count','HEAD')=='2'
     assert git('show','--format=','--name-only','HEAD')=='value.py'
     assert git('ls-remote','origin','HEAD').split()[0]==git('rev-parse','HEAD')
+
+
+def test_capacity_failure_rounds_are_bounded_but_short_wait_recovers(tmp_path, monkeypatch):
+    from modules.free_work import FreeWorkerStalled
+    calls = []
+    async def exhausted(*args, **kwargs):
+        calls.append(1)
+        raise FreeUnavailable(['timeout plus malformed alternate plan'], 1, retryable=True)
+    async def no_wait(_):
+        pass
+    monkeypatch.setattr('modules.free_work.asyncio.sleep', no_wait)
+    async def pool():
+        return SimpleNamespace(complete=exhausted)
+    fw = FreeWork(send=lambda *a: None, roots=lambda: [], workers=SimpleNamespace(owner=42),
+        gate=None, pool=pool)
+    with pytest.raises(FreeWorkerStalled, match='3 provider-pool attempts'):
+        run(fw.complete([], None))
+    assert len(calls) == 3
+    async def recover(*args, **kwargs):
+        if len(calls) == 3:
+            calls.append(1)
+            raise FreeUnavailable(['short cooldown'], 1, retryable=True)
+        return {'content':'usable'}, NV, []
+    async def recovered_pool():
+        return SimpleNamespace(complete=recover)
+    fw._pool = recovered_pool
+    assert run(fw.complete([], None))['content'] == 'usable'
+
+
+def test_stall_wall_clock_cancels_inflight_pool_and_owner_cancellation_propagates():
+    from modules.free_work import FreeWorkerStalled
+    cancelled = []
+    async def blocked(*args, **kwargs):
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.append(True)
+    async def pool():
+        return SimpleNamespace(complete=blocked)
+    fw = FreeWork(send=lambda *a: None, roots=lambda: [], workers=SimpleNamespace(owner=42),
+        gate=None, pool=pool, stall_timeout=0.02)
+    with pytest.raises(FreeWorkerStalled, match='0.02 seconds'):
+        run(fw.complete([], None))
+    assert cancelled == [True]
+    async def cancel():
+        task = asyncio.create_task(fw.complete([], None))
+        await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    run(cancel())
+    assert cancelled == [True, True]
+
+
+@pytest.mark.parametrize('phase', ['planning','execution','review'])
+def test_stalled_worker_preserves_work_reports_and_unblocks_scheduler(isolated,tmp_path,monkeypatch,phase):
+    from modules.free_work import FreeWorkerStalled
+    project = isolated / 'stalled-project'
+    project.mkdir()
+    base, _ = scripted_pool([call('write_file',{'path':'saved.py','content':'saved = True'}),final_result('Done')])
+    async def complete(messages, tools):
+        planning = tools and len(tools) == 1 and tools[0]['function']['name'] == 'update_plan'
+        reviewing = tools is None
+        if ((phase == 'planning' and planning) or (phase == 'review' and reviewing)
+                or (phase == 'execution' and not planning and not reviewing and (project/'saved.py').exists())):
+            raise FreeWorkerStalled('test provider deadline exhausted')
+        return await base(messages, tools)
+    mgr, sent, _ = manager(tmp_path, complete)
+    delivered = []
+    async def on_report(report):
+        delivered.append(report)
+    mgr.on_report = on_report
+    start(mgr, project)
+    report = events(mgr)[-1]
+    assert delivered[-1]['status'] == 'stalled'
+    assert report['status'] == 'stalled' and report['exit_code'] == 1
+    assert report['continuation']['task'] and 'not completed' in report['continuation']['note']
+    assert 'Worker stalled' in sent[-1]
+    if phase != 'planning':
+        assert (project/'saved.py').read_text() == 'saved = True'
+        assert report['continuation']['plan']
+    app = bridge.Bridge.__new__(bridge.Bridge)
+    app._active_turn_task = None
+    app.workers = mgr
+    assert not mgr._running and not app._scheduled_work_is_active()
+    from modules.scheduled_tasks import ScheduledTasks
+    dispatched = []
+    schedules = ScheduledTasks(tmp_path/'next-schedule.json',send=lambda *a: None,
+        start=lambda *a: dispatched.append(a) or True,busy=app._scheduled_work_is_active,clock=lambda: 100)
+    schedules.command('/schedule in 1m Next project')
+    schedules.clock = lambda: 161
+    schedules.tick(42)
+    assert dispatched == [(42,'Next project')]
+
+
+def test_real_pool_timeout_and_invalid_plan_cannot_hold_worker_forever(tmp_path,monkeypatch):
+    from modules.free_work import FreeWorkerStalled
+    attempts = []
+    async def post(url,payload,key,timeout):
+        attempts.append(payload['model'])
+        if payload['model'] == NV.model:
+            raise TimeoutError('provider timed out')
+        return 200, {'choices':[{'message':call('update_plan',{'plan':[{'step':'Inspect','status':'in_progress'}]})}]}, {}
+    async def no_wait(_):
+        pass
+    monkeypatch.setattr(free_brain,'_post',post)
+    monkeypatch.setattr('modules.free_work.asyncio.sleep',no_wait)
+    pool = FreeBrain(session_file=tmp_path/'pool.json',models=[NV,NV2],keys={'nvidia':'test'},
+        limiter=UsageLimiter(None,{'nvidia':(100,1000)}))
+    async def current_pool():
+        return pool
+    fw = FreeWork(send=lambda *a: None,roots=lambda: [],workers=SimpleNamespace(owner=42),
+        gate=None,pool=current_pool,patience=0)
+    tools=[t for t in workers._local_agent_tools() if t['function']['name']=='update_plan']
+    with pytest.raises(FreeWorkerStalled):
+        run(fw.complete([{'role':'user','content':'Record a plan.'}],tools))
+    assert NV.model in attempts and NV2.model in attempts
+    assert pool._retryable[NV2.key] is False
