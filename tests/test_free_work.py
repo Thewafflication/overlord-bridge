@@ -357,6 +357,71 @@ def events(mgr):
     return [json.loads(l) for l in mgr.report_store.events_path.read_text(encoding="utf-8").splitlines()]
 
 
+@pytest.mark.parametrize("outcome", ["finished", "crashed", "cancelled", "protection_failure"])
+def test_owner_guard_covers_model_actions_and_releases_before_idle(isolated, tmp_path, monkeypatch, outcome):
+    from modules import owner_file_guard
+    lifetime = []
+
+    class Guard:
+        count = 1
+        async def acquire(self, *args):
+            lifetime.append("acquire")
+            if outcome == "protection_failure":
+                raise OSError("cannot acquire")
+        def close(self):
+            lifetime.append("close")
+
+    monkeypatch.setattr(owner_file_guard, "OwnerFileGuard", Guard)
+    pool, _ = scripted_pool([final_result("done")])
+    entered = asyncio.Event()
+
+    async def complete(messages, tools):
+        assert lifetime == ["acquire"]
+        entered.set()
+        if outcome == "crashed":
+            raise RuntimeError("synthetic model failure")
+        if outcome == "cancelled":
+            await asyncio.Future()
+        return await pool(messages, tools)
+
+    mgr, _, _ = manager(tmp_path, complete)
+    folder = isolated / "guarded"
+    folder.mkdir()
+
+    async def scenario():
+        mgr._accept({"name": "Free-app", "folder": str(folder), "task": "implement feature", "brain": "free"})
+        tasks = list(mgr._running.values())
+        if outcome == "cancelled":
+            await asyncio.wait_for(entered.wait(), 5)
+            tasks[0].cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        await asyncio.sleep(0)
+        assert lifetime == ["acquire", "close"]
+        assert not mgr._running
+    run(scenario())
+    if outcome == "protection_failure":
+        assert not entered.is_set()
+        assert events(mgr)[-1]["reason"] == "owner_file_protection_unavailable"
+
+
+@pytest.mark.skipif(__import__("os").name != "nt", reason="Windows mandatory file sharing")
+def test_real_free_worker_python_cannot_repeat_owner_file_deletion(isolated, tmp_path):
+    folder = isolated / "guarded"
+    folder.mkdir()
+    owner = folder / "owned-debug.bin"
+    owner.write_bytes(b"pre-existing owner data")
+    pool, seen = scripted_pool([
+        call("run_python", {"code": "import os; os.remove('owned-debug.bin')"}),
+        final_result("Cleanup failed; existing owner file retained.")])
+    mgr, _, _ = manager(tmp_path, pool)
+    start(mgr, folder)
+    tool_rows = [m for messages, _ in seen for m in messages if m.get("role") == "tool"]
+    assert any('"exit_code": 1' in m["content"] and "PermissionError" in m["content"] for m in tool_rows), tool_rows
+    assert owner.read_bytes() == b"pre-existing owner data"
+    assert not mgr._running
+    owner.unlink()  # actual manager teardown released the protection
+
+
 def test_default_free_worker_continues_past_thirty_steps(isolated, tmp_path):
     project = isolated / "long-task"
     project.mkdir()

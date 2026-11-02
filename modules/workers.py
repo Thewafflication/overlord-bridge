@@ -2439,7 +2439,26 @@ class WorkerManager:
                 '"status":"in_progress"}],"explanation":"findings, uncertainty and next action"}.',
                 "Progress checkpoint")
 
+        from modules.owner_file_guard import OwnerFileGuard
+        owner_guard = OwnerFileGuard()
         try:
+            if is_free and not answer_only:
+                try:
+                    await owner_guard.acquire(folder, lambda path:
+                        _local_agent_path_denial(path, folder, write=False) is None)
+                except Exception as exc:
+                    self._emit_report(self._base_report(name=name, folder=folder, brain=brain,
+                        session=sid, status="incomplete", reason="owner_file_protection_unavailable",
+                        result_tail=f"Worker did not run: owner-file protection unavailable ({type(exc).__name__})."))
+                    self._send(self.owner, f"⚠️ [{name}] did not run: could not protect existing owner files.")
+                    return
+                if os.name == "nt":
+                    messages.append({"role": "system", "content":
+                        f"Windows deletion protection holds {owner_guard.count} pre-existing uncommitted files "
+                        "until worker cleanup completes. Do not delete, rename, replace or clean up owner files. "
+                        "Sharing violations are final: do not bypass protection with another command. "
+                        "In-place edits remain possible only within the task's authorized scope; this is not an overwrite backup. "
+                        "Only worker-created scratch files may be cleaned up."})
             if not answer_only:
                 progress(f"Working on: {task}\nWaiting for the model's next action.", important=True)
             if is_free:
@@ -2874,6 +2893,8 @@ class WorkerManager:
                 await self._stop_job_llamacpp_server(llamacpp_proc)
             except Exception:  # noqa: BLE001
                 log.exception("Could not stop per-job llama.cpp server for %s", name)
+            finally:
+                owner_guard.close()
 
     # ------------------------------------------------------------------ watcher
     async def watch(self, poll: float = 2.0) -> None:
