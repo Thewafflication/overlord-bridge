@@ -195,3 +195,48 @@ Commit e60c2a1/tag 1.0.80 passed 287 focused checks and canonical 1,452 tests wi
 Installed regression checks passed 394 tests in 62.37 seconds. Using installed Python and WorkerManager APIs, the isolated fixture reproduced the old failure, then executed both direct Python and command tools successfully through fallback while leaving the missing configuration absent. After the fixture restored configuration, the actual project interpreter ran successfully. Artifact: out/checks/incomplete-venv-installed.json. No model calls, dependency installation or edits to real project environments were involved. This is a configuration-presence check, not a complete interpreter-health validator.
 
 Instance d56ee7ea3d2a4f74877addbc4e127590 is online 1.0.80 with all 16 original schedules active at 7,200-second intervals. Frozen deadlines and dispatch state survived; only the intended future TCC audit feedback changed its prompt. Normal startup dispatched WSP. The separate owner-file preservation and completion-review investigations remain open; no Pydecipher project repair or TCC milestone is claimed by this release.
+
+## 2026-11-02: Windows owner-file deletion protection (1.0.81)
+
+WCRT's previously audited worker deleted pre-existing `owned-debug.bin` with
+Python cleanup despite explicit preservation instructions. Installed 1.0.80's
+actual tool runner reproduced exit-zero deletion against an isolated fixture.
+No original real-project bytes were recovered. A Windows metadata-only handle
+did not prevent deletion; a read-capable handle without delete sharing did.
+Commit 851d671/tag 1.0.81 holds these handles for existing allowed uncommitted
+files before free-worker model actions, through cleanup. Bounded inventories
+include initialized nested repositories; incomplete protection stops admission.
+No file contents are read or backed up by the guard. In-place overwrite
+prevention, ignored/off-limits files, links, other worker brains and non-Windows
+systems remain outside this mechanism; see the explicit protection contract.
+
+Fifteen focused native/lifecycle/inventory checks passed. Final canonical checks
+passed 1,467 tests with two skips in 101.85 seconds. Windows/Linux tag CI
+41371174718 and signed package build 41371174851 passed; WPM verification matched
+trusted key 6c21ebda96b16bfa64700d28fcdeb20dc4b19de448a723a970ac09b720f04b1d.
+The stable archive includes the guard and excludes scratch/developer files.
+After acknowledged idle stop and full process exit, signed installation exited
+zero and installed source matched. Bison's interruption was maintenance, not a
+natural completion or a new project milestone.
+
+Installed-source checks passed 409 tests in 45.13 seconds, with file log handlers
+removed to keep synthetic provider traffic out of the live work log. A separate
+fixture used installed Python and actual installed WorkerManager with scripted
+model replies: the original `os.remove('owned-debug.bin')` tool call returned
+PermissionError/exit one, original bytes survived, and deletion succeeded after
+cleanup released the slot/handle. No model/network calls or real-project edits
+were made by qualification. Artifacts: out/checks/owner-delete-installed-baseline.json,
+owner-guard-installed-native.json and owner-guard-installed-tests.txt.
+
+Instance 0d1353ded4834df8ac0d230becb5f9f5 is online 1.0.81. All 16 original
+7200-second schedule IDs/prompts survived, with frozen timing restored offline;
+only normal CV2PDB startup dispatch advanced its own due/dispatch metadata.
+Four saved session files retained size and timestamp. The launcher rewrote
+three settings in the same-size .env file as designed; no secret contents were
+read or compared, so unchanged timestamps are not claimed for that file.
+The only new natural terminal report reviewed, WSP 4d4cbd254a4f4f1ea4cbad4e135df114,
+installed dependencies and reran three existing tests; actual HEAD remained
+592494d and there was no new source commit. Do not count that as a new milestone.
+The durable cursor records this audit and deployment. Valid-response discovery
+loops, incorrect completion judgments and arbitrary overwrite protection remain
+separate open problems; no broader completion guarantee is claimed.
