@@ -784,6 +784,22 @@ def test_powershell_preserves_variables_and_newlines(isolated):
     assert result['ok'] and result['stdout'].splitlines() == ['hello world', str(folder)]
 
 
+@pytest.mark.skipif(sys.platform != 'win32', reason='Windows PowerShell')
+@pytest.mark.parametrize('command', ['.\\script.ps1 value', '"script with spaces.ps1" value'])
+def test_bare_powershell_script_never_reaches_windows_file_association(isolated, monkeypatch, command):
+    async def unexpected_shell(*args, **kwargs):
+        pytest.fail('Bare PowerShell script reached cmd.exe')
+
+    monkeypatch.setattr(asyncio, 'create_subprocess_shell', unexpected_shell)
+    result = execute('run_command', {'command': command}, isolated)
+    assert result['error'] == 'powershell_script_requires_shell'
+    (isolated / 'script with spaces.ps1').write_text('Write-Output $args[0]')
+    result = execute('run_command', {
+        'shell': 'powershell', 'command': "& './script with spaces.ps1' value",
+    }, isolated)
+    assert result['ok'] and result['stdout'].strip() == 'value'
+
+
 def test_python_requires_free_command_approval(isolated):
     folder = isolated / 'app'
     folder.mkdir()
