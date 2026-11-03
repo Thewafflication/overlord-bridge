@@ -593,7 +593,7 @@ def test_discovery_picks_priced_at_zero_chat_models_one_per_vendor():
 def test_openrouter_leads_the_default_model_list():
     specs = parse_models(free_brain.DEFAULT_MODELS)
     assert specs[0] == ModelSpec("openrouter", "free")
-    assert {s.provider for s in specs} == {"openrouter", "nvidia", "gemini", "groq"}
+    assert {s.provider for s in specs} == {"openrouter", "nvidia", "gemini", "groq", "cloudflare"}
 
 
 def test_connect_expands_the_placeholder_from_the_live_catalog(tmp_path, monkeypatch):
@@ -671,7 +671,7 @@ def test_status_lists_every_model_with_its_state_and_marks_the_current_one(tmp_p
     brain = make(tmp_path, monkeypatch, [], models=(NV, NV2))
     brain.limiter.cool_down(NV2.key, 90)
     lines = brain.status_snapshot()["usage_summary"]
-    assert lines[0] == "Keys: nvidia ✓, openrouter ✓, gemini ✗ no key, groq ✗ no key"
+    assert lines[0] == "Keys: nvidia ✓, openrouter ✓, gemini ✗ no key, groq ✗ no key, cloudflare ✗ no key"
     assert f"● {NV.key}: ready" in lines
     assert any(l.startswith(f"○ {NV2.key}: cooling down, back in") for l in lines)
 

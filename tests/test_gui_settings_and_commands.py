@@ -157,7 +157,7 @@ def test_shared_claude_turn_logs_command_and_result_once(tmp_path, caplog):
     assert "requested" in caplog.text and "completed" in caplog.text
 
 
-def test_setup_window_saves_projects_and_permissions_without_touching_saved_keys(tmp_path):
+def test_setup_window_saves_projects_and_permissions_without_touching_saved_keys(tmp_path, monkeypatch):
     from tools.overlord_setup import SetupWindow
     import tkinter as tk
 
@@ -179,9 +179,28 @@ def test_setup_window_saves_projects_and_permissions_without_touching_saved_keys
         window.work_approval.set("commands")
         window.gemini.insert(0, "synthetic-gemini-key")
         window.groq.insert(0, "synthetic-groq-key")
+        from tools import overlord_setup as setup
+        window.cloudflare_account.insert(0, "a" * 32)
+        window.cloudflare.insert(0, "synthetic-cloudflare-token")
+        window.use_cloudflare.set(True)
+        assert window.cloudflare.cget("show")
+        probes = []
+        monkeypatch.setattr(window, "_background", lambda action: action())
+        monkeypatch.setattr(setup, "probe_key", lambda url, key, label: probes.append((url, key)))
+        window.test_cloudflare(window.cloudflare.get())
+        assert probes == [
+            ("https://api.cloudflare.com/client/v4/accounts/" + "a" * 32 + "/ai/models/search",
+             "synthetic-cloudflare-token")
+        ]
         window.use_groq.set(True)
         window.use_gemini.set(True)
         window.save()
+        window.save()  # Blank token field preserves the saved token on subsequent saves.
+        assert read_env(env, (setup.CLOUDFLARE_KEY, setup.CLOUDFLARE_ACCOUNT, setup.CLOUDFLARE_ENABLED)) == {
+            setup.CLOUDFLARE_KEY: "synthetic-cloudflare-token",
+            setup.CLOUDFLARE_ACCOUNT: "a" * 32,
+            setup.CLOUDFLARE_ENABLED: "1",
+        }
         assert read_env(env, ("OVERLORD_FREE_GROQ_API_KEY", "OVERLORD_FREE_GROQ_ENABLED")) == {
             "OVERLORD_FREE_GROQ_API_KEY": "synthetic-groq-key", "OVERLORD_FREE_GROQ_ENABLED": "1"}
         values = read_env(env, (PROJECT_FOLDERS, PERMISSION_LEVEL, "OVERLORD_AUTO_APPROVE", "OVERLORD_FREE_WORK_APPROVAL",

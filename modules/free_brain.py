@@ -50,14 +50,15 @@ from modules.provider_http import USER_AGENT
 
 log = logging.getLogger("overlord.free")
 
-PROVIDERS = ("nvidia", "openrouter", "gemini", "groq")
+PROVIDERS = ("nvidia", "openrouter", "gemini", "groq", "cloudflare")
+CLOUDFLARE_MODEL = "@cf/openai/gpt-oss-20b"
 GROQ_BASE = "https://api.groq.com/openai/v1"
 GROQ_MODELS = ("openai/gpt-oss-120b", "openai/gpt-oss-20b")
 GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/openai"
 GEMINI_FREE_MODELS = ("gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-2.5-flash-lite")
 # "openrouter:free" means: discover the best zero-priced chat models from the live
 # catalog (fixed IDs go stale quickly). OpenRouter leads, NVIDIA follows.
-DEFAULT_MODELS = "openrouter:free,nvidia:gpt-oss,nvidia:nemotron,nvidia:nemotron-lightning," + ",".join(f"gemini:{m}" for m in GEMINI_FREE_MODELS) + "," + ",".join(f"groq:{m}" for m in GROQ_MODELS)
+DEFAULT_MODELS = "openrouter:free,nvidia:gpt-oss,nvidia:nemotron,nvidia:nemotron-lightning," + ",".join(f"gemini:{m}" for m in GEMINI_FREE_MODELS) + "," + ",".join(f"groq:{m}" for m in GROQ_MODELS) + f",cloudflare:{CLOUDFLARE_MODEL}"
 DISCOVER = "free"
 DISCOVER_LIMIT = 16
 ADMISSION_TTL = 300.0
@@ -69,7 +70,7 @@ FALLBACK_OPENROUTER = (
 _NOT_CHAT = ("safety", "guard", "embed", "moderation", "rerank")
 # Conservative published-tier defaults: OpenRouter's free tier is about 20/min
 # and 50/day without credits; NIM is rate limited per minute only.
-DEFAULT_LIMITS = {"nvidia": (20, 0), "openrouter": (15, 45), "gemini": (5, 20), "groq": (10, 250)}
+DEFAULT_LIMITS = {"nvidia": (20, 0), "openrouter": (15, 45), "gemini": (5, 20), "groq": (10, 250), "cloudflare": (5, 50)}
 SYSTEM_PROMPT = (
     "You are the Overlord's chat assistant, reached through Telegram. You are a "
     "text-only model: you cannot run commands, read or edit files, browse, or "
@@ -430,6 +431,7 @@ class FreeBrain(Brain):
         openrouter_enabled: bool = False,
         gemini_enabled: bool = False,
         groq_enabled: bool = False,
+        cloudflare_enabled: bool = False,
         max_tokens: int = 2048,
         history_chars: int = 24_000,
         timeout: float = 90.0,
@@ -466,6 +468,10 @@ class FreeBrain(Brain):
                 continue
             if not self.keys.get(spec.provider):
                 self.unavailable.append(f"{spec.key}: no {spec.provider} API key configured")
+            elif spec.provider == "cloudflare" and (
+                not cloudflare_enabled or not self.bases.get("cloudflare") or spec.model != CLOUDFLARE_MODEL
+            ):
+                self.unavailable.append(f"{spec.key}: Cloudflare requires opt-in, an account ID and a supported model")
             elif spec.provider == "groq" and not groq_enabled:
                 self.unavailable.append(f"{spec.key}: enable Groq with a Free-plan account (OVERLORD_FREE_GROQ_ENABLED=1)")
             elif spec.provider == "groq" and spec.model not in GROQ_MODELS:
@@ -842,7 +848,7 @@ class FreeBrain(Brain):
                                                _budget_retries=_budget_retries + 1)
         if status == 429:
             seconds = _parse_duration(headers.get("retry-after")) or 60.0
-            self.limiter.cool_down(spec.provider if spec.provider == "groq" else spec.key, min(seconds, 86_400.0))
+            self.limiter.cool_down(spec.provider if spec.provider in {"groq", "cloudflare"} else spec.key, min(seconds, 86_400.0))
             return None, f"rate limited, retry in {format_wait(seconds)}"
         error = body.get("error") if isinstance(body, dict) else None
         detail = error.get("message") if isinstance(error, dict) else None

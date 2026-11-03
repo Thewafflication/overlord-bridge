@@ -30,6 +30,10 @@ from modules.gui_settings import (  # noqa: E402
 )
 
 GEMINI_KEY = "OVERLORD_FREE_GEMINI_API_KEY"
+CLOUDFLARE_KEY = "OVERLORD_FREE_CLOUDFLARE_API_KEY"
+CLOUDFLARE_ACCOUNT = "OVERLORD_FREE_CLOUDFLARE_ACCOUNT_ID"
+CLOUDFLARE_ENABLED = "OVERLORD_FREE_CLOUDFLARE_ENABLED"
+CLOUDFLARE_SETUP_PAGE = "https://developers.cloudflare.com/workers-ai/get-started/rest-api/"
 GROQ_KEY = "OVERLORD_FREE_GROQ_API_KEY"
 GROQ_ENABLED = "OVERLORD_FREE_GROQ_ENABLED"
 GROQ_MODELS_URL = "https://api.groq.com/openai/v1/models"
@@ -85,6 +89,10 @@ def check_nvidia_format(key: str) -> str | None:
     if len(key) < 20:
         return "That key looks too short."
     return None
+
+
+def valid_cloudflare_account(account: str) -> bool:
+    return len(account) == 32 and all(c in "0123456789abcdefABCDEF" for c in account)
 
 
 def _get(url: str, key: str, timeout: float) -> tuple[int, str]:
@@ -149,6 +157,8 @@ class SetupWindow:
         current = read_env(env_path, ("OVERLORD_TELEGRAM_ENABLED", "TELEGRAM_BOT_TOKEN", "OWNER_CHAT_ID", GEMINI_KEY, "GEMINI_API_KEY", GEMINI_ENABLED, NVIDIA_KEY, "NVIDIA_API_KEY", OPENROUTER_KEY,
                                       "OVERLORD_WORKER_OPENROUTER_API_KEY", OPENROUTER_ENABLED) + SETTING_NAMES)
         current.update(read_env(env_path, (GROQ_KEY, "GROQ_API_KEY", GROQ_ENABLED)))
+        current.update(read_env(env_path, (CLOUDFLARE_KEY, CLOUDFLARE_ACCOUNT, CLOUDFLARE_ENABLED)))
+        self.saved_cloudflare = current.get(CLOUDFLARE_KEY, "")
         self.saved_groq = current.get(GROQ_KEY) or current.get("GROQ_API_KEY", "")
         self.saved_gemini = current.get(GEMINI_KEY) or current.get("GEMINI_API_KEY", "")
         self.saved_nvidia = current.get(NVIDIA_KEY) or current.get("NVIDIA_API_KEY", "")
@@ -268,6 +278,18 @@ class SetupWindow:
         ttk.Checkbutton(outer, text="Enable Groq (use Free plan; paid accounts can be billed)",
                         variable=self.use_groq, style="Setup.TCheckbutton").grid(
                             row=17, column=0, columnspan=4, sticky="w", pady=(8, 0))
+        ttk.Label(outer, text="Cloudflare account ID", style="Setup.TLabel").grid(
+            row=18, column=0, sticky="w", pady=(8, 0))
+        self.cloudflare_account = ttk.Entry(outer, width=36)
+        self.cloudflare_account.insert(0, current.get(CLOUDFLARE_ACCOUNT, ""))
+        self.cloudflare_account.grid(row=18, column=1, columnspan=3, sticky="we", pady=(8, 0))
+        self.cloudflare = self._key_row(outer, 19, "Cloudflare Workers AI", self.saved_cloudflare,
+                                       lambda _: self.test_cloudflare(self.cloudflare.get().strip() or self.saved_cloudflare),
+                                       CLOUDFLARE_SETUP_PAGE)
+        self.use_cloudflare = tk.BooleanVar(value=truth(CLOUDFLARE_ENABLED))
+        ttk.Checkbutton(outer, text="Enable Cloudflare Workers AI (use the Workers Free plan)",
+                        variable=self.use_cloudflare, style="Setup.TCheckbutton").grid(
+                            row=22, column=0, columnspan=4, sticky="w", pady=(8, 0))
         ttk.Label(self.root, textvariable=self.status, style="Muted.TLabel", wraplength=520,
                   justify="left").pack(fill="x", padx=16)
         buttons = ttk.Frame(self.root, style="Setup.TFrame")
@@ -350,6 +372,17 @@ class SetupWindow:
             return
         self._background(lambda: probe_key(GEMINI_MODELS_URL, key, "Gemini"))
 
+    def test_cloudflare(self, key: str) -> None:
+        account = self.cloudflare_account.get().strip()
+        if not valid_cloudflare_account(account):
+            self.status.set("Enter a 32-character hexadecimal Cloudflare account ID.")
+            return
+        if not key.strip():
+            self.status.set("Enter a Workers AI API token first.")
+            return
+        url = f"https://api.cloudflare.com/client/v4/accounts/{account}/ai/models/search"
+        self._background(lambda: probe_key(url, key, "Cloudflare Workers AI"))
+
     def test_groq(self, key: str) -> None:
         key = key.strip() or self.saved_groq
         if not key:
@@ -380,7 +413,18 @@ class SetupWindow:
             if not token:
                 self.status.set("Enter a bot token to enable Telegram.")
                 return
+        account = self.cloudflare_account.get().strip()
+        cloudflare = self.cloudflare.get().strip()
+        if (account or self.use_cloudflare.get()) and not valid_cloudflare_account(account):
+            self.status.set("Enter a 32-character hexadecimal Cloudflare account ID.")
+            return
+        if self.use_cloudflare.get() and not (cloudflare or self.saved_cloudflare):
+            self.status.set("Enter a Workers AI API token to enable Cloudflare.")
+            return
         values: dict[str, str | None] = {
+            CLOUDFLARE_KEY: cloudflare or None,
+            CLOUDFLARE_ACCOUNT: account,
+            CLOUDFLARE_ENABLED: "1" if self.use_cloudflare.get() else "0",
             "OVERLORD_TELEGRAM_ENABLED": "1" if self.use_telegram.get() else "0",
             "TELEGRAM_BOT_TOKEN": self.telegram_token.get().strip() or None,
             "OWNER_CHAT_ID": self.telegram_owner.get().strip(),
@@ -413,7 +457,9 @@ class SetupWindow:
         self.status.set("✓ Saved. " + (
             "Other settings reload now; restart Overlord for Telegram integration changes."
             if reloaded else "Restart Overlord to apply them."))
-        for entry in (self.nvidia, self.openrouter, self.gemini, self.groq):
+        if cloudflare:
+            self.saved_cloudflare = cloudflare
+        for entry in (self.nvidia, self.openrouter, self.gemini, self.groq, self.cloudflare):
             entry.delete(0, "end")
 
     def run(self) -> None:

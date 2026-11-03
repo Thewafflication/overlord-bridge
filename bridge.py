@@ -455,22 +455,28 @@ def build_brain(gate: PermissionGate, brain_name: str | None = None) -> Brain:
                 max(0, env_int(f"OVERLORD_FREE_{provider.upper()}_DAILY", day_default)),
             )
         nvidia_base = env_first(("OVERLORD_WORKER_NVIDIA_API_BASE",))
+        bases = {"nvidia": nvidia_base} if nvidia_base else {}
+        cloudflare_account = os.environ.get("OVERLORD_FREE_CLOUDFLARE_ACCOUNT_ID", "").strip()
+        if len(cloudflare_account) == 32 and all(c in "0123456789abcdefABCDEF" for c in cloudflare_account):
+            bases["cloudflare"] = f"https://api.cloudflare.com/client/v4/accounts/{cloudflare_account}/ai/v1"
         return FreeBrain(
             session_file=session_file,
             developer_instructions=shared_instructions,
             models=parse_models(os.environ.get("OVERLORD_FREE_MODELS") or DEFAULT_MODELS),
             model=os.environ.get("OVERLORD_FREE_MODEL", "").strip() or None,
             keys={
+                "cloudflare": env_first(("OVERLORD_FREE_CLOUDFLARE_API_KEY",)),
                 "groq": env_first(("OVERLORD_FREE_GROQ_API_KEY", "GROQ_API_KEY")),
                 "gemini": env_first(("OVERLORD_FREE_GEMINI_API_KEY", "GEMINI_API_KEY")),
                 "nvidia": env_first(("OVERLORD_WORKER_NVIDIA_API_KEY", "NVIDIA_API_KEY")),
                 "openrouter": env_first(("OVERLORD_FREE_OPENROUTER_API_KEY",
                                          "OVERLORD_WORKER_OPENROUTER_API_KEY")),
             },
-            bases={"nvidia": nvidia_base} if nvidia_base else None,
+            bases=bases,
             # A configured OpenRouter key is the consent; set the flag to 0 to opt out.
             openrouter_enabled=env_bool("OVERLORD_FREE_OPENROUTER_ENABLED", True),
             gemini_enabled=env_bool("OVERLORD_FREE_GEMINI_ENABLED", False),
+            cloudflare_enabled=env_bool("OVERLORD_FREE_CLOUDFLARE_ENABLED", False),
             groq_enabled=env_bool("OVERLORD_FREE_GROQ_ENABLED", False),
             limiter=UsageLimiter(BASE_DIR / "run" / "free_usage.json", limits),
             max_tokens=env_int("OVERLORD_FREE_MAX_TOKENS", 2048),
