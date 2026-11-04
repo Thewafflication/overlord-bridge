@@ -53,7 +53,7 @@ function Copy-PersistentState {
         Copy-Item -LiteralPath $session.FullName -Destination (Join-Path $To $session.Name) -Force
     }
     # Schedule definitions and console preferences survive upgrades and reinstall.
-    foreach ($name in @('scheduled-tasks.json', 'console-window.state', 'console-window.geometry.json')) {
+    foreach ($name in @('scheduled-tasks.json', 'console-window.state', 'console-window.geometry.json', 'project-tasks.json')) {
         $stateFile = Join-Path $From ('run/' + $name)
         if (Test-Path -LiteralPath $stateFile -PathType Leaf) {
             foreach ($path in @((Join-Path $From 'run'), $stateFile)) {

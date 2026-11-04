@@ -169,6 +169,7 @@ def test_worker_reports_survive_upgrade_and_reinstall_state_round_trips(tmp_path
     (install / 'run/local-control/service.json').write_text('{"instance":"stale-service"}')
     schedule = '{"version":1,"tasks":{"daily":{"prompt":"Continue project work"}}}'
     (install / 'run/scheduled-tasks.json').write_text(schedule)
+    (install / 'run/project-tasks.json').write_text('{"version":1,"tasks":[]}')
     (install / 'run/console-window.state').write_text('visible')
     (install / 'run/console-window.geometry.json').write_text('[960, 500, 25, 35]')
     result = run_script(tmp_path, r'''
@@ -204,7 +205,7 @@ Copy-PersistentState -From $state -To $reinstalled
     assert (restored / 'run/console-window.state').read_text() == 'visible'
     assert (restored / 'run/console-window.geometry.json').read_text() == '[960, 500, 25, 35]'
     assert sorted(p.name for p in (restored / 'run').iterdir()) == [
-        'console-window.geometry.json', 'console-window.state', 'scheduled-tasks.json',
+        'console-window.geometry.json', 'console-window.state', 'project-tasks.json', 'scheduled-tasks.json',
     ]
 
 

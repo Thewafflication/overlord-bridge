@@ -758,6 +758,7 @@ class Bridge:
             tool_approver=lambda folder, tool, request: self.free_work.approve(folder, tool, request),
             extra_roots=worker_extra_roots(),
             free_max_steps=FREE_WORK_STEPS,
+            project_tasks_path=BASE_DIR / "run" / "project-tasks.json",
             report_dir=WORKER_REPORT_DIR,
             report_tail_chars=WORKER_REPORT_TAIL_CHARS,
             telegram_tail_chars=WORKER_TELEGRAM_TAIL_CHARS,

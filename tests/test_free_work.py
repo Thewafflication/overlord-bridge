@@ -2155,3 +2155,61 @@ def test_real_pool_timeout_and_invalid_plan_cannot_hold_worker_forever(tmp_path,
         run(fw.complete([{'role':'user','content':'Record a plan.'}],tools))
     assert NV.model in attempts and NV2.model in attempts
     assert pool._retryable[NV2.key] is False
+
+
+@pytest.mark.parametrize('valid', [False, True])
+def test_owner_acceptance_gate_overrules_positive_reviewer(isolated, tmp_path, valid):
+    folder = isolated / 'contracted'
+    folder.mkdir()
+    task = {
+        'id': 'regression', 'state': 'ready', 'folder': str(folder),
+        'requirement': 'A source result must match its acceptance condition',
+        'task': 'Write result.txt with accepted content',
+        'checks': [{'name': 'Real output check', 'tool': 'run_python',
+                    'arguments': {'code': "from pathlib import Path; assert Path('result.txt').read_text() == 'accepted'"}}],
+    }
+    queue = tmp_path / 'project-tasks.json'
+    queue.write_text(json.dumps({'version': 1, 'tasks': [task]}), encoding='utf-8')
+    replies = [
+        call('write_file', {'path': 'result.txt', 'content': 'accepted' if valid else 'wrong'}),
+        final_result('Completed successfully'),
+    ]
+    if not valid:
+        replies.append({'content': json.dumps({'final': 'Required output validation failed', 'outcome': 'blocked'})})
+    pool, _ = scripted_pool(replies)
+    mgr, _, _ = manager(tmp_path, pool, project_tasks_path=queue)
+    start(mgr, folder)
+    terminal = events(mgr)[-1]
+    assert terminal['status'] == ('finished' if valid else 'incomplete')
+    assert terminal['acceptance']['passed'] is valid
+    assert json.loads(queue.read_text())['tasks'][0]['state'] == ('completed' if valid else 'ready')
+    if valid:
+        start(mgr, folder)
+        assert events(mgr)[-1]['reason'] == 'no_ready_project_task'
+
+
+def test_failed_acceptance_prevents_worker_git_push(isolated, tmp_path, monkeypatch):
+    folder = isolated / 'guarded-push'
+    folder.mkdir()
+    queue = tmp_path / 'project-tasks.json'
+    queue.write_text(json.dumps({'version': 1, 'tasks': [{
+        'id': 'push-gate', 'state': 'ready', 'folder': str(folder),
+        'requirement': 'Validation must pass before publication', 'task': 'Publish only validated work',
+        'checks': [{'name': 'Failing acceptance', 'tool': 'run_python',
+                    'arguments': {'code': "raise SystemExit(9)"}}],
+    }]}), encoding='utf-8')
+    pool, seen = scripted_pool([
+        call('run_command', {'command': 'git push origin master'}),
+        {'content': json.dumps({'final': 'Acceptance failed; blocked', 'outcome': 'blocked'})},
+    ])
+    mgr, _, _ = manager(tmp_path, pool, project_tasks_path=queue)
+    original = mgr._execute_checked
+    async def execute(brain, project, tool, args):
+        if tool == 'run_command' and 'git push' in args.get('command', ''):
+            pytest.fail('Unvalidated publication reached the command runner')
+        return await original(brain, project, tool, args)
+    monkeypatch.setattr(mgr, '_execute_checked', execute)
+    start(mgr, folder)
+    results = [m for messages, _ in seen for m in messages if m.get('role') == 'tool']
+    assert any('acceptance_checks_failed' in r['content'] for r in results)
+    assert events(mgr)[-1]['status'] == 'incomplete'

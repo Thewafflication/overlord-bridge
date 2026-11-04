@@ -1401,6 +1401,7 @@ class WorkerManager:
         is_shutting_down: Callable[[], bool] | None = None,
         begin_typing: Callable[[int], None] | None = None,
         end_typing: Callable[[int], None] | None = None,
+        project_tasks_path: Path | None = None,
     ) -> None:
         # send(chat_id, text): thread-safe Telegram send (TelegramHandler.send)
         self._send = send
@@ -1410,6 +1411,7 @@ class WorkerManager:
         # Lets the manager tell "the bridge is going down and took its workers
         # with it" apart from "the worker's task actually failed".
         self._is_shutting_down = is_shutting_down or (lambda: False)
+        self.project_tasks_path = project_tasks_path
         self.dispatch_dir = Path(dispatch_dir)
         self.dispatch_dir.mkdir(parents=True, exist_ok=True)
         self.claude_bin = claude_bin
@@ -2289,12 +2291,22 @@ class WorkerManager:
                 last_progress = now
 
         async def execute_with_progress(tool_name, arguments, duplicate_result):
+            nonlocal acceptance
             nonlocal completion_feedback
             nonlocal completion_checkpoint, final_review_rejected, last_edit_step, worker_plan
             action = worker_action(tool_name, arguments)
             important = tool_name in {"run_python", "run_command", "run", "bash", "shell", "write_file", "write", "edit_file"}
             progress(f"Step {step}: next action — {action}",
                      important=important)
+            if project_task and project_tasks.is_git_push(tool_name, arguments):
+                async def check_before_push(tool, args):
+                    return await self._execute_checked(brain, folder, tool, args)
+                gate = await project_tasks.validate(project_task, check_before_push)
+                acceptance = gate
+                if not gate["passed"]:
+                    duplicate_result = {"ok": False, "error": "acceptance_checks_failed",
+                                        "acceptance": gate,
+                                        "message": "Repair required checks or report the concrete blocker before pushing."}
             result = (duplicate_result if duplicate_result is not None
                       else await self._execute_checked(brain, folder, tool_name, arguments))
             # Keep commands and their results independently of the rolling transcript:
@@ -2467,7 +2479,23 @@ class WorkerManager:
 
         from modules.owner_file_guard import OwnerFileGuard
         owner_guard = OwnerFileGuard()
+        acceptance = None
+        project_task = None
         try:
+            if is_free and not answer_only:
+                from modules import project_tasks
+                project_task = project_tasks.load_task(self.project_tasks_path, folder)
+                if project_task and project_task.get("state") == "idle":
+                    self._emit_report(self._base_report(name=name, folder=folder, brain=brain,
+                        session=sid, status="skipped", reason="no_ready_project_task"))
+                    return
+                if project_task:
+                    messages.append({"role": "system", "content":
+                        "The owner assigned this concrete project task. Complete its requirement and "
+                        "deliverable before selecting any other work. The harness runs its acceptance "
+                        "checks independently before accepting completion. Failed checks require repair "
+                        "or an honest blocked outcome. Task definition: " + json.dumps(project_task)})
+
             if is_free and not answer_only:
                 try:
                     await owner_guard.acquire(folder, lambda path:
@@ -2706,6 +2734,13 @@ class WorkerManager:
                             step_limited = True
                         elif is_free and not answer_only:
                             progress(f"Step {step}: reviewing completion against tool evidence.", important=True)
+                            acceptance = None
+                            if project_task:
+                                progress(f"Step {step}: running owner-defined acceptance checks.", important=True)
+                                async def run_acceptance(tool, arguments):
+                                    return await self._execute_checked(brain, folder, tool, arguments)
+                                acceptance = await project_tasks.validate(project_task, run_acceptance, completion=True)
+                                transcript.append("acceptance: " + _local_agent_json_result(acceptance, 12000))
                             actual_changes = await worker_changes.evidence(folder, review_baseline, review_allowed)
                             review_messages = [
                                 {"role": "system", "content": (
@@ -2745,6 +2780,7 @@ class WorkerManager:
                                 )},
                                 {"role": "user", "content": json.dumps({
                                     "task": task[:8000], "proposed_final": final_text[:6000],
+                                    "required_acceptance": acceptance,
                                     "last_successful_file_edit_step": last_edit_step,
                                     "confirmed_file_changes": mutation_evidence,
                                     "independent_git_changes": actual_changes,
@@ -2753,7 +2789,10 @@ class WorkerManager:
                                 }, ensure_ascii=False)},
                             ]
                             try:
-                                reviewed = await self.free_completer(budget_review_messages(review_messages), None)
+                                if acceptance is not None and not acceptance["passed"]:
+                                    reviewed = {"content": '{"complete":false,"reason":"Required acceptance failed"}'}
+                                else:
+                                    reviewed = await self.free_completer(budget_review_messages(review_messages), None)
                                 used = str(reviewed.get("_free_model") or "")
                                 if used:
                                     free_models.append(used)
@@ -2768,6 +2807,16 @@ class WorkerManager:
                                 review = {"reason": "Completion review unavailable; completion was not verified."}
                             reason = redact_text(str(review.get("reason") or "Reviewer did not return a valid completion decision."))[:1500]
                             accepted = review.get("complete") is True
+                            if acceptance is not None and not acceptance["passed"]:
+                                accepted = False
+                                failed = next(row["name"] for row in acceptance["checks"] if not row["passed"])
+                                reason = "Required acceptance check failed: " + failed + ". " + _local_agent_json_result(acceptance, 6000)
+                            if accepted and project_task:
+                                try:
+                                    project_tasks.complete_task(self.project_tasks_path, project_task)
+                                except (OSError, ValueError) as exc:
+                                    accepted = False
+                                    reason = "Cannot complete the queued task: " + redact_text(str(exc))
                             transcript.append(f"completion_review[{step}]: {json.dumps({'complete': accepted, 'reason': reason})}")
                             if not accepted:
                                 if final_review_rejected:
@@ -2873,6 +2922,8 @@ class WorkerManager:
                     exit_code=1 if step_limited else 0,
                     model=model,
                     result_tail=report_tail,
+                    project_task_id=project_task["id"] if project_task else None,
+                    acceptance=acceptance,
                     result_truncated=report_truncated,
                     effective_local_agent_model=amodel,
                     local_agent_api_base=api_base,
