@@ -1216,3 +1216,19 @@ def test_incomplete_project_environment_falls_back_and_recovers_after_repair(iso
     assert result['ok'] and str(environment).lower() in result['stdout'].lower()
     interpreter.unlink()
     assert config.exists() and workers._worker_python(folder)==Path(sys.executable)
+
+
+@pytest.mark.skipif(sys.platform != 'win32', reason='Windows shell aliases')
+@pytest.mark.parametrize(('alias', 'command'), [
+    ('cmd.exe', 'echo alias-ok'),
+    (' PowerShell.exe ', "Write-Output 'alias-ok'"),
+])
+def test_worker_shell_aliases(isolated, alias, command):
+    result = execute('run_command', {'shell': alias, 'command': command}, isolated)
+    assert result['ok'] and result['stdout'].strip() == 'alias-ok'
+
+
+def test_unsupported_worker_shell_explains_retry(isolated):
+    result = execute('run_command', {'shell': 'unknown', 'command': 'echo alias-ok'}, isolated)
+    assert result['error'] == 'unsupported_shell'
+    assert 'shell=default' in result['message']

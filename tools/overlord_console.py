@@ -99,8 +99,10 @@ class OverlordConsole:
 
         self.root = tk.Tk()
         self.root.title(f"Overlord Console — {self.version}")
-        self.root.geometry("1080x780")
-        self.root.minsize(800, 640)
+        self.geometry_path = state_path.with_suffix(".geometry.json")
+        self.geometry_job = None
+        self.root.minsize(540, 350)
+        self.root.geometry(self._restore_geometry())
         self.root.configure(bg="#111827")
         self.root.protocol("WM_DELETE_WINDOW", self.hide)
 
@@ -117,10 +119,80 @@ class OverlordConsole:
         # it is watching, and the bridge's number is the truthful one.
         self.version_label = tk.StringVar(value=self.version)
         self._build_ui()
+        self.root.bind("<Configure>", self._window_configured, add="+")
         self._configure_tags()
         self._seek_initial_tail()
         self._write_visibility("visible")
         self.root.after(POLL_MS, self.poll)
+
+    def _restore_geometry(self) -> str:
+        default = "1080x780"
+        try:
+            width, height, x, y = json.loads(self.geometry_path.read_text(encoding="utf-8"))
+            if any(type(value) is not int for value in (width, height, x, y)):
+                return default
+            if not (540 <= width <= 32767 and 350 <= height <= 32767
+                    and -32768 <= x <= 32767 and -32768 <= y <= 32767):
+                return default
+            if sys.platform == "win32":
+                import ctypes
+                from ctypes import wintypes
+
+                monitor_from_rect = ctypes.windll.user32.MonitorFromRect
+                monitor_from_rect.argtypes = [ctypes.POINTER(wintypes.RECT), wintypes.DWORD]
+                monitor_from_rect.restype = wintypes.HANDLE
+                title_area = wintypes.RECT(x, y, x + 80, y + 24)
+                if not monitor_from_rect(ctypes.byref(title_area), 0):
+                    return default
+            elif not (0 <= x < self.root.winfo_screenwidth() and 0 <= y < self.root.winfo_screenheight()):
+                return default
+            return f"{width}x{height}+{x}+{y}"
+        except (OSError, ValueError, TypeError, OverflowError):
+            return default
+
+    def _window_configured(self, event) -> None:
+        if event.widget is not self.root:
+            return
+        compact = event.height < 600
+        self.chat_entry.configure(height=2 if compact else 3)
+        self.activity_label.configure(wraplength=0 if compact else max(1, event.width - 20))
+        self.details_canvas.configure(height=80 if compact else 170)
+        if compact:
+            self.composer_hint.pack_forget()
+            self.footer_label.pack_forget()
+        else:
+            self.footer_label.pack(side="bottom", fill="x", pady=(7, 0), before=self.response_label)
+            self.composer_hint.pack(side="bottom", anchor="w", pady=4, before=self.chat_input_frame)
+        self._layout_actions(max(1, event.width - 20))
+        if self.geometry_job is not None:
+            self.root.after_cancel(self.geometry_job)
+        self.geometry_job = self.root.after(200, self._save_geometry)
+
+    def _save_geometry(self) -> None:
+        if self.geometry_job is not None:
+            self.root.after_cancel(self.geometry_job)
+            self.geometry_job = None
+        if self.root.state() != "normal":
+            return
+        bounds = [self.root.winfo_width(), self.root.winfo_height(),
+                  self.root.winfo_x(), self.root.winfo_y()]
+        try:
+            self.geometry_path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = self.geometry_path.with_suffix(".tmp")
+            temporary.write_text(json.dumps(bounds), encoding="utf-8")
+            os.replace(temporary, self.geometry_path)
+        except OSError:
+            pass
+
+    def _layout_actions(self, available_width: int) -> None:
+        row = column = used = 0
+        for widget in self.actions_frame.winfo_children():
+            width = widget.winfo_reqwidth() + 6
+            if used and used + width > available_width:
+                row, column, used = row + 1, 0, 0
+            widget.grid(row=row, column=column, sticky="w", padx=3, pady=1)
+            column += 1
+            used += width
 
     def _build_ui(self) -> None:
         menu = tk.Menu(self.root)
@@ -130,6 +202,11 @@ class OverlordConsole:
         file_menu.add_command(label="Stop Overlord", command=lambda: self.send_command("shutdown"),
                               state="normal" if self.command_path else "disabled")
         menu.add_cascade(label="File", menu=file_menu)
+        view_menu = tk.Menu(menu, tearoff=False)
+        view_menu.add_checkbutton(label="Autoscroll", variable=self.autoscroll)
+        view_menu.add_command(label="Copy logs", command=self.copy_all)
+        view_menu.add_command(label="Clear logs", command=self.clear)
+        menu.add_cascade(label="View", menu=view_menu)
         self.root.configure(menu=menu)
         style = ttk.Style(self.root)
         try:
@@ -167,10 +244,6 @@ class OverlordConsole:
             style="Console.TLabel",
             font=("Segoe UI", 9),
         ).pack(side="left", padx=(8, 0))
-        ttk.Button(toolbar, text="Clear logs", command=self.clear).pack(side="right")
-        ttk.Button(toolbar, text="Copy logs", command=self.copy_all).pack(
-            side="right", padx=6
-        )
         ttk.Button(toolbar, text="Hide", command=self.hide).pack(side="right")
         ttk.Button(toolbar, text="Settings…", command=self.open_settings).pack(side="right", padx=6)
         stop_button = ttk.Button(toolbar, text="Stop task",
@@ -178,18 +251,11 @@ class OverlordConsole:
         stop_button.pack(side="right", padx=6)
         if self.command_path is None:
             stop_button.state(["disabled"])
-        ttk.Checkbutton(
-            toolbar,
-            text="Autoscroll",
-            variable=self.autoscroll,
-            style="Console.TCheckbutton",
-        ).pack(side="right", padx=10)
-
         actions = self.actions_frame = ttk.Frame(outer, style="Console.TFrame")
         actions.pack(fill="x", pady=(0, 6))
         ttk.Label(
             actions, text="Status", style="Console.TLabel", font=("Segoe UI", 9)
-        ).pack(side="left", padx=(2, 8))
+        )
         # These reach the bridge through the command file; without one (the
         # console can be opened standalone against a log) they are disabled
         # rather than silently doing nothing.
@@ -202,23 +268,36 @@ class OverlordConsole:
                 text=label,
                 command=lambda name=action: self.send_command(name),
             )
-            button.pack(side="left", padx=3)
             if self.command_path is None:
                 button.state(["disabled"])
-        ttk.Button(actions, text="Engine details", command=self.toggle_details).pack(side="left", padx=3)
+        ttk.Button(actions, text="Engine details", command=self.toggle_details)
         for label, command in (("Models", "/model"), ("Effort", "/effort"), ("Schedules", "/schedule"), ("Help", "/help")):
-            ttk.Button(actions, text=label, command=lambda value=command: self.queue_chat(value)).pack(side="left", padx=3)
+            ttk.Button(actions, text=label, command=lambda value=command: self.queue_chat(value))
         self.action_status = tk.StringVar(value="")
         ttk.Label(
             actions,
             textvariable=self.action_status,
             style="Console.TLabel",
             font=("Segoe UI", 9),
-        ).pack(side="left", padx=8)
+        )
 
-        status_frame = self.status_frame = ttk.Frame(outer, style="Console.TFrame")
+        actions.bind("<Configure>", lambda event: self._layout_actions(event.width))
+        self._layout_actions(1060)
+
+        self.status_frame = ttk.Frame(outer, style="Console.TFrame")
+        self.details_canvas = tk.Canvas(self.status_frame, height=170, bg="#111827", highlightthickness=0)
+        details_scroll = ttk.Scrollbar(self.status_frame, orient="vertical", command=self.details_canvas.yview)
+        details_scroll.pack(side="right", fill="y")
+        self.details_canvas.pack(side="left", fill="x", expand=True)
+        self.details_canvas.configure(yscrollcommand=details_scroll.set)
+        status_frame = ttk.Frame(self.details_canvas, style="Console.TFrame")
+        details_window = self.details_canvas.create_window((0, 0), window=status_frame, anchor="nw")
+        status_frame.bind("<Configure>", lambda _: self.details_canvas.configure(
+            scrollregion=self.details_canvas.bbox("all")))
+        self.details_canvas.bind("<Configure>", lambda event: self.details_canvas.itemconfigure(
+            details_window, width=event.width))
         self.brain_status = {}
-        for name in ("claude", "codex", "free"):
+        for column, name in enumerate(("claude", "codex", "free")):
             value = tk.StringVar(value=format_brain_summary(name, {}, ""))
             self.brain_status[name] = value
             card = tk.Label(
@@ -233,11 +312,15 @@ class OverlordConsole:
                 font=("Segoe UI", 9),
             )
             padding = (0, 4) if name == "claude" else (4, 0) if name == "free" else (4, 4)
-            card.pack(side="left", fill="x", expand=True, padx=padding)
+            status_frame.columnconfigure(column, weight=1, uniform="engine")
+            card.grid(row=0, column=column, sticky="nsew", padx=padding)
+            card.bind("<Configure>", lambda event, label=card: label.configure(
+                wraplength=max(1, event.width - 24)))
 
         ttk.Label(outer, textvariable=self.connection, style="Console.TLabel", font=("Segoe UI Semibold", 11)).pack(anchor="w", pady=(6, 0))
-        ttk.Label(outer, textvariable=self.activity, style="Console.TLabel",
-                  wraplength=900, font=("Segoe UI", 11)).pack(fill="x", pady=(4, 12))
+        self.activity_label = ttk.Label(outer, textvariable=self.activity, style="Console.TLabel",
+                                        wraplength=900, font=("Segoe UI", 10))
+        self.activity_label.pack(fill="x", pady=(2, 5))
         self.log_toggle = ttk.Button(outer, text="Show detailed logs ▸", command=self.toggle_logs)
         self.log_toggle.pack(anchor="w", pady=(0, 6))
         # --- Chat pane -----------------------------------------------------
@@ -267,7 +350,7 @@ class OverlordConsole:
         self.prompt_frame = ttk.Frame(outer, style="Console.TFrame")
         self.prompt_frame.pack(fill="x", pady=6)
         # Input entry and send button
-        chat_input_frame = ttk.Frame(outer, style="Console.TFrame")
+        chat_input_frame = self.chat_input_frame = ttk.Frame(outer, style="Console.TFrame")
         chat_input_frame.pack(fill="x", pady=(4, 0))
         self.chat_entry = tk.Text(chat_input_frame, height=3, wrap="word", bg="#172033", fg="#e5e7eb",
                                   insertbackground="white", relief="flat", padx=10, pady=8, font=("Segoe UI", 11))
@@ -620,6 +703,7 @@ class OverlordConsole:
         self.root.focus_force()
 
     def hide(self) -> None:
+        self._save_geometry()
         self.root.withdraw()
         self._write_visibility("hidden")
 

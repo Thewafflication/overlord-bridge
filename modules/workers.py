@@ -1620,8 +1620,21 @@ class WorkerManager:
                                     "run_command requires shell text in the command argument, not code."),
                         "required_argument": "code" if tool_name == "run_python" else "command"}
             shell = arguments.get("shell", "default") if tool_name == "run_command" else "default"
-            if shell not in {"default", "powershell"} or (shell == "powershell" and sys.platform != "win32"):
-                return {"ok": False, "error": "unsupported_shell"}
+            if isinstance(shell, str):
+                shell = shell.strip().lower()
+                aliases = (
+                    {"cmd": "default", "cmd.exe": "default", "powershell.exe": "powershell"}
+                    if sys.platform == "win32" else {"sh": "default", "/bin/sh": "default"}
+                )
+                shell = aliases.get(shell, shell)
+            supported_shells = ("default", "powershell") if sys.platform == "win32" else ("default",)
+            if shell not in supported_shells:
+                return {
+                    "ok": False,
+                    "error": "unsupported_shell",
+                    "message": "Retry with shell=" + " or shell=".join(supported_shells)
+                    + ". Use syntax for that shell. The command already runs in the project folder.",
+                }
             denial = _local_agent_command_denial(command, folder)
             if denial:
                 log_command("worker", "denied", command, folder)

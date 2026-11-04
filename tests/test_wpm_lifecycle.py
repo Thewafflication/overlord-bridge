@@ -169,6 +169,8 @@ def test_worker_reports_survive_upgrade_and_reinstall_state_round_trips(tmp_path
     (install / 'run/local-control/service.json').write_text('{"instance":"stale-service"}')
     schedule = '{"version":1,"tasks":{"daily":{"prompt":"Continue project work"}}}'
     (install / 'run/scheduled-tasks.json').write_text(schedule)
+    (install / 'run/console-window.state').write_text('visible')
+    (install / 'run/console-window.geometry.json').write_text('[960, 500, 25, 35]')
     result = run_script(tmp_path, r'''
 $state = Join-Path (Split-Path -Parent $Root) 'persistent-state'
 $replacement = Join-Path (Split-Path -Parent $Root) 'replacement'
@@ -199,7 +201,11 @@ Copy-PersistentState -From $state -To $reinstalled
     assert (restored / 'run/scheduled-tasks.json').read_text() == schedule
     assert not (restored / 'run/local-control/service.json').exists()
     assert not (restored / '.venv').exists()
-    assert sorted(p.name for p in (restored / 'run').iterdir()) == ['scheduled-tasks.json']
+    assert (restored / 'run/console-window.state').read_text() == 'visible'
+    assert (restored / 'run/console-window.geometry.json').read_text() == '[960, 500, 25, 35]'
+    assert sorted(p.name for p in (restored / 'run').iterdir()) == [
+        'console-window.geometry.json', 'console-window.state', 'scheduled-tasks.json',
+    ]
 
 
 def test_worker_report_links_fail_before_copying_external_state(tmp_path):

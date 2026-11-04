@@ -271,3 +271,26 @@ def test_console_response_queue_resolves_question_without_becoming_chat(tmp_path
             instance._shutdown_event.set()
             await consumer
     asyncio.run(scenario())
+
+def test_snapped_console_preserves_bounds_and_chat_space(tmp_path):
+    console = make_console(tmp_path)
+    try:
+        console.root.geometry("960x500+25+35")
+        console.root.deiconify()
+        console.toggle_details()
+        console.root.update()
+        assert console.chat_text.winfo_height() >= 80
+        assert console.chat_entry.winfo_ismapped()
+        assert console.status_frame.winfo_height() <= 100
+        console.hide()
+        assert console.state_path.read_text(encoding="utf-8") == "hidden"
+    finally:
+        console.root.destroy()
+
+    restored = make_console(tmp_path)
+    try:
+        restored.root.deiconify()
+        restored.root.update()
+        assert restored.root.geometry() == "960x500+25+35"
+    finally:
+        restored.root.destroy()

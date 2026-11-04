@@ -79,6 +79,13 @@ class WindowsTray:
             name="overlord-tray",
         )
         self._thread.start()
+        if self._console_state is not None:
+            try:
+                restore_visible = self._console_state.read_text(encoding="utf-8").strip() == "visible"
+            except (OSError, UnicodeError):
+                restore_visible = False
+            if restore_visible:
+                self._launch_console_viewer()
         log.info("Windows notification-area icon started")
         return True
 
@@ -155,8 +162,6 @@ class WindowsTray:
             return False
         if self._console_process is not None and self._console_process.poll() is None:
             return True
-        if self._console_state is not None:
-            self._console_state.unlink(missing_ok=True)
         pythonw = Path(sys.executable).with_name("pythonw.exe")
         if not pythonw.exists():
             pythonw = Path(sys.executable)
@@ -176,6 +181,8 @@ class WindowsTray:
         if self.command_path is not None:
             arguments.extend(("--command", str(self.command_path)))
         try:
+            if self._console_signal is not None:
+                self._console_signal.unlink(missing_ok=True)
             self._console_process = subprocess.Popen(
                 arguments,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
