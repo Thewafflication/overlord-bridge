@@ -335,6 +335,29 @@ def call(name, arguments, call_id="c1"):
         "name": name, "arguments": json.dumps(arguments)}}]}
 
 
+def test_worker_difficulty_reaches_execution_and_escalates_failed_actions(isolated, tmp_path):
+    project = isolated / 'routing'
+    project.mkdir()
+    planned = call('update_plan', {'plan': [{'step':'Inspect the requested file','status':'pending'}],
+        'difficulty': {'level':'routine','reason':'Bounded known file edit'}})
+    delegate, _ = scripted_pool([
+        call('read_file', {'path':'missing-one'}),
+        call('read_file', {'path':'missing-two'}),
+        call('read_file', {'path':'missing-three'}),
+        call('finish_task', {'final':'Files unavailable; exact blocker recorded','outcome':'blocked'}),
+    ], plans=[planned])
+    routed = []
+    async def complete(messages, tools):
+        routed.append(messages.worker_routing)
+        return await delegate(messages, tools)
+    mgr, _, _ = manager(tmp_path, complete)
+    start(mgr, project)
+    assert routed[0].phase == 'plan' and routed[0].reasoning
+    execution = [r for r in routed if r.phase == 'execute']
+    assert execution[0].difficulty == 'routine' and not execution[0].reasoning
+    assert execution[-1].escalated and execution[-1].reasoning
+
+
 def manager(tmp_path, completer, approver=None, **kwargs):
     sent, reports = [], []
 
@@ -1879,7 +1902,7 @@ def test_real_pool_checkpoint_fallback_reaches_validated_commit_and_push(isolate
         if len(payload.get('tools', [])) == 1:
             planning.append(payload)
             # Replay the observed forbidden-action response at the checkpoint.
-            message = call('run_command', {'command': 'echo must-not-run'}) if len(planning) >= 2 and payload['model'] == NV.model else valid
+            message = call('run_command', {'command': 'echo must-not-run'}) if len(planning) >= 2 and payload['model'] == NV2.model else valid
         elif payload.get('tools'):
             message = actions.pop(0)
         else:

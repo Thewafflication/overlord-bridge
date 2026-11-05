@@ -220,8 +220,11 @@ class FreeWork:
                 while True:
                     attempts += 1
                     try:
-                        message, spec, _ = await pool.complete(messages, tools,
-                            patience=self.patience, max_tokens=self.response_tokens)
+                        options = {"patience": self.patience, "max_tokens": self.response_tokens}
+                        routing = getattr(messages, "worker_routing", None)
+                        if routing is not None:
+                            options["routing"] = routing
+                        message, spec, skipped = await pool.complete(messages, tools, **options)
                         break
                     except FreeUnavailable as exc:
                         if not self.wait_for_capacity or not exc.retryable:
@@ -244,6 +247,9 @@ class FreeWork:
         if waiting:
             self._send(getattr(self.workers, "owner", 0), "Provider capacity available; continuing the worker.")
         message["_free_model"] = spec.key
+        if routing is not None:
+            log.info("Free worker routing: difficulty=%s phase=%s escalated=%s model=%s fallback=%s",
+                     routing.difficulty, routing.phase, routing.escalated, spec.key, bool(skipped))
         return message
 
     async def approve(self, folder: Path, tool: str, request: dict[str, Any]) -> str | None:

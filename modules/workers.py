@@ -57,6 +57,7 @@ import uuid
 
 from modules import shared_job
 from modules.request_budget import BudgetedMessages, review_messages as budget_review_messages, size as request_size
+from modules.free_routing import LEVELS, WorkerRouting, route_request
 from modules.command_activity import log_command, redact_text
 from modules.host_context import host_instructions
 from modules.output_text import OUTPUT_INSTRUCTIONS, worker_action, worker_tool_name
@@ -860,6 +861,10 @@ def _local_agent_tools() -> list[dict[str, Any]]:
             "description": "Record the current task plan and findings in worker memory. Survives context trimming for this run. Update as steps finish or a specific blocker changes the next action. This records your assessment, not verified completion, and changes no project files.",
             "parameters": {"type": "object", "properties": {
                 "explanation": {"type": "string", "maxLength": WORKER_PLAN_EXPLANATION_CHARS},
+                "difficulty": {"type": "object", "properties": {
+                    "level": {"type": "string", "enum": ["routine", "standard", "complex"]},
+                    "reason": {"type": "string", "minLength": 1, "maxLength": 600}},
+                    "required": ["level", "reason"], "additionalProperties": False},
                 "plan": {"type": "array", "minItems": 1, "maxItems": WORKER_PLAN_MAX_STEPS, "items": {
                     "type": "object", "properties": {
                         "step": {"type": "string", "minLength": 1, "maxLength": 200},
@@ -1040,6 +1045,15 @@ def _worker_plan_result(arguments: dict[str, Any]) -> dict[str, Any]:
     plan = arguments.get("plan")
     explanation = arguments.get("explanation", "")
     issues = []
+    difficulty = arguments.get("difficulty")
+    if difficulty is not None and (
+        not isinstance(difficulty, dict) or not isinstance(difficulty.get("level"), str)
+        or difficulty["level"] not in LEVELS
+        or not isinstance(difficulty.get("reason"), str)
+        or not 1 <= len(difficulty["reason"].strip()) <= 600
+        or set(difficulty) - {"level", "reason"}
+    ):
+        issues.append("difficulty needs level routine/standard/complex and a reason of 1-600 characters")
     if not isinstance(explanation, str):
         issues.append("explanation must be a string")
     elif len(explanation) > WORKER_PLAN_EXPLANATION_CHARS:
@@ -1063,8 +1077,11 @@ def _worker_plan_result(arguments: dict[str, Any]) -> dict[str, Any]:
     if issues:
         return {"ok": False, "error": "invalid_plan", "issues": issues,
                 "message": "; ".join(issues)}
-    return {"ok": True, "tool": "update_plan", "plan": {"explanation": explanation,
-            "plan": [{"step": item["step"], "status": item["status"]} for item in plan]}}
+    recorded = {"explanation": explanation,
+                "plan": [{"step": item["step"], "status": item["status"]} for item in plan]}
+    if difficulty is not None:
+        recorded["difficulty"] = difficulty
+    return {"ok": True, "tool": "update_plan", "plan": recorded}
 
 
 def _worker_plan_response(planned: dict[str, Any]) -> dict[str, Any]:
@@ -2206,6 +2223,16 @@ class WorkerManager:
         mutation_evidence: list[str] = []
         completion_feedback = ""
         worker_plan: dict[str, Any] | None = None
+        routing_escalated = False
+        routing_failures = 0
+
+        async def complete_free(request, tools, phase="execute"):
+            difficulty = (worker_plan or {}).get("difficulty", {}).get("level", "unknown")
+            routing = WorkerRouting(difficulty, phase, routing_escalated or bool(completion_feedback),
+                                    free_models[-1] if free_models else "")
+            transcript.append(f"routing[{step}]: " + json.dumps({
+                "difficulty": difficulty, "phase": phase, "escalated": routing.escalated}))
+            return await self.free_completer(route_request(request, routing), tools)
         denial_counts: dict[str, int] = {}
         tool_call_counts: dict[str, int] = {}
 
@@ -2294,6 +2321,7 @@ class WorkerManager:
 
         async def execute_with_progress(tool_name, arguments, duplicate_result):
             nonlocal acceptance
+            nonlocal routing_failures, routing_escalated
             nonlocal completion_feedback
             nonlocal completion_checkpoint, final_review_rejected, last_edit_step, worker_plan
             action = worker_action(tool_name, arguments)
@@ -2358,6 +2386,10 @@ class WorkerManager:
             else:
                 error = result.get("error") or f"exit code {result.get('exit_code', 'unknown')}"
                 progress(f"Step {step}: could not complete {action} ({error})", important=important)
+            failed = not result.get("ok") or result.get("exit_code", 0) not in (0, None)
+            routing_failures = routing_failures + 1 if failed else 0
+            if routing_failures >= 3:
+                routing_escalated = True
             return result
 
         async def record_worker_plan(prompt: str, phase: str) -> bool:
@@ -2382,7 +2414,12 @@ class WorkerManager:
                         "The conversation below is read-only evidence. Reconcile the original task, "
                         "confirmed edits and validation with the next useful deliverable. "
                         "Call update_plan exactly once, with a plan array and an explanation of "
-                        "findings and the next concrete action. No other tool is available. "
+                        "findings and the next concrete action. Include difficulty with level and reason: "
+                        "routine for a bounded known edit, standard for ordinary implementation, complex for "
+                        "uncertain debugging, native/ABI/build failures, security or interacting components. "
+                        "Assess the actual task and evidence, not keywords. Reassess when new evidence changes it. "
+                        "This selects models only inside the free pool; it grants no new permissions. "
+                        "No other tool is available. "
                         "Do not claim unperformed tests, commits or completion.")},
                     {"role": "user", "content": "Read-only worker context:\n" +
                         json.dumps(planning_messages, ensure_ascii=False)},
@@ -2395,7 +2432,7 @@ class WorkerManager:
                     prefix_count=initial_context_count, plan=worker_plan, mutations=mutation_evidence,
                     completion_feedback=completion_feedback)
                 try:
-                    planned = await self.free_completer(request_messages, plan_tools)
+                    planned = await complete_free(request_messages, plan_tools, "plan")
                 except FreeUnavailable as exc:
                     provider_stalled = bool(getattr(exc, "stalled", False))
                     final_text = ("Stopped before completion: the free-model pool is unavailable during plan recording. "
@@ -2448,10 +2485,11 @@ class WorkerManager:
             return False
 
         async def check_discovery_progress():
-            nonlocal last_discovery_checkpoint
+            nonlocal last_discovery_checkpoint, routing_escalated
             if not is_free or answer_only or step - max(last_edit_step, last_discovery_checkpoint) < 12:
                 return
             last_discovery_checkpoint = step
+            routing_escalated = True
             checkpoint = (
                 "Progress checkpoint: review the original task against the context and tool results already gathered. "
                 "There has been no successful write_file/edit_file action in the last 12 steps; shell actions may "
@@ -2597,7 +2635,7 @@ class WorkerManager:
                             messages, completion_evidence + completion_commands, limit=limit,
                             prefix_count=initial_context_count, plan=worker_plan, mutations=mutation_evidence,
                             completion_feedback=completion_feedback))
-                        free_message = await self.free_completer(request_messages, payload.get("tools"))
+                        free_message = await complete_free(request_messages, payload.get("tools"))
                     except FreeUnavailable as exc:
                         provider_stalled = bool(getattr(exc, "stalled", False))
                         final_text = ("Stopped before completion: the free-model pool is unavailable. "
@@ -2794,7 +2832,7 @@ class WorkerManager:
                                 if acceptance is not None and not acceptance["passed"]:
                                     reviewed = {"content": '{"complete":false,"reason":"Required acceptance failed"}'}
                                 else:
-                                    reviewed = await self.free_completer(budget_review_messages(review_messages), None)
+                                    reviewed = await complete_free(budget_review_messages(review_messages), None, "review")
                                 used = str(reviewed.get("_free_model") or "")
                                 if used:
                                     free_models.append(used)

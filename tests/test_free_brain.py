@@ -23,6 +23,17 @@ OR = ModelSpec("openrouter", "vendor/model:free")
 GROQ = ModelSpec("groq", "openai/gpt-oss-120b")
 
 
+def test_worker_routing_prefers_reasoning_but_keeps_capacity_fallback(tmp_path, monkeypatch):
+    from modules.free_routing import WorkerRouting
+    strong = ModelSpec('nvidia', 'openai/gpt-oss-120b')
+    brain = make(tmp_path, monkeypatch, [reply('reasoned'), reply('fallback')], models=(NV, strong))
+    assert brain._order()[0] == NV  # foreground selection is unchanged
+    assert run(brain.complete([], routing=WorkerRouting('complex')))[1] == strong
+    brain.limiter.cool_down(strong.key, 60)
+    assert run(brain.complete([], routing=WorkerRouting('complex')))[1] == NV
+    assert all('integrate.api.nvidia.com' in c[0] for c in brain.calls)
+
+
 def test_groq_requires_opt_in_and_uses_native_tools_without_paid_router_policy(tmp_path, monkeypatch):
     disabled = make(tmp_path, monkeypatch, [], models=(GROQ,), keys={"groq": "synthetic"})
     assert not disabled.models and 'enable Groq' in disabled.unavailable[0]

@@ -538,10 +538,11 @@ class FreeBrain(Brain):
         self.last_prompt_tokens = None
         return None
 
-    def _order(self) -> list[ModelSpec]:
+    def _order(self, routing=None) -> list[ModelSpec]:
         chosen = self._resolve(self.model)
         rest = [s for s in self.models if s != chosen]
-        return ([chosen] if chosen else []) + rest
+        ordered = ([chosen] if chosen else []) + rest
+        return sorted(ordered, key=routing.rank) if routing else ordered
 
     # ------------------------------------------------------------- lifecycle
     async def _expand_discovery(self) -> None:
@@ -916,7 +917,7 @@ class FreeBrain(Brain):
 
     async def complete(
         self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None,
-        *, patience: float = 0.0, max_tokens: int | None = None,
+        *, patience: float = 0.0, max_tokens: int | None = None, routing=None,
     ) -> tuple[dict[str, Any], ModelSpec, list[str]]:
         """One assistant message from the first model that can answer.
 
@@ -929,7 +930,7 @@ class FreeBrain(Brain):
         waited = 0.0
         while True:
             skipped: list[str] = []
-            for spec in self._order():
+            for spec in self._order(routing):
                 message, why = await self._attempt(spec, messages, tools, max_tokens=max_tokens)
                 if message is not None:
                     return message, spec, skipped

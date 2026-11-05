@@ -6,6 +6,18 @@ workflow lands.
 
 ## Current Capabilities
 
+- Free-worker difficulty routing: the existing plan records a model-assessed
+  routine/standard/complex level and reason. Planning, unknown/standard/complex
+  work and completion review prefer known reasoning profiles in the already
+  admitted free pool; routine execution prefers lightweight profiles. Extended
+  discovery or three consecutive failed actions escalates the current run.
+  Review prefers a different model family within the same capability tier.
+  Unknown models remain eligible; selected-model order breaks ties. Quotas,
+  provider opt-ins, live free-price admission, cooldowns and capacity fallbacks
+  still apply. This never switches to Claude/Codex or adds a paid provider.
+  Preferences are conservative profiles, not benchmark guarantees. The recorded
+  difficulty/phase/escalation and selected model are visible in worker logs.
+
 - Discoverable project work: WSP-PROC-0012 supplies root `PROJECT-WORK.md`
   and `AGENT-TASKS.md` templates. Run `wsp/tools/Initialize-ProjectWork.ps1`
   with `-ProjectRoot` (and optionally `-WhatIf`) to create missing entry points
