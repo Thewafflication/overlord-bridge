@@ -6,6 +6,15 @@ workflow lands.
 
 ## Current Capabilities
 
+- Discoverable project work: WSP-PROC-0012 supplies root `PROJECT-WORK.md`
+  and `AGENT-TASKS.md` templates. Run `wsp/tools/Initialize-ProjectWork.ps1`
+  with `-ProjectRoot` (and optionally `-WhatIf`) to create missing entry points
+  without replacing existing files. Populate actual requirements, bounded tasks,
+  prerequisites, acceptance commands and completion evidence; templates alone
+  do not establish ready work. Free workers preload both root documents and
+  retain them through context trimming. Existing project acceptance queues and
+  owner permissions still control execution and publication.
+
 - Owner-defined project task queues live in `run/project-tasks.json` and survive package updates. For configured free-worker projects, a ready task supplies its requirement, bounded deliverable and ordered acceptance commands. The harness runs those commands before recognized ordinary `git push` commands and before accepting completion. Optional publication requirements verify committed paths and the live remote SHA. Failed checks override a positive model review and remain recorded in the terminal report. Completed tasks are marked atomically, and a configured project with no ready task skips model work. The initial configured pilot is WSH. See [project task queues](docs/project-tasks.md).
 
 - Windows free-worker owner-file deletion protection: before model actions, the bridge holds non-inheritable read handles without delete sharing for existing nonignored untracked and modified/staged tracked files, including initialized nested repositories. Loose-script projects use bounded path enumeration. Child-process delete, rename and atomic replacement fail until worker cleanup releases the handles; in-place authorized edits and deletion of new scratch files still work. Failed or incomplete protection admission stops the worker before tools run. No contents are read or backed up by this guard. Clean committed files, ignored/generated or off-limits paths, links and non-Windows hosts are outside this guard; arbitrary overwrite prevention and a full process sandbox remain separate work. See [owner-file protection](docs/owner-file-protection.md).

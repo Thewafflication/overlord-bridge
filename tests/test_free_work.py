@@ -226,6 +226,8 @@ def test_project_orientation_preloads_document_heads_and_preserves_them_after_tr
     project = isolated / 'orientation'
     project.mkdir()
     (project / 'docs').mkdir()
+    (project / 'PROJECT-WORK.md').write_text('TASK-0042 is ready with exact acceptance commands.')
+    (project / 'AGENT-TASKS.md').write_text('Resume the recorded failure before choosing new work.')
     (project / 'README.md').write_text('The current inventory is docs/REQUIREMENTS.md.\n' + 'body\n' * 2000)
     (project / 'ROADMAP.md').write_text('Historical roadmap; unchecked items are not current work.\n' + 'old\n' * 2000)
     (project / 'docs' / 'README.md').write_text('Follow the requirements and executable test manifests.')
@@ -233,6 +235,8 @@ def test_project_orientation_preloads_document_heads_and_preserves_them_after_tr
     mgr, _, _ = manager(tmp_path, completer)
     start(mgr, project)
     for messages, _ in seen:
+        assert 'TASK-0042 is ready with exact acceptance commands.' in messages[2]['content']
+        assert 'Resume the recorded failure before choosing new work.' in messages[2]['content']
         assert 'The current inventory is docs/REQUIREMENTS.md.' in messages[2]['content']
         assert 'Historical roadmap; unchecked items are not current work.' in messages[2]['content']
         assert 'executable test manifests' in messages[2]['content']

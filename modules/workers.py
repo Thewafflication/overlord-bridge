@@ -2098,8 +2098,10 @@ class WorkerManager:
 
         preload_blocks: list[str] = []
         preload_chars = 0
-        for hinted_path in dict.fromkeys([*(files or []), "HANDOFF.md", "AGENTS.md", "README.md",
-                                         "docs/README.md", "ROADMAP.md"]):
+        for hinted_path in dict.fromkeys([
+            *(files or []), "HANDOFF.md", "AGENTS.md", "PROJECT-WORK.md",
+            "AGENT-TASKS.md", "README.md", "docs/README.md", "ROADMAP.md",
+        ]):
             path, error = _resolve_worker_relative_path(folder, hinted_path)
             if error or path is None:
                 continue

@@ -24,6 +24,13 @@ It's a slimmed-down descendant of the `Joshua` assistant: same threaded
 `python-telegram-bot` handler + queue pump, with a pluggable brain behind a
 common interface and a remote permission gate added.
 
+
+## Project work
+
+Start with [PROJECT-WORK.md](PROJECT-WORK.md) for current tasks, requirements,
+acceptance commands and continuation evidence. [AGENT-TASKS.md](AGENT-TASKS.md)
+links the shared agent workflow.
+
 ## Files
 
 | File | Purpose |
