@@ -23,6 +23,19 @@ def allowed(folder):
     return lambda path: workers._local_agent_path_denial(path, folder, write=False) is None
 
 
+def test_detached_worktree_metadata_uses_paths_not_invented_branch_names(tmp_path):
+    root = repo(tmp_path)
+    (root / 'seed').write_text('seed')
+    git(root, 'add', 'seed'); git(root, 'commit', '-m', 'Seed')
+    detached = root / 'nested' / 'worktree-name'
+    git(root, 'worktree', 'add', '--detach', str(detached), 'HEAD')
+    facts = asyncio.run(worker_changes.worktree_context(detached))
+    assert facts['available'] and facts['detached'] and facts['branch'] is None
+    assert Path(facts['root']).resolve() == detached.resolve()
+    assert any(Path(row['path']).resolve() == detached.resolve() and row.get('detached')
+               for row in facts['worktrees'])
+
+
 def test_review_observes_committed_test_deletion_and_untracked_placeholder(tmp_path):
     p = repo(tmp_path)
     (p / "test_queue.py").write_text("def test_preserves_job():\n    assert False\n")

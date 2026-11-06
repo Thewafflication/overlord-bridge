@@ -335,6 +335,34 @@ def call(name, arguments, call_id="c1"):
         "name": name, "arguments": json.dumps(arguments)}}]}
 
 
+def test_repeated_discovery_yields_and_next_run_receives_handoff(isolated, tmp_path):
+    project = isolated / 'loop'
+    project.mkdir()
+    (project / 'owner.txt').write_text('preserve owner bytes')
+    completer, seen = scripted_pool([
+        call('run_command', {'command':f'git status variant-{i}'}, f'c{i}') for i in range(70)
+    ])
+    mgr, _, _ = manager(tmp_path, completer)
+    async def unchanged(*args):
+        return {'ok':True,'stdout':'unchanged metadata\n' + 'x' * 6000,'stderr':'','exit_code':0}
+    original = mgr._execute_checked
+    mgr._execute_checked = unchanged
+    start(mgr, project)
+    report = events(mgr)[-1]
+    assert report['status'] == 'stalled' and report['stall_reason'] == 'repeated_observations'
+    assert report['continuation']['plan'] and 'not completed' in report['continuation']['note']
+    assert any('Worker context checkpoint' in str(messages) for messages, _ in seen)
+    assert (project / 'owner.txt').read_text() == 'preserve owner bytes'
+    # accepted/started reports must not overwrite the previous continuation.
+    next_completer, next_seen = scripted_pool([
+        call('finish_task', {'final':'Exact blocker retained','outcome':'blocked'})])
+    mgr.free_completer = next_completer
+    mgr._execute_checked = original
+    start(mgr, project)
+    assert 'Previous unfinished-run handoff' in str(next_completer.planning[0])
+    assert 'Reconcile preserved checkout' in str(next_seen[0][0])
+
+
 def test_worker_difficulty_reaches_execution_and_escalates_failed_actions(isolated, tmp_path):
     project = isolated / 'routing'
     project.mkdir()

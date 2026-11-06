@@ -6,6 +6,16 @@ workflow lands.
 
 ## Current Capabilities
 
+- Free-worker loop recovery: a run-wide observation memory survives context
+  trimming. Three consecutive 12-step discovery checkpoints without new tool
+  evidence or observed Git changes yield a stalled, unfinished report. Plans
+  alone cannot renew it; new evidence and shell changes observed by Git reset
+  it. Files remain in place. The next run receives the bounded plan/evidence
+  handoff, with current instructions taking precedence. Git worktree paths,
+  branch/detached state and HEAD are preloaded from actual metadata. This is a
+  bounded observation guard, not a total step cap or a guarantee against all
+  loops: novel output, unobserved changes and finite evidence limits matter.
+
 - Free-worker difficulty routing: the existing plan records a model-assessed
   routine/standard/complex level and reason. Planning, unknown/standard/complex
   work and completion review prefer known reasoning profiles in the already

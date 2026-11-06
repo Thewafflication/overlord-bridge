@@ -49,6 +49,31 @@ async def baseline(folder: Path, allowed: Callable[[Path], bool]) -> dict:
             "initial_paths_partial": partial}
 
 
+async def worktree_context(folder: Path) -> dict:
+    """Read metadata only; a worktree directory is not a branch reference."""
+    root, cut, ok = await _git(folder, "rev-parse", "--show-toplevel", limit=2000)
+    if not ok or cut:
+        return {"available": False}
+    head, cut_head, ok_head = await _git(folder, "rev-parse", "--verify", "HEAD", limit=200)
+    branch, _, attached = await _git(folder, "rev-parse", "--abbrev-ref", "HEAD", limit=1000)
+    listing, partial, listed = await _git(folder, "worktree", "list", "--porcelain", "-z", limit=10000)
+    rows = []
+    for field in listing.split("\0"):
+        if field.startswith("worktree "):
+            rows.append({"path": field[9:]})
+        elif rows and field.startswith("branch "):
+            rows[-1]["branch"] = field[7:]
+        elif rows and field.startswith("HEAD "):
+            rows[-1]["head"] = field[5:]
+        elif rows and field == "detached":
+            rows[-1]["detached"] = True
+    return {"available": ok_head and not cut_head, "root": root.strip(), "head": head.strip(),
+            "branch": branch.strip() if attached and branch.strip() != "HEAD" else None,
+            "detached": branch.strip() == "HEAD" if attached else None,
+            "worktrees": rows, "worktrees_partial": partial or not listed,
+            "note": "Observed at worker start; refresh after checkout/worktree changes. Use git -C <worktree path> for that checkout; a directory name is not a branch. Metadata grants no additional path permissions."}
+
+
 async def _paths(folder: Path, head: str, allowed: Callable[[Path], bool]):
     changed, cut, ok = await _git(folder, "diff", "--no-renames", "--name-only", "-z", head, "--", ".")
     new, cut_new, ok_new = await _git(folder, "ls-files", "--others", "--exclude-standard", "-z", "--", ".")
