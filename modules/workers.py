@@ -2137,6 +2137,7 @@ class WorkerManager:
             previous = self.report_store.previous_continuation(name, str(folder))
             if previous:
                 context = {"plan": previous.get("plan"),
+                           "progress": previous.get("progress"),
                            "completion_feedback": str(previous.get("completion_feedback") or "")[:1000],
                            "recent_evidence": str(previous.get("recent_evidence") or "")[-3000:],
                            "note": previous.get("note")}
@@ -2259,6 +2260,14 @@ class WorkerManager:
         routing_failures = 0
         progress_watch = ProgressWatch()
         progress_stalled = False
+        step = 0
+
+        def make_continuation():
+            return {"task": redact_text(task), "plan": worker_plan,
+                    "last_action_step": step, "progress": progress_watch.diagnostics(),
+                    "recent_evidence": redact_text("\n".join(completion_evidence + completion_commands)[-12000:]),
+                    "completion_feedback": completion_feedback,
+                    "note": "Reconcile preserved checkout, commits and this evidence before continuing; not completed."}
 
         async def complete_free(request, tools, phase="execute"):
             difficulty = (worker_plan or {}).get("difficulty", {}).get("level", "unknown")
@@ -2529,13 +2538,20 @@ class WorkerManager:
             snapshot = await worker_changes.evidence(folder, review_baseline, review_allowed)
             stalled, summary = progress_watch.checkpoint(snapshot)
             transcript.append(f"progress_watch[{step}]: " + json.dumps(summary))
+            log.info("[%s] Progress check step %s: %s", name, step, json.dumps(summary))
             if stalled:
                 progress_stalled = True
                 step_limited = True
-                final_text = ("Stopped before completion: three discovery checkpoints produced no new observed "
-                              "tool evidence or repository changes. Preserved checkout and handoff; resume the "
+                final_text = ("Stopped before completion: three discovery checkpoints were dominated by repeated "
+                              "or failed observations without observed repository changes. Preserved checkout and handoff; resume the "
                               "recorded concrete next action or blocker instead of repeating discovery. "
                               "This is not completed work and does not assert a clean checkout.")
+                pending = next((row["step"] for row in (worker_plan or {}).get("plan", [])
+                                if row.get("status") != "completed"), "Reconcile the saved blocker before retrying.")
+                final_text += "\nNext recorded action (worker assessment): " + pending
+                repeated = progress_watch.diagnostics()["most_repeated_tools"]
+                if repeated:
+                    final_text += "\nRepeated evidence: " + ", ".join(list(repeated)[:2])
                 progress(final_text, important=True)
                 return
             checkpoint = (
@@ -2999,11 +3015,8 @@ class WorkerManager:
                     brain=brain,
                     session=sid,
                     status="stalled" if provider_stalled or progress_stalled else ("incomplete" if step_limited else "finished"),
-                    continuation=({"task": redact_text(task), "plan": worker_plan,
-                        "recent_evidence": redact_text("\n".join(completion_evidence + completion_commands)[-12000:]),
-                        "completion_feedback": completion_feedback,
-                        "note": "Reconcile preserved checkout, commits and this evidence before continuing; not completed."}
-                        if provider_stalled or progress_stalled else None),
+                    continuation=make_continuation() if is_free and step_limited else None,
+                    progress_diagnostics=progress_watch.diagnostics() if is_free else None,
                     stall_reason="repeated_observations" if progress_stalled else None,
                     started_at=started_at,
                     finished_at=finished_at,
@@ -3030,6 +3043,14 @@ class WorkerManager:
             self._send(self.owner,
                        f"{label}: [{name}] in {folder.name}:\n\n{final_text}\n\n"
                        f"```log\nAgent steps: {step}\nSession: {sid}\n{diagnostics}\n```")
+        except asyncio.CancelledError as exc:
+            if is_free:
+                exc.worker_continuation = make_continuation()
+                exc.worker_session = sid
+                exc.worker_diagnostics = progress_watch.diagnostics()
+                exc.worker_result_tail = ("Stopped by operator; work is unfinished.\n\n" +
+                                          redact_text("\n\n".join(transcript[-12:]))[-12000:])
+            raise
         except Exception as exc:  # noqa: BLE001
             log.exception("%s agent worker %s crashed", brain, name)
             finished_at = _now_iso()
@@ -3465,12 +3486,15 @@ class WorkerManager:
                     files=files,
                     brain=brain,
                 )
-            except asyncio.CancelledError:
+            except asyncio.CancelledError as exc:
                 self._emit_report(self._base_report(
-                    name=name, folder=folder, brain=brain, session=session,
-                    status="interrupted", result_tail="Stopped by operator.",
+                    name=name, folder=folder, brain=brain, session=getattr(exc, "worker_session", session),
+                    status="interrupted", result_tail=getattr(exc, "worker_result_tail", "Stopped by operator."),
+                    continuation=getattr(exc, "worker_continuation", None),
+                    progress_diagnostics=getattr(exc, "worker_diagnostics", None),
                 ))
-                self._send(self.owner, f"⏹ [{name}] stopped.")
+                saved = " Unfinished plan and evidence saved for the next run." if getattr(exc, "worker_continuation", None) else ""
+                self._send(self.owner, f"⏹ [{name}] stopped." + saved)
                 raise
             finally:
                 self._running.pop(name, None)

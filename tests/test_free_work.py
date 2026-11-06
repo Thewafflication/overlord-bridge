@@ -363,6 +363,63 @@ def test_repeated_discovery_yields_and_next_run_receives_handoff(isolated, tmp_p
     assert 'Reconcile preserved checkout' in str(next_seen[0][0])
 
 
+def test_rotating_metadata_cannot_keep_repeated_inspection_alive(isolated, tmp_path):
+    project = isolated / 'rotating-inspection'
+    project.mkdir()
+    completer, seen = scripted_pool([
+        call('run_command', {'command':f'git status variant-{i}'}, f'c{i}') for i in range(70)
+    ])
+    mgr, _, _ = manager(tmp_path, completer)
+    count = 0
+    async def inspect(*args):
+        nonlocal count
+        count += 1
+        text = f'new metadata {count}' if count % 12 == 0 else 'same known adoption facts'
+        return {'ok':True,'stdout':text,'stderr':'','exit_code':0}
+    mgr._execute_checked = inspect
+    start(mgr, project)
+    report = events(mgr)[-1]
+    assert report['status'] == 'stalled' and count <= 48
+    assert len(seen) <= 48
+    assert report['progress_diagnostics']['last_checkpoint']['repeated_windows'] == 3
+    assert 'Next recorded action' in report['result_tail']
+
+
+def test_cancelled_free_worker_keeps_plan_and_diagnostics(isolated, tmp_path):
+    project = isolated / 'cancelled-handoff'
+    project.mkdir()
+    (project / 'owner.txt').write_text('preserve')
+    async def scenario():
+        waiting = asyncio.Event()
+        delegate, _ = scripted_pool([call('read_file', {'path':'owner.txt'})])
+        actions = 0
+        async def complete(messages, tools):
+            nonlocal actions
+            if tools and len(tools) == 1:
+                return await delegate(messages, tools)
+            actions += 1
+            if actions == 1:
+                return await delegate(messages, tools)
+            waiting.set()
+            await asyncio.Event().wait()
+        mgr, sent, _ = manager(tmp_path, complete)
+        mgr._accept({'name':'Free-app','folder':str(project),'task':'Implement the requested feature','brain':'free'})
+        await asyncio.wait_for(waiting.wait(), 15)
+        task = mgr._running['Free-app']
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        await asyncio.sleep(0)
+        report = events(mgr)[-1]
+        assert report['status'] == 'interrupted'
+        assert report['session']
+        assert report['continuation']['plan'] and report['continuation']['last_action_step'] >= 1
+        assert 'read_file' in report['result_tail']
+        assert report['progress_diagnostics']['actions_since_checkpoint'] >= 1
+        assert any('saved for the next run' in text for text in sent)
+        assert (project / 'owner.txt').read_text() == 'preserve'
+    run(scenario())
+
+
 def test_worker_difficulty_reaches_execution_and_escalates_failed_actions(isolated, tmp_path):
     project = isolated / 'routing'
     project.mkdir()
@@ -1623,10 +1680,13 @@ def test_confirmed_mutations_survive_discovery_and_context_trimming(isolated, tm
     project = isolated / 'persistent-mutations'
     project.mkdir()
     actions = context_pressure_actions(project)
+    # Exercise healthy discovery, not 45 failed reads that should now yield.
+    for index in range(45):
+        (project / f'finding-{index}.py').write_text(f'finding = {index}\n')
     completer, seen = scripted_pool([
         call('write_file', {'path': 'changed.py', 'content': 'confirmed = True\n'}),
         *actions,
-        *[call('read_file', {'path': f'missing-{i}.py'}) for i in range(45)],
+        *[call('read_file', {'path': f'finding-{i}.py'}) for i in range(45)],
         final_result('Reviewed project'),
     ])
     mgr, _, _ = manager(tmp_path, completer)
