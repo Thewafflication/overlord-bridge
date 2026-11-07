@@ -57,6 +57,7 @@ import uuid
 
 from modules import shared_job
 from modules import worker_readiness
+from modules.windows_scripts import explicit_powershell_files
 from modules.request_budget import BudgetedMessages, review_messages as budget_review_messages, size as request_size
 from modules.free_routing import LEVELS, WorkerRouting, route_request
 from modules.worker_progress import ProgressWatch
@@ -878,7 +879,7 @@ def _local_agent_tools() -> list[dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "run_command",
-                "description": "Run a noninteractive command in the project folder (already the working directory). Stdin is closed: supply arguments or unattended flags instead of answering prompts. Default shell is cmd.exe on Windows, /bin/sh elsewhere. Select shell=powershell on Windows for PowerShell syntax and invoke .ps1 scripts with the call operator (& './script.ps1'). Do not mix shell dialects or use Bash heredocs on Windows. Git pushes check changed submodule commits for remote availability; do not bypass that check or auto-push unrelated nested changes.",
+                "description": "Run a noninteractive command in the project folder (already the working directory). Stdin is closed: supply arguments or unattended flags instead of answering prompts. Default shell is cmd.exe on Windows, /bin/sh elsewhere. Bare .ps1 command heads in ordinary CMD chains are launched with explicit PowerShell -File, never file association. For PowerShell syntax select shell=powershell and use & './script.ps1'. Do not mix shell dialects or use Bash heredocs on Windows. Git pushes check changed submodule commits for remote availability; do not bypass that check or auto-push unrelated nested changes.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -1682,19 +1683,13 @@ class WorkerManager:
             if denial:
                 log_command("worker", "denied", command, folder)
                 return {"ok": False, "error": denial, "command": command}
-            if (
-                sys.platform == "win32" and tool_name == "run_command" and shell == "default"
-                and re.match(r'(?i)^@?(?:call\s+)?(?:"[^"]+\.ps1"|[^\s"&|<>]+\.ps1)(?=$|[\s&|<>])', command)
-            ):
-                return {
-                    "ok": False,
-                    "error": "powershell_script_requires_shell",
-                    "message": (
-                        "Run this script with shell='powershell' and the call operator "
-                        "(& './script.ps1' arguments), or use powershell.exe -NoProfile "
-                        "-NonInteractive -File script.ps1 arguments."
-                    ),
-                }
+            original_command = command
+            if sys.platform == "win32" and tool_name == "run_command" and shell == "default":
+                try:
+                    command = explicit_powershell_files(command)
+                except ValueError as exc:
+                    return {"ok": False, "error": "powershell_script_requires_shell",
+                            "message": str(exc) + "; use shell='powershell' and & './script.ps1' arguments."}
             timeout = arguments.get("timeout_seconds", DEFAULT_LOCAL_AGENT_COMMAND_TIMEOUT)
             try:
                 timeout_i = max(1, min(int(timeout), DEFAULT_LOCAL_AGENT_COMMAND_TIMEOUT))
@@ -1760,6 +1755,8 @@ class WorkerManager:
                 "stderr": stderr_tail,
                 "stderr_truncated": stderr_truncated,
             }
+            if command != original_command:
+                result["original_command"] = original_command
             if not result["ok"]:
                 result["shell"] = ("direct Python" if tool_name == "run_python" else
                                    "powershell" if shell == "powershell" else

@@ -785,19 +785,49 @@ def test_powershell_preserves_variables_and_newlines(isolated):
 
 
 @pytest.mark.skipif(sys.platform != 'win32', reason='Windows PowerShell')
-@pytest.mark.parametrize('command', ['.\\script.ps1 value', '"script with spaces.ps1" value'])
-def test_bare_powershell_script_never_reaches_windows_file_association(isolated, monkeypatch, command):
-    async def unexpected_shell(*args, **kwargs):
-        pytest.fail('Bare PowerShell script reached cmd.exe')
+@pytest.mark.parametrize('prefix', ['', 'cd . && ', 'echo before && ', 'call ', '( '])
+@pytest.mark.parametrize('exit_code', [0, 7])
+def test_bare_powershell_script_never_reaches_windows_file_association(isolated, prefix, exit_code):
+    folder = isolated / 'project with spaces'
+    folder.mkdir()
+    (folder / 'script with spaces.ps1').write_text(
+        "[IO.File]::WriteAllText((Join-Path $PSScriptRoot 'ran.txt'), $args[0])\n"
+        f"Write-Output $args[0]\nexit {exit_code}\n")
+    command = prefix + '".\\script with spaces.ps1" "value with spaces"'
+    if prefix == '( ':
+        command += ' )'
+    command += ' && echo after'
+    result = execute('run_command', {'command': command}, folder)
+    assert result['exit_code'] == exit_code and result['ok'] == (exit_code == 0)
+    assert (folder / 'ran.txt').read_text() == 'value with spaces'
+    assert 'value with spaces' in result['stdout']
+    assert ('after' in result['stdout']) == (exit_code == 0)
+    assert 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File' in result['command']
+    assert result['original_command'] == command
 
-    monkeypatch.setattr(asyncio, 'create_subprocess_shell', unexpected_shell)
-    result = execute('run_command', {'command': command}, isolated)
+
+@pytest.mark.skipif(sys.platform != 'win32', reason='Windows PowerShell and CMD')
+def test_latex_runtime_cmd_chain_runs_script_and_reports_its_failure(isolated):
+    folder = isolated / 'package with spaces'
+    (folder / 'tools').mkdir(parents=True)
+    (folder / 'tools/Get-LatexRuntime.ps1').write_text(
+        "param([switch]$Offline)\nif(-not $Offline){throw 'Switch lost'}\n"
+        "[IO.File]::WriteAllText((Join-Path $PSScriptRoot 'executed.txt'),'offline')\n"
+        "Write-Output 'offline script ran'\nexit 7\n")
+    command = f'cd /d "{folder}" && .\\tools\\Get-LatexRuntime.ps1 -Offline 2>&1'
+    result = execute('run_command', {'command': command}, folder)
+    assert result['exit_code'] == 7 and not result['ok']
+    assert (folder / 'tools/executed.txt').read_text() == 'offline'
+    assert 'offline script ran' in result['stdout'] and result['original_command'] == command
+
+
+@pytest.mark.skipif(sys.platform != 'win32', reason='Windows CMD')
+def test_ambiguous_script_launch_cannot_reach_file_association(isolated, monkeypatch):
+    async def unexpected(*args, **kwargs):
+        pytest.fail('Ambiguous script launch reached cmd.exe')
+    monkeypatch.setattr(asyncio, 'create_subprocess_shell', unexpected)
+    result = execute('run_command', {'command': 'start "" script.ps1'}, isolated)
     assert result['error'] == 'powershell_script_requires_shell'
-    (isolated / 'script with spaces.ps1').write_text('Write-Output $args[0]')
-    result = execute('run_command', {
-        'shell': 'powershell', 'command': "& './script with spaces.ps1' value",
-    }, isolated)
-    assert result['ok'] and result['stdout'].strip() == 'value'
 
 
 def test_python_requires_free_command_approval(isolated):

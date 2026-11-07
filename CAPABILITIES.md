@@ -6,6 +6,16 @@ workflow lands.
 
 ## Current Capabilities
 
+- Windows worker script launches: bare `.ps1` command heads in ordinary CMD
+  commands, chains, pipelines and groups are executed through explicit
+  `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File`.
+  Arguments, CMD operators and redirections are retained; results expose the
+  original and executed command when rewritten. Script mentions in arguments
+  and explicit interpreter/editor commands are left alone. Ambiguous nested CMD,
+  IF/FOR/START launches containing scripts require the existing explicit
+  PowerShell tool mode rather than invoking file association. This does not
+  rewrite arbitrary Python subprocess code or change Windows associations.
+
 - Free-worker deliverable readiness: planning must assess `ready`, `discovery`,
   `needs_planning`, `blocked` or `already_complete`. Ready work supplies its
   authorized requirement, useful unfinished outcome, acceptance check and current
