@@ -303,7 +303,117 @@ def final_result(text, **extra):
     return {"content": json.dumps({"final": text, "outcome": "finished"}), **extra}
 
 
-def scripted_pool(replies, reviews=None, plans=None):
+def ready_contract(state='ready'):
+    return {'state': state, 'requirement': 'Owner requested queue behavior repair',
+            'deliverable': 'Repair queue ordering', 'acceptance': 'python -m pytest tests/test_queue.py',
+            'evidence': 'Handoff identifies unimplemented queue ordering', 'reason': 'Bounded authorized work remains'}
+
+
+@pytest.mark.parametrize('state', ['needs_planning', 'blocked', 'already_complete'])
+def test_unready_deliverable_yields_before_any_project_action(isolated, tmp_path, state):
+    project = isolated / 'unready'
+    project.mkdir()
+    plan = call('update_plan', {'plan': [{'step': 'Await requirement', 'status': 'pending'}],
+                               'readiness': ready_contract(state)})
+    completer, seen = scripted_pool([], plans=[plan], raw_plans=True)
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    report = events(mgr)[-1]
+    assert not seen and not list(project.iterdir())
+    assert report['status'] == 'incomplete'
+    assert report['work_readiness']['state'] == state
+    assert report['continuation']['plan']['readiness']['state'] == state
+
+
+def test_missing_readiness_cannot_be_replaced_by_a_well_shaped_plan(isolated, tmp_path):
+    project = isolated / 'missing-readiness'
+    project.mkdir()
+    plan = call('update_plan', {'plan': [{'step': 'Read files again', 'status': 'pending'}]})
+    arguments = json.loads(plan['tool_calls'][0]['function']['arguments'])
+    arguments.pop('readiness')
+    plan['tool_calls'][0]['function']['arguments'] = json.dumps(arguments)
+    completer, seen = scripted_pool([], plans=[plan] * 3, raw_plans=True)
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert not seen and len(completer.planning) == 3
+    assert events(mgr)[-1]['status'] == 'incomplete'
+    assert 'readiness' in events(mgr)[-1]['result_tail']
+
+
+def test_discovery_cannot_execute_commands_or_renew_its_budget(isolated, tmp_path):
+    project = isolated / 'bounded-discovery'
+    project.mkdir()
+    plan = call('update_plan', {'plan': [{'step': 'Find missing requirement', 'status': 'pending'}],
+                               'readiness': ready_contract('discovery')})
+    completer, seen = scripted_pool([
+        call('run_command', {'command': 'echo forbidden'}),
+        call('write_file', {'path': 'bad.txt', 'content': 'bad'}),
+        call('update_plan', {'plan': [{'step': 'Bypass admission', 'status': 'pending'}],
+                             'readiness': ready_contract()}),
+        *[call('list_files', {'path': '.'}, f'r{i}') for i in range(3)],
+    ], plans=[plan, plan], raw_plans=True)
+    mgr, _, _ = manager(tmp_path, completer)
+    original = mgr._execute_checked
+    async def execute(brain, folder, tool, args):
+        assert tool not in ('run_command', 'run_python', 'write_file', 'edit_file')
+        return await original(brain, folder, tool, args)
+    mgr._execute_checked = execute
+    start(mgr, project)
+    assert len(seen) == 6 and len(completer.planning) == 2
+    assert not (project / 'bad.txt').exists()
+    assert events(mgr)[-1]['status'] == 'incomplete'
+    assert 'needs_planning' in events(mgr)[-1]['result_tail']
+
+
+def test_discovery_can_admit_work_after_observing_requirement(isolated, tmp_path):
+    project = isolated / 'discovered'
+    project.mkdir()
+    plans = [call('update_plan', {'plan': [{'step': 'Inspect requirement', 'status': 'pending'}],
+                                 'readiness': ready_contract(state)}) for state in ('discovery', 'ready')]
+    completer, seen = scripted_pool([
+        *[call('list_files', {'path': '.'}, f'r{i}') for i in range(6)],
+        call('write_file', {'path': 'result.txt', 'content': 'owned change'}), final_result('Done'),
+    ], plans=plans, raw_plans=True)
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert len(seen) == 8 and (project / 'result.txt').read_text() == 'owned change'
+    assert events(mgr)[-1]['work_readiness']['state'] == 'ready'
+
+
+def test_discovery_cannot_claim_completion_without_ready_work(isolated, tmp_path):
+    project = isolated / 'early-final'
+    project.mkdir()
+    plan = call('update_plan', {'plan': [{'step': 'Inspect', 'status': 'pending'}],
+                               'readiness': ready_contract('discovery')})
+    completer, _ = scripted_pool([final_result('Everything done')], plans=[plan], raw_plans=True)
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert events(mgr)[-1]['status'] == 'incomplete' and not completer.reviews
+
+
+def test_discovery_batch_cannot_exceed_six_read_actions(isolated, tmp_path):
+    project = isolated / 'discovery-batch'
+    project.mkdir()
+    plan = call('update_plan', {'plan': [{'step': 'Find requirement', 'status': 'pending'}],
+                               'readiness': ready_contract('discovery')})
+    batch = {'content': '', 'tool_calls': [call('list_files', {'path': f'fixture{i}'}, f'r{i}')['tool_calls'][0]
+                                          for i in range(8)]}
+    completer, _ = scripted_pool([batch], plans=[plan, plan], raw_plans=True)
+    mgr, _, _ = manager(tmp_path, completer)
+    original = mgr._execute_checked
+    reads = []
+    async def execute(brain, folder, tool, args):
+        if tool == 'list_files':
+            reads.append(args)
+            return {'ok': True, 'tool': tool, 'files': []}
+        return await original(brain, folder, tool, args)
+    mgr._execute_checked = execute
+    start(mgr, project)
+    assert len(reads) == 6
+    assert events(mgr)[-1]['status'] == 'incomplete'
+
+
+def scripted_pool(replies, reviews=None, plans=None, raw_plans=False):
     queue = list(replies)
     review_queue = list(reviews or [])
     seen = []
@@ -314,9 +424,15 @@ def scripted_pool(replies, reviews=None, plans=None):
     async def complete(messages, tools):
         if tools and len(tools) == 1 and tools[0]['function']['name'] == 'update_plan':
             planning.append(json.loads(json.dumps(messages)))
-            return plan_queue.pop(0) if plan_queue else call('update_plan', {
+            response = plan_queue.pop(0) if plan_queue else call('update_plan', {
                 'plan': [{'step': 'Implement requested work and validate results', 'status': 'in_progress'}],
                 'explanation': 'Review gathered evidence and continue with the next targeted action.'})
+            # Legacy execution tests model admitted work; readiness-specific tests
+            # supply raw responses to exercise admission rather than this fixture.
+            parsed = workers._worker_plan_response(response)
+            if not raw_plans and parsed.get('ok') and 'readiness' not in parsed['plan']:
+                response = call('update_plan', {**parsed['plan'], 'readiness': ready_contract()})
+            return response
         if tools is None and messages[0]['content'].startswith('You are the completion reviewer'):
             reviewed.append(json.loads(json.dumps(messages)))
             return review_queue.pop(0) if review_queue else {'content': '{"complete":true,"reason":"Verified"}'}
@@ -331,6 +447,8 @@ def scripted_pool(replies, reviews=None, plans=None):
 
 
 def call(name, arguments, call_id="c1"):
+    if name in ('update_plan', 'functions.update_plan') and 'readiness' not in arguments:
+        arguments = {**arguments, 'readiness': ready_contract()}
     return {"content": "", "tool_calls": [{"id": call_id, "function": {
         "name": name, "arguments": json.dumps(arguments)}}]}
 

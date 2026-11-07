@@ -6,6 +6,17 @@ workflow lands.
 
 ## Current Capabilities
 
+- Free-worker deliverable readiness: planning must assess `ready`, `discovery`,
+  `needs_planning`, `blocked` or `already_complete`. Ready work supplies its
+  authorized requirement, useful unfinished outcome, acceptance check and current
+  evidence. Discovery permits six file read/search/list or plan actions, with
+  commands and writes blocked, followed by one reassessment. It cannot renew its
+  allowance. Other unready states yield an incomplete report and saved handoff
+  before implementation. Ordinary plan updates cannot bypass this assessment.
+  Reports retain `work_readiness`. This enforces the model's structured decision;
+  it does not independently prove requirement relevance or test quality. Existing
+  owner acceptance queues and free-only model admission still apply.
+
 - Free-worker loop recovery: a run-wide observation memory survives context
   trimming. Three consecutive 12-step discovery checkpoints with at least half
   the observations repeated or failed, without observed Git changes, yield a

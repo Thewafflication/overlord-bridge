@@ -56,6 +56,7 @@ import time
 import uuid
 
 from modules import shared_job
+from modules import worker_readiness
 from modules.request_budget import BudgetedMessages, review_messages as budget_review_messages, size as request_size
 from modules.free_routing import LEVELS, WorkerRouting, route_request
 from modules.worker_progress import ProgressWatch
@@ -862,6 +863,7 @@ def _local_agent_tools() -> list[dict[str, Any]]:
             "description": "Record the current task plan and findings in worker memory. Survives context trimming for this run. Update as steps finish or a specific blocker changes the next action. This records your assessment, not verified completion, and changes no project files.",
             "parameters": {"type": "object", "properties": {
                 "explanation": {"type": "string", "maxLength": WORKER_PLAN_EXPLANATION_CHARS},
+                "readiness": worker_readiness.SCHEMA,
                 "difficulty": {"type": "object", "properties": {
                     "level": {"type": "string", "enum": ["routine", "standard", "complex"]},
                     "reason": {"type": "string", "minLength": 1, "maxLength": 600}},
@@ -1046,6 +1048,7 @@ def _worker_plan_result(arguments: dict[str, Any]) -> dict[str, Any]:
     plan = arguments.get("plan")
     explanation = arguments.get("explanation", "")
     issues = []
+    issues.extend(worker_readiness.issues(arguments.get("readiness")))
     difficulty = arguments.get("difficulty")
     if difficulty is not None and (
         not isinstance(difficulty, dict) or not isinstance(difficulty.get("level"), str)
@@ -1082,6 +1085,8 @@ def _worker_plan_result(arguments: dict[str, Any]) -> dict[str, Any]:
                 "plan": [{"step": item["step"], "status": item["status"]} for item in plan]}
     if difficulty is not None:
         recorded["difficulty"] = difficulty
+    if arguments.get("readiness") is not None:
+        recorded["readiness"] = arguments["readiness"]
     return {"ok": True, "tool": "update_plan", "plan": recorded}
 
 
@@ -2256,6 +2261,9 @@ class WorkerManager:
         mutation_evidence: list[str] = []
         completion_feedback = ""
         worker_plan: dict[str, Any] | None = None
+        readiness = None
+        discovery_actions = 0
+        discovery_used = False
         routing_escalated = False
         routing_failures = 0
         progress_watch = ProgressWatch()
@@ -2367,11 +2375,19 @@ class WorkerManager:
             nonlocal routing_failures, routing_escalated
             nonlocal completion_feedback
             nonlocal completion_checkpoint, final_review_rejected, last_edit_step, worker_plan
+            nonlocal discovery_actions
+            if is_free and not answer_only and readiness and readiness["state"] == "discovery":
+                exhausted = discovery_actions >= worker_readiness.DISCOVERY_ACTIONS
+                discovery_actions += 1
+                if exhausted or tool_name not in worker_readiness.READ_TOOLS:
+                    duplicate_result = {"ok": False, "error": "deliverable_not_ready",
+                        "message": "Discovery is read-only. Establish an authorized deliverable and acceptance "
+                                   "check at the readiness checkpoint before commands, writes or completion."}
             action = worker_action(tool_name, arguments)
             important = tool_name in {"run_python", "run_command", "run", "bash", "shell", "write_file", "write", "edit_file"}
             progress(f"Step {step}: next action — {action}",
                      important=important)
-            if project_task and project_tasks.is_git_push(tool_name, arguments):
+            if duplicate_result is None and project_task and project_tasks.is_git_push(tool_name, arguments):
                 async def check_before_push(tool, args):
                     return await self._execute_checked(brain, folder, tool, args)
                 gate = await project_tasks.validate(project_task, check_before_push)
@@ -2402,6 +2418,9 @@ class WorkerManager:
             if result.get("ok"):
                 if tool_name == "update_plan":
                     worker_plan = result["plan"]
+                    # Ordinary plan updates cannot bypass the admission assessment.
+                    if readiness:
+                        worker_plan["readiness"] = readiness
                 confirmed_edit = tool_name == "edit_file" or (tool_name == "write_file" and result.get("changed"))
                 successful_command = tool_name in {"run_command", "run_python"} and result.get("exit_code") == 0
                 if confirmed_edit or successful_command:
@@ -2439,8 +2458,10 @@ class WorkerManager:
 
         async def record_worker_plan(prompt: str, phase: str) -> bool:
             nonlocal worker_plan, final_text, step_limited, provider_stalled
+            nonlocal readiness, discovery_actions, discovery_used
             from modules.free_brain import FreeUnavailable
             plan_tools = [t for t in _local_agent_tools() if t["function"]["name"] == "update_plan"]
+            plan_tools[0]["function"]["parameters"]["required"] = ["plan", "readiness"]
             planning_messages = list(messages)
             correction = None
             diagnostic = ""
@@ -2464,6 +2485,7 @@ class WorkerManager:
                         "uncertain debugging, native/ABI/build failures, security or interacting components. "
                         "Assess the actual task and evidence, not keywords. Reassess when new evidence changes it. "
                         "This selects models only inside the free pool; it grants no new permissions. "
+                        + worker_readiness.INSTRUCTION +
                         "No other tool is available. "
                         "Do not claim unperformed tests, commits or completion.")},
                     {"role": "user", "content": "Read-only worker context:\n" +
@@ -2489,11 +2511,35 @@ class WorkerManager:
                 if used:
                     free_models.append(used)
                 result = _worker_plan_response(planned)
+                if result.get("ok"):
+                    readiness_issues = worker_readiness.issues(result["plan"].get("readiness"), required=True)
+                    if (phase in ("Planning task", "Deliverable readiness checkpoint") and not readiness_issues
+                            and result["plan"]["readiness"]["state"] == "ready"
+                            and all(item["status"] == "completed" for item in result["plan"]["plan"])):
+                        readiness_issues.append("ready requires at least one unfinished step; otherwise choose already_complete")
+                    if readiness_issues:
+                        result = {"ok": False, "error": "missing_work_readiness", "issues": readiness_issues}
                 if result.get("ok") and phase == "Progress checkpoint" and not result["plan"]["explanation"].strip():
                     result = {"ok": False, "error": "missing_progress_explanation", "message": "Supply a nonempty explanation with confirmed findings, "
                               "remaining uncertainty and the next concrete action. Do not just repeat the initial plan."}
                 if result.get("ok"):
                     worker_plan = result["plan"]
+                    readiness = worker_plan["readiness"]
+                    state = readiness["state"]
+                    if state == "discovery" and not discovery_used:
+                        discovery_used = True
+                        discovery_actions = 0
+                    elif state != "ready":
+                        if state == "discovery":
+                            readiness = {**readiness, "state": "needs_planning",
+                                "reason": "Read-only discovery allowance cannot be renewed. " + readiness["reason"]}
+                            worker_plan["readiness"] = readiness
+                        final_text = ("Stopped before implementation: deliverable readiness is " +
+                            ("needs_planning" if state == "discovery" else state) + ". " + readiness["reason"] +
+                            "\nEvidence (worker assessment): " + readiness["evidence"])
+                        step_limited = True
+                        transcript.append("readiness: " + json.dumps(readiness, ensure_ascii=False))
+                        return False
                     messages.append({"role": "user", "content": (
                         "Current model-maintained plan (assessment, not verified completion):\n" +
                         json.dumps(worker_plan, ensure_ascii=False))})
@@ -2519,6 +2565,9 @@ class WorkerManager:
                     "validation": details,
                     "rejected_response": redact_text(json.dumps(planned, ensure_ascii=False))[:3000],
                     "example_arguments": {"explanation": "Confirmed finding and location; remaining uncertainty; next action.",
+                        "readiness": {"state": "needs_planning", "requirement": "", "deliverable": "",
+                            "acceptance": "", "evidence": "State the actual known facts, not this example.",
+                            "reason": "Name the missing requirement or acceptance decision."},
                         "plan": [{"step": "Next concrete action", "status": "in_progress"}]},
                 }, ensure_ascii=False)
                 log.info("Worker plan rejected: phase=%s attempt=%s details=%s", phase, attempt + 1, diagnostic)
@@ -2657,6 +2706,15 @@ class WorkerManager:
             while max_steps == 0 or step < max_steps:
                 if step_limited:
                     break
+                if (is_free and not answer_only and readiness and readiness["state"] == "discovery"
+                        and discovery_actions >= worker_readiness.DISCOVERY_ACTIONS):
+                    await record_worker_plan(
+                        "Read-only discovery allowance is exhausted. Reconcile observed evidence now. "
+                        "Choose ready with the actual requirement, deliverable and acceptance check, "
+                        "or yield needs_planning/blocked/already_complete. Do not renew discovery.",
+                        "Deliverable readiness checkpoint")
+                    if step_limited:
+                        break
                 step += 1
                 # Yield even when a test/local completer returns synchronously,
                 # so an unlimited run stays responsive to cancellation.
@@ -2835,6 +2893,9 @@ class WorkerManager:
                             final_text = "Stopped before completion: model supplied an empty final answer."
                             step_limited = True
                         elif fallback.get("outcome") == "blocked":
+                            step_limited = True
+                        elif is_free and not answer_only and readiness and readiness["state"] != "ready":
+                            final_text = "Stopped before completion: no ready deliverable was established. " + readiness["reason"]
                             step_limited = True
                         elif is_free and not answer_only:
                             progress(f"Step {step}: reviewing completion against tool evidence.", important=True)
@@ -3017,6 +3078,7 @@ class WorkerManager:
                     status="stalled" if provider_stalled or progress_stalled else ("incomplete" if step_limited else "finished"),
                     continuation=make_continuation() if is_free and step_limited else None,
                     progress_diagnostics=progress_watch.diagnostics() if is_free else None,
+                    work_readiness=readiness if is_free else None,
                     stall_reason="repeated_observations" if progress_stalled else None,
                     started_at=started_at,
                     finished_at=finished_at,
