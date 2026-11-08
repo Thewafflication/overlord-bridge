@@ -33,6 +33,23 @@ INSTRUCTION = (
     "At a progress checkpoint after actually performing the admitted work, retain ready to "
     "submit completed steps through the existing finish_task and independent acceptance review. "
     "Do not invent test results, source locations or owner approval. "
+    "Assess readiness to perform the plan, not whether it has already been executed. "
+    "A known failing build or unread source is normally the subject of authorized work: "
+    "choose ready for bounded diagnosis/repair, or discovery for missing file evidence. "
+    "needs_planning means a specific missing owner requirement or decision prevents selecting useful work. "
+)
+
+REVIEW_INSTRUCTION = (
+    "You are now independently reviewing a proposed early stop, not completing the project. "
+    "Reconcile the original owner task, supplied acceptance queue, current evidence and proposed readiness. "
+    "Do not accept a stop just because actions have not run, files need reading, tests fail, or a technical "
+    "cause needs diagnosis: those can be the authorized deliverable. Return ready with bounded pending "
+    "steps when the task is already defined; use discovery only if its existing six-action budget permits. "
+    "Confirm needs_planning only for an actual missing owner requirement/decision; blocked for an external "
+    "prerequisite preventing useful authorized progress; already_complete only for verified prior work "
+    "with no further authorized deliverable. Never invent a task, evidence, approval or successful test. "
+    "Do not weaken acceptance checks, renew discovery, execute tools or claim project completion. "
+    "Return one update_plan assessment; a confirmed early stop will be honored. "
 )
 
 

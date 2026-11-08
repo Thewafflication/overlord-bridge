@@ -6,6 +6,17 @@ workflow lands.
 
 ## Current Capabilities
 
+- Free-worker early-stop review: a proposed `needs_planning`, `blocked` or
+  `already_complete` plan receives one bounded model reassessment before yielding.
+  The reviewer distinguishes missing owner decisions from authorized technical
+  investigation that simply has not run yet. It uses the same admitted free pool
+  and existing review routing preferences; another model family is preferred when
+  available. Each assessment has three schema attempts, at most six total. No
+  project actions run during review. Confirmed stops, exhausted discovery budgets,
+  permissions and hard acceptance checks remain enforced. Reports retain the
+  proposed/final assessments in `readiness_review`. This is model judgment, not
+  independently verified task relevance or approval.
+
 - Windows worker script launches: bare `.ps1` command heads in ordinary CMD
   commands, chains, pipelines and groups are executed through explicit
   `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File`.

@@ -315,7 +315,7 @@ def test_unready_deliverable_yields_before_any_project_action(isolated, tmp_path
     project.mkdir()
     plan = call('update_plan', {'plan': [{'step': 'Await requirement', 'status': 'pending'}],
                                'readiness': ready_contract(state)})
-    completer, seen = scripted_pool([], plans=[plan], raw_plans=True)
+    completer, seen = scripted_pool([], plans=[plan, plan], raw_plans=True)
     mgr, _, _ = manager(tmp_path, completer)
     start(mgr, project)
     report = events(mgr)[-1]
@@ -323,6 +323,8 @@ def test_unready_deliverable_yields_before_any_project_action(isolated, tmp_path
     assert report['status'] == 'incomplete'
     assert report['work_readiness']['state'] == state
     assert report['continuation']['plan']['readiness']['state'] == state
+    assert report['readiness_review']['decision']['state'] == state
+    assert len(completer.planning) == 2
 
 
 def test_missing_readiness_cannot_be_replaced_by_a_well_shaped_plan(isolated, tmp_path):
@@ -338,6 +340,98 @@ def test_missing_readiness_cannot_be_replaced_by_a_well_shaped_plan(isolated, tm
     assert not seen and len(completer.planning) == 3
     assert events(mgr)[-1]['status'] == 'incomplete'
     assert 'readiness' in events(mgr)[-1]['result_tail']
+
+
+def readiness_plan(state):
+    assessment = ready_contract(state)
+    if state == 'needs_planning':
+        assessment['reason'] = 'Concrete actions identified, but not yet executed'
+    return call('update_plan', {'plan': [{'step': 'Repair defined queue behavior', 'status': 'pending'}],
+                               'explanation': 'Owner requirement and acceptance are supplied.',
+                               'readiness': assessment})
+
+
+def test_early_stop_review_can_admit_defined_work_without_granting_completion(isolated, tmp_path):
+    project = isolated / 'review-ready'
+    project.mkdir()
+    proposal = readiness_plan('needs_planning')
+    proposal['_free_model'] = 'nvidia:nvidia/nemotron-3.5-lightning-30b-a3b'
+    delegate, seen = scripted_pool([
+        call('write_file', {'path': 'result.txt', 'content': 'owned result'}), final_result('Done'),
+    ], plans=[proposal, readiness_plan('ready')], raw_plans=True)
+    routing = []
+    async def complete(messages, tools):
+        routing.append(messages.worker_routing)
+        return await delegate(messages, tools)
+    mgr, _, _ = manager(tmp_path, complete)
+    start(mgr, project)
+    assert (project / 'result.txt').read_text() == 'owned result'
+    report = events(mgr)[-1]
+    assert report['status'] == 'finished' and delegate.reviews
+    assert report['readiness_review']['proposed']['state'] == 'needs_planning'
+    assert report['readiness_review']['decision']['state'] == 'ready'
+    assert routing[1].phase == 'review' and routing[1].reasoning
+    assert routing[1].previous_model == proposal['_free_model']
+    assert 'independently reviewing a proposed early stop' in str(delegate.planning[1])
+    assert len(seen) == 2
+
+
+def test_early_stop_review_cannot_execute_actions_and_has_bounded_schema_retries(isolated, tmp_path):
+    project = isolated / 'review-retry'
+    project.mkdir()
+    invalid = call('write_file', {'path': 'forbidden.txt', 'content': 'bad'})
+    completer, seen = scripted_pool([final_result('Read-only task verified')], plans=[
+        readiness_plan('needs_planning'), invalid, {'content': '{bad'}, readiness_plan('ready'),
+    ], raw_plans=True)
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert len(completer.planning) == 4 and len(seen) == 1
+    assert not (project / 'forbidden.txt').exists()
+    assert events(mgr)[-1]['status'] == 'finished'
+
+
+@pytest.mark.parametrize('initial_invalid', [0, 2])
+def test_exhausted_early_stop_review_preserves_proposal_without_actions(isolated, tmp_path, initial_invalid):
+    project = isolated / 'review-invalid'
+    project.mkdir()
+    completer, seen = scripted_pool([], plans=[*[{'content': ''}] * initial_invalid,
+        readiness_plan('needs_planning'), *[{'content': ''}] * 3], raw_plans=True)
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert len(completer.planning) == initial_invalid + 4 and not seen
+    report = events(mgr)[-1]
+    assert report['status'] == 'incomplete' and report['readiness_review']['decision'] is None
+    assert report['continuation']['plan']['readiness']['state'] == 'needs_planning'
+
+
+def test_unavailable_early_stop_reviewer_cannot_admit_work(isolated, tmp_path):
+    project = isolated / 'review-unavailable'
+    project.mkdir()
+    calls = []
+    async def complete(messages, tools):
+        calls.append(messages.worker_routing.phase)
+        if len(calls) == 1:
+            return readiness_plan('blocked')
+        raise FreeUnavailable(['offline reviewer'], 1)
+    mgr, _, _ = manager(tmp_path, complete)
+    start(mgr, project)
+    report = events(mgr)[-1]
+    assert calls == ['plan', 'review'] and report['status'] == 'incomplete'
+    assert report['continuation']['plan']['readiness']['state'] == 'blocked'
+    assert not list(project.iterdir())
+
+
+def test_early_stop_review_cannot_renew_exhausted_discovery(isolated, tmp_path):
+    project = isolated / 'review-discovery'
+    project.mkdir()
+    completer, seen = scripted_pool([
+        call('list_files', {'path': '.'}, f'r{i}') for i in range(6)
+    ], plans=[readiness_plan('discovery'), readiness_plan('needs_planning'), readiness_plan('discovery')], raw_plans=True)
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert len(seen) == 6 and len(completer.planning) == 3
+    assert events(mgr)[-1]['status'] == 'incomplete'
+    assert events(mgr)[-1]['work_readiness']['state'] == 'needs_planning'
 
 
 def test_discovery_cannot_execute_commands_or_renew_its_budget(isolated, tmp_path):
@@ -2391,7 +2485,8 @@ def test_real_pool_timeout_and_invalid_plan_cannot_hold_worker_forever(tmp_path,
 
 
 @pytest.mark.parametrize('valid', [False, True])
-def test_owner_acceptance_gate_overrules_positive_reviewer(isolated, tmp_path, valid):
+@pytest.mark.parametrize('initial_unready', [False, True])
+def test_owner_acceptance_gate_overrules_positive_reviewer(isolated, tmp_path, valid, initial_unready):
     folder = isolated / 'contracted'
     folder.mkdir()
     task = {
@@ -2409,7 +2504,8 @@ def test_owner_acceptance_gate_overrules_positive_reviewer(isolated, tmp_path, v
     ]
     if not valid:
         replies.append({'content': json.dumps({'final': 'Required output validation failed', 'outcome': 'blocked'})})
-    pool, _ = scripted_pool(replies)
+    plans = [readiness_plan('needs_planning'), readiness_plan('ready')] if initial_unready else None
+    pool, _ = scripted_pool(replies, plans=plans)
     mgr, _, _ = manager(tmp_path, pool, project_tasks_path=queue)
     start(mgr, folder)
     terminal = events(mgr)[-1]

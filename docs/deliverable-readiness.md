@@ -36,6 +36,22 @@ assessment. Owner-defined acceptance queues remain authoritative.
 The model's acceptance text is recorded as a plan; this gate does not execute
 that text or treat it as a passing test result.
 
+Before yielding `needs_planning`, `blocked` or `already_complete`, the worker
+now obtains one additional readiness assessment. This addresses observed stops
+whose reason was simply that identified actions had not been executed yet.
+The review reconciles the owner request, acceptance queue and current evidence.
+Unread source and a known failing build can be the subject of a ready bounded
+investigation; `needs_planning` is reserved for an actual missing owner decision
+or requirement. Confirmed early stops remain incomplete outcomes.
+
+Review uses the existing free-pool review routing, preferring a different model
+family when available; it does not add paid capacity or grant permissions.
+Planning and review each have at most three schema attempts, six total, with no
+project actions during either stage. Reviewer outage or invalid responses do
+not admit work. A review cannot renew exhausted discovery or override owner
+acceptance failures. Reports retain the proposal, decision and model in
+`readiness_review`; a second assessment can still be wrong.
+
 The assessment can still be wrong: invented evidence, weak acceptance criteria
 or an unjustified ready decision require independent review. This gate limits
 work admitted as unknown; it does not guarantee meaningful commits, require

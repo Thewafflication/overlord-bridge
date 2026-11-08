@@ -1390,7 +1390,7 @@ def _budgeted_planning_request(request, context, evidence, *, prefix_count, plan
                 return fitted
             context_limit -= excess + 128
         raise ValueError("Protected planning context cannot fit")
-    return BudgetedMessages(request, fit)
+    return BudgetedMessages(fit(48000), fit)
 
 
 class WorkerManager:
@@ -2259,6 +2259,7 @@ class WorkerManager:
         completion_feedback = ""
         worker_plan: dict[str, Any] | None = None
         readiness = None
+        readiness_review = None
         discovery_actions = 0
         discovery_used = False
         routing_escalated = False
@@ -2456,13 +2457,18 @@ class WorkerManager:
         async def record_worker_plan(prompt: str, phase: str) -> bool:
             nonlocal worker_plan, final_text, step_limited, provider_stalled
             nonlocal readiness, discovery_actions, discovery_used
+            nonlocal readiness_review
             from modules.free_brain import FreeUnavailable
             plan_tools = [t for t in _local_agent_tools() if t["function"]["name"] == "update_plan"]
             plan_tools[0]["function"]["parameters"]["required"] = ["plan", "readiness"]
             planning_messages = list(messages)
             correction = None
             diagnostic = ""
-            for attempt in range(3):
+            review_pending = False
+            stage_attempts = 0
+            while stage_attempts < 3:
+                attempt = stage_attempts
+                stage_attempts += 1
                 if phase == "Planning task" or attempt:
                     progress(f"{phase}: requesting a concrete plan ({attempt + 1}/3).", important=True)
                 planning_messages = _bounded_worker_messages(
@@ -2483,6 +2489,7 @@ class WorkerManager:
                         "Assess the actual task and evidence, not keywords. Reassess when new evidence changes it. "
                         "This selects models only inside the free pool; it grants no new permissions. "
                         + worker_readiness.INSTRUCTION +
+                        (worker_readiness.REVIEW_INSTRUCTION if review_pending else "") +
                         "No other tool is available. "
                         "Do not claim unperformed tests, commits or completion.")},
                     {"role": "user", "content": "Read-only worker context:\n" +
@@ -2496,7 +2503,7 @@ class WorkerManager:
                     prefix_count=initial_context_count, plan=worker_plan, mutations=mutation_evidence,
                     completion_feedback=completion_feedback)
                 try:
-                    planned = await complete_free(request_messages, plan_tools, "plan")
+                    planned = await complete_free(request_messages, plan_tools, "review" if review_pending else "plan")
                 except FreeUnavailable as exc:
                     provider_stalled = bool(getattr(exc, "stalled", False))
                     final_text = ("Stopped before completion: the free-model pool is unavailable during plan recording. "
@@ -2520,6 +2527,21 @@ class WorkerManager:
                     result = {"ok": False, "error": "missing_progress_explanation", "message": "Supply a nonempty explanation with confirmed findings, "
                               "remaining uncertainty and the next concrete action. Do not just repeat the initial plan."}
                 if result.get("ok"):
+                    proposed = result["plan"]["readiness"]
+                    if not review_pending and proposed["state"] in {"needs_planning", "blocked", "already_complete"}:
+                        # One model-reviewed decision, with separate bounded schema
+                        # retries. No command/file action is admitted during review.
+                        review_pending = True
+                        stage_attempts = 0
+                        worker_plan = result["plan"]
+                        readiness = proposed
+                        readiness_review = {"phase": phase, "proposed": proposed, "decision": None}
+                        correction = "Proposed early-stop assessment (unverified):\n" + json.dumps(proposed, ensure_ascii=False)
+                        transcript.append("readiness_review_proposal: " + json.dumps(proposed, ensure_ascii=False))
+                        progress("Reviewing whether the task needs an owner decision or bounded technical work.", important=True)
+                        continue
+                    if review_pending:
+                        readiness_review = {**readiness_review, "decision": proposed, "review_model": used}
                     worker_plan = result["plan"]
                     readiness = worker_plan["readiness"]
                     state = readiness["state"]
@@ -3076,6 +3098,7 @@ class WorkerManager:
                     continuation=make_continuation() if is_free and step_limited else None,
                     progress_diagnostics=progress_watch.diagnostics() if is_free else None,
                     work_readiness=readiness if is_free else None,
+                    readiness_review=readiness_review if is_free else None,
                     stall_reason="repeated_observations" if progress_stalled else None,
                     started_at=started_at,
                     finished_at=finished_at,
