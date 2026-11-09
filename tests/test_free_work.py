@@ -2542,3 +2542,19 @@ def test_failed_acceptance_prevents_worker_git_push(isolated, tmp_path, monkeypa
     results = [m for messages, _ in seen for m in messages if m.get('role') == 'tool']
     assert any('acceptance_checks_failed' in r['content'] for r in results)
     assert events(mgr)[-1]['status'] == 'incomplete'
+
+
+def test_planning_budget_failure_yields_incomplete_with_handoff(isolated, tmp_path, monkeypatch):
+    from modules import workers
+    project = tmp_path / "projects" / "planning-budget"
+    project.mkdir(parents=True)
+    completer, _ = scripted_pool([final_result('Should not execute')])
+    mgr, _, _ = manager(tmp_path, completer)
+    def cannot_fit(*args, **kwargs):
+        raise ValueError("Protected planning context cannot fit")
+    monkeypatch.setattr(workers, '_budgeted_planning_request', cannot_fit)
+    start(mgr, project)
+    event = events(mgr)[-1]
+    assert event['status'] == 'incomplete'
+    assert 'planning context cannot fit' in event['result_tail']
+    assert event['continuation'] is not None

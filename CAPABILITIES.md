@@ -6,6 +6,16 @@ workflow lands.
 
 ## Current Capabilities
 
+- Worker command safety rejects known process-termination verbs (`tskill`,
+  `taskkill`, `Stop-Process`/`spps`, `pkill`, `killall`) and direct `os.kill` /
+  `signal.kill` family calls before command approval or execution. Read-only
+  process inspection remains available. Workers must report environment locks
+  rather than kill the service or unrelated Python processes. These static
+  command checks do not sandbox arbitrary scripts, aliases or indirect code.
+  Planning-request fitting failures now yield incomplete with a saved handoff
+  instead of a crashed report; protected task evidence is not discarded.
+
+
 - Free-worker early-stop review: a proposed `needs_planning`, `blocked` or
   `already_complete` plan receives one bounded model reassessment before yielding.
   The reviewer distinguishes missing owner decisions from authorized technical

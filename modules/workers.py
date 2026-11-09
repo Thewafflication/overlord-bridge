@@ -1145,6 +1145,10 @@ def _local_agent_command_denial(command: str, folder: Path) -> str | None:
         r"\bdd\s+.*\bof=/dev/",
         r"\bshutdown\b",
         r"\breboot\b",
+        # Mechanical process-control verbs: workers must not kill the bridge or
+        # unrelated processes while repairing a project environment.
+        r"\b(?:tskill|taskkill|stop-process|spps|killall|pkill)(?:\.exe)?\b",
+        r"\b(?:os|signal)\.(?:kill|killpg|pthread_kill)\s*\(",
     )
     for pattern in denied_patterns:
         if re.search(pattern, lowered):
@@ -2498,10 +2502,15 @@ class WorkerManager:
                 ]
                 if correction:
                     request_messages.append({"role": "user", "content": correction})
-                request_messages = _budgeted_planning_request(
-                    request_messages, planning_messages, completion_evidence + completion_commands,
-                    prefix_count=initial_context_count, plan=worker_plan, mutations=mutation_evidence,
-                    completion_feedback=completion_feedback)
+                try:
+                    request_messages = _budgeted_planning_request(
+                        request_messages, planning_messages, completion_evidence + completion_commands,
+                        prefix_count=initial_context_count, plan=worker_plan, mutations=mutation_evidence,
+                        completion_feedback=completion_feedback)
+                except ValueError as exc:
+                    final_text = "Stopped before completion: planning context cannot fit without discarding protected task evidence. " + str(exc)
+                    step_limited = True
+                    return False
                 try:
                     planned = await complete_free(request_messages, plan_tools, "review" if review_pending else "plan")
                 except FreeUnavailable as exc:

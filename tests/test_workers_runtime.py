@@ -1262,3 +1262,19 @@ def test_unsupported_worker_shell_explains_retry(isolated):
     result = execute('run_command', {'shell': 'unknown', 'command': 'echo alias-ok'}, isolated)
     assert result['error'] == 'unsupported_shell'
     assert 'shell=default' in result['message']
+
+
+@pytest.mark.parametrize("command", [
+    'tskill python 2>nul || echo "tskill failed"',
+    'taskkill.exe /F /IM python.exe',
+    'Get-Process python | Stop-Process -Force',
+    'powershell -Command "Get-Process pythonw | spps -Force"',
+    'pkill -f overlord', 'killall python',
+    'import os; os.kill(1234, 9)',
+])
+def test_worker_process_termination_is_denied_before_launch(isolated, command):
+    assert _local_agent_command_denial(command, isolated) is not None
+
+
+def test_worker_readonly_process_inspection_remains_allowed(isolated):
+    assert _local_agent_command_denial('Get-Process python | Select-Object Id,ProcessName', isolated) is None
