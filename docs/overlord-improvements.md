@@ -192,7 +192,32 @@ failed, as expected for the unfinished harness. The new NVIDIA Super chat/tool
 request returned HTTP 200 in 29.64 seconds, proving account availability. Its first
 plan failed schema validation; another admitted free model supplied a valid plan
 and execution began. This proves a repaired route, not a completed project task.
-The live outcome must be recorded below when terminal; pending is not success.
+Live outcome independently verified at 2026-11-10T19:42:02Z: Mypal completed
+the production-backed digest regression harness in 46 actions and 1,532.328
+recorded seconds (25.5 minutes). Terminal report ca0940de35e84cb085014681a56967a5
+has passing owner acceptance. Commit 0353c66eea5a03eb566e6fa72de18d4b4b7662a9
+matches live origin/master; its only changed path is the owned harness.
+Manual review confirmed execution of the AST-extracted production guard, not a
+copied comparison or simulated mutant result. Independent rerun passed the real
+source and rejected removed/inverted comparisons with the same harness. Production
+source SHA remained unchanged. Proof: out/checks/mypal-independent-delivery-1.0.96.json.
+This is meaningful new regression coverage, not a new end-user product feature.
+One quality limitation remains: the harness leaves uniquely named temporary input
+files behind; cleanup belongs in a bounded project follow-up.
+
+At 2026-11-10T19:42:03Z, the post-install cohort had 10 terminal runs: 2 model
+finishes, 4 incomplete, 4 stalled. Only Mypal was acceptance-verified: 1/10 (10%),
+one unique task. Word-GPT-Plus repeated validation without new code, so its finish
+is not another delivery. All three recorded preflights initially failed; only
+one subsequently reached verified acceptance. Snapshot:
+out/monitoring/improvement-after-1.0.96.json. Compared with the earlier 1/39 baseline,
+this is an encouraging observation, not evidence of a sustained rate improvement.
+
+The next Kertex run still repeated generated mpd.h reads and status commands at
+steps 81–89, including relative/absolute path variants and denied duplicate calls.
+Local control acknowledged stop and idle at 2026-11-10T19:43Z; checkout/handoff
+were preserved. This shows the observation guard still misses some mixed loops.
+Record it for focused reproduction; do not claim the anti-loop problem solved.
 
 ## Continuing measurement policy
 
