@@ -2281,7 +2281,7 @@ class WorkerManager:
         discovery_used = False
         routing_escalated = False
         routing_failures = 0
-        progress_watch = ProgressWatch()
+        progress_watch = ProgressWatch(folder)
         progress_stalled = False
         step = 0
 

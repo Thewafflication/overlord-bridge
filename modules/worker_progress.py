@@ -1,6 +1,7 @@
 """Bounded run-wide observation memory, independent of dialogue trimming."""
 import hashlib
 import json
+import os
 from collections import Counter
 
 
@@ -9,7 +10,8 @@ def fingerprint(value):
 
 
 class ProgressWatch:
-    def __init__(self):
+    def __init__(self, folder=None):
+        self.folder = os.path.abspath(folder) if folder is not None else None
         self.seen = set()
         self.novel = 0
         self.repeated_windows = 0
@@ -27,8 +29,13 @@ class ProgressWatch:
         fields = ("ok", "error", "path", "content", "files", "matches", "stdout",
                   "stderr", "exit_code", "changed", "truncated", "message")
         evidence = {k: result[k] for k in fields if k in result}
+        # Tool results may spell the same path relative to the worker root or
+        # absolute. Normalize lexically; never resolve links or read files here.
+        if self.folder and isinstance(evidence.get("path"), str):
+            evidence["path"] = os.path.normcase(os.path.abspath(
+                os.path.join(self.folder, evidence["path"])))
         digest = fingerprint(evidence)
-        if digest not in self.seen:
+        if digest not in self.seen and len(self.seen) < 4096:
             if result.get("ok", True) and result.get("exit_code", 0) in (0, None):
                 self.novel += 1
             else:

@@ -61,3 +61,38 @@ def test_handoff_does_not_cross_folder_or_brain_and_clears_after_completion(tmp_
     assert store.previous_continuation('Free-project','project') is None
     store.record(dict(event, brain='claude'))
     assert store.previous_continuation('Free-project','project') is None
+
+
+def test_relative_absolute_and_dot_aliases_are_one_observation(tmp_path):
+    watch = ProgressWatch(tmp_path)
+    snapshot = {'available': True, 'current_head': 'abc', 'files': []}
+    for window in range(4):
+        for path in ['generated/mpd.h', str(tmp_path / 'generated/mpd.h'),
+                     './generated/mpd.h', 'generated/../generated/mpd.h'] * 3:
+            watch.observe('read_file', {'ok': True, 'path': path, 'content': 'same header'})
+        stopped, summary = watch.checkpoint(snapshot)
+        assert summary['new_observations'] == (1 if window == 0 else 0)
+        assert stopped == (window == 3)
+
+
+def test_different_files_and_changed_contents_remain_new_evidence(tmp_path):
+    watch = ProgressWatch(tmp_path)
+    for path, content in [('a.h', 'header'), ('b.h', 'header'), ('a.h', 'new header')]:
+        watch.observe('read_file', {'ok': True, 'path': path, 'content': content})
+    _, summary = watch.checkpoint({'available': False})
+    assert summary['new_observations'] == 3
+
+
+def test_full_observation_cache_cannot_renew_windows_forever():
+    watch = ProgressWatch()
+    for index in range(4096):
+        watch.observe('run_command', {'ok': True, 'stdout': str(index)})
+    snapshot = {'available': False}
+    watch.checkpoint(snapshot)
+    for window in range(3):
+        for index in range(12):
+            watch.observe('run_command', {'ok': True, 'stdout': str(4096 + index)})
+        stopped, summary = watch.checkpoint(snapshot)
+        assert stopped == (window == 2)
+        assert summary['new_observations'] == 0
+    assert len(watch.seen) == 4096

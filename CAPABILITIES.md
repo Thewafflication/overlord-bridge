@@ -6,6 +6,16 @@ workflow lands.
 
 ## Current Capabilities
 
+- Worker observation memory fails closed at its 4,096-entry capacity: uncached
+  results cannot indefinitely renew discovery. Actual repository changes still
+  reset the stall streak. New read-only findings after saturation are conservatively
+  treated as unproven progress; see the 1.0.97 regression in the improvement ledger.
+
+- Worker progress evidence normalizes relative/absolute file paths against the
+  worker root before counting new observations. Dot components and host case
+  rules apply; distinct files and changed contents remain new evidence. See
+  [measured improvements](docs/overlord-improvements.md).
+
 - Current NVIDIA Super compatibility: nemotron / nemotron-super and saved
   nvidia/nemotron-3-super-120b-a12b selections resolve to the current
   nvidia/nemotron-3.5-super-vl-120b-a12b endpoint after observed legacy HTTP404s.
