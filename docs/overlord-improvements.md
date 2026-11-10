@@ -134,4 +134,37 @@ actual passed test report, so a skip cannot satisfy it. Existing source-hash,
 commit and no-op cleanup protections remain. This is an isolation correction,
 not permission to delete owner artifacts or weaken the runtime check.
 
-1.0.95 local canonical check: 1558 passed, 2 skipped in 195.07 seconds; tools/check.py all exited zero. Release/install proof and the next live cohort are pending.
+1.0.95 local canonical check: 1558 passed, 2 skipped in 195.07 seconds; tools/check.py all exited zero. Release/install proof: ff4027b, tag1.0.95; Windows/Linux checks42859883042 and package42859883044 passed. SignedZIP SHA2569231e1f6a4bba902a7d4ada7ab44a0cf8b31c17b71f86566e1ee226ef6ebed59; trusted fingerprint unchanged. WPM install exitedzero;12installedregressions passed6.68s. All16schedules,8ownerqueueentries and4sessionfiles preserved; free mode verified. Proof out/checks/project-task-1.0.95-install-preservation.json.
+
+Secondpilot started2026-11-10T17:07:46Z (badc54e2833040acaed654d636c3494d). Preflight ran beforeplanning; firstplan targeted the observed cleanup failure. Terminalbc2fbba54cac4125a204172227358f9d was incomplete after22actions, missing finalcontract, with no verifieddelivery. This is a failed live outcome, not a synthetic success.
+
+
+## Follow-up: unavailable preferred model (1.0.96)
+
+The acceptance-first pilot received the real cleanup failure before planning,
+but ended incomplete after22 actions without a valid final result. No delivery
+is counted. Logs showed repeated OpenRouter HTTP429s and the preferred larger
+NVIDIA nvidia/nemotron-3-super-120b-a12b route returning HTTP404. Smaller fallback
+models produced invalid tool code and failed to complete the task.
+
+The public https://integrate.api.nvidia.com/v1/models catalog still lists the old
+Super ID, so catalog presence is not proof of chat availability. It also lists
+nvidia/nemotron-3.5-super-vl-120b-a12b. NVIDIA's official API reference documents
+that current endpoint and low/none/high reasoning effort:
+https://docs.api.nvidia.com/nim/reference/nvidia-nemotron-3_5-super-vl-120b-a12b-infer
+
+1.0.96 repairs the nemotron aliases and known legacy saved Super selection to
+that current route, adds its reasoning preference, and canonicalizes its provider
+IDs so the same model is not mislabeled as an independent reviewer. Reasoning
+uses the documented low setting inside the existing output cap. Existing free
+provider admission, opt-ins, limits and saved configuration stay in place. This
+requires live account validation; it is not yet a measured coding improvement.
+Eighty-seven focused provider/routing checks pass.
+
+A local API check also corrected an earlier audit assumption: xdis6.3.0 accepts
+both positional False and CPython/cpython strings for get_opcode((3,6), value).
+Do not infer a runtime regression merely from that positional argument type;
+validate the actual remap behavior. The isolated remap trial still fails its
+real reconstruction case and preserves the old temporary directory.
+
+1.0.96 canonical check:1560passed2skipped189.19s; tools/check.py all exitedzero. The current Super payload explicitly requests stream=false because the model API defaults to streaming and the harness expects one JSON response. Release/install and live current-model results pending.

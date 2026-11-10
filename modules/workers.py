@@ -251,8 +251,10 @@ _NVIDIA_MODEL_ALIASES = {
     "llama-3.3-70b": "meta/llama-3.3-70b-instruct",
     "llama-3.1-8b": "meta/llama-3.1-8b-instruct",
     "llama-4-maverick": "meta/llama-4-maverick-17b-128e-instruct",
-    "nemotron": "nvidia/nemotron-3-super-120b-a12b",
-    "nemotron-super": "nvidia/nemotron-3-super-120b-a12b",
+    "nemotron": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+    "nemotron-super": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+    # Compatibility migration for saved Super selections returning HTTP404.
+    "nvidia/nemotron-3-super-120b-a12b": "nvidia/nemotron-3.5-super-vl-120b-a12b",
     "nemotron-lightning": "nvidia/nemotron-3.5-lightning-30b-a3b",
     "nemotron-ultra": "nvidia/nemotron-3-ultra-550b-a55b",
     "nemotron-nano": "nvidia/nemotron-3-nano-30b-a3b",
@@ -264,6 +266,9 @@ _NVIDIA_MODEL_ALIASES = {
 # are merged into the worker payload after defaults so the published sampling and
 # template knobs win.
 _NVIDIA_MODEL_PAYLOAD_OVERRIDES: dict[str, dict[str, Any]] = {
+    "nvidia/nemotron-3.5-super-vl-120b-a12b": {
+        "reasoning_effort": "low", "max_tokens": 8192, "stream": False,
+    },
     "nvidia/nemotron-3.5-lightning-30b-a3b": {
         "temperature": 1.0, "top_p": 0.95, "max_tokens": 4096,
         "chat_template_kwargs": {"enable_thinking": False},

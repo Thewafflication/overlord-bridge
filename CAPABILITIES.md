@@ -6,6 +6,15 @@ workflow lands.
 
 ## Current Capabilities
 
+- Current NVIDIA Super compatibility: nemotron / nemotron-super and saved
+  nvidia/nemotron-3-super-120b-a12b selections resolve to the current
+  nvidia/nemotron-3.5-super-vl-120b-a12b endpoint after observed legacy HTTP404s.
+  It is ranked as a reasoning model and uses documented low reasoning effort
+  within the existing output budget. Cross-provider IDs for this same model
+  count as the same reviewer family. This keeps the existing provider, opt-ins,
+  free-mode limits and saved settings; it does not claim a coding benchmark win.
+
+
 - Owner acceptance preflight: ready queue tasks run their actual checks before
   the first model plan. The observed baseline is pinned with the owner contract;
   stale inferred continuation plans are omitted for these tasks, while project
@@ -399,6 +408,12 @@ workflow lands.
   Like local-agent, these are one-shot workers, not resumable sessions;
   `model` and `files` hints work the same way.
 - **NVIDIA model selection — which model for which worker task.** If unsure,
+  **2026-11-10 repair:** the configured legacy Super chat route returned HTTP404
+  in this installation even while its old catalog entry remained listed. The
+  nemotron aliases now use nvidia/nemotron-3.5-super-vl-120b-a12b, listed in the
+  public NVIDIA model catalog and official API reference. Live qualification is
+  recorded in docs/overlord-improvements.md; catalog listing alone is not proof
+  that a particular account can use it.
   **2026-10-11 update:** the default and `gpt-oss` alias now use
   `openai/gpt-oss-20b`; the 120B endpoint has retired. The free pool uses
   GPT-OSS 20B, Nemotron 3 Super and Nemotron 3.5 Lightning; all three passed

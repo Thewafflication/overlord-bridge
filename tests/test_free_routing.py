@@ -35,3 +35,13 @@ def test_difficulty_is_validated_and_retained_without_requiring_legacy_plans():
     assert _worker_plan_result(dict(plan, difficulty=assessment))['plan']['difficulty'] == assessment
     for invalid in ({'level': [], 'reason':'x'}, {'level':'complex','reason':''}, 'complex'):
         assert not _worker_plan_result(dict(plan, difficulty=invalid))['ok']
+
+
+def test_current_super_is_preferred_for_hard_work_and_cross_provider_is_same_reviewer():
+    strong = ModelSpec('nvidia', 'nvidia/nemotron-3.5-super-vl-120b-a12b')
+    small = ModelSpec('nvidia', 'openai/gpt-oss-20b')
+    assert WorkerRouting('complex').rank(strong) < WorkerRouting('complex').rank(small)
+    assert WorkerRouting('routine').rank(small) < WorkerRouting('routine').rank(strong)
+    reviewer = WorkerRouting('complex', 'review', previous_model=strong.key)
+    same_model = ModelSpec('openrouter', 'nvidia/nemotron-3.5-super-vl:free')
+    assert reviewer.rank(same_model)[1] is True

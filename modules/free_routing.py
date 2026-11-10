@@ -5,7 +5,7 @@ from dataclasses import dataclass
 LEVELS = {"routine", "standard", "complex"}
 # Conservative preferences, not benchmark claims. Unknown catalog models stay
 # eligible between known reasoning choices and known lightweight choices.
-REASONING = {"gpt-oss-120b", "nemotron-3-super-120b-a12b",
+REASONING = {"nemotron-3.5-super-vl", "nemotron-3.5-super-vl-120b-a12b", "gpt-oss-120b", "nemotron-3-super-120b-a12b",
              "nemotron-3-ultra-550b-a55b"}
 LIGHTWEIGHT = {"gpt-oss-20b", "nemotron-3.5-lightning-30b-a3b",
                "gemini-3.5-flash-lite", "gemini-3.1-flash-lite",
@@ -13,7 +13,9 @@ LIGHTWEIGHT = {"gpt-oss-20b", "nemotron-3.5-lightning-30b-a3b",
 
 
 def family(key):
-    return key.split(":", 1)[-1].removesuffix(":free").split("/")[-1]
+    name = key.split(":", 1)[-1].removesuffix(":free").split("/")[-1]
+    # These provider IDs advertise the same current Super model.
+    return "nemotron-3.5-super-vl" if name == "nemotron-3.5-super-vl-120b-a12b" else name
 
 
 @dataclass(frozen=True)

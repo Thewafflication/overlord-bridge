@@ -294,14 +294,17 @@ def test_default_nvidia_pool_uses_current_models_and_leaves_room_for_answers(tmp
     specs = parse_models(free_brain.DEFAULT_MODELS)
     nvidia = [s for s in specs if s.provider == "nvidia"]
     assert [s.model for s in nvidia] == [
-        "openai/gpt-oss-20b", "nvidia/nemotron-3-super-120b-a12b",
+        "openai/gpt-oss-20b", "nvidia/nemotron-3.5-super-vl-120b-a12b",
         "nvidia/nemotron-3.5-lightning-30b-a3b",
     ]
     assert parse_models("gpt-oss-120b")[0].model == "openai/gpt-oss-120b"
     brain = make(tmp_path, monkeypatch, [], models=nvidia)
     for spec in nvidia[1:]:
         payload = brain._payload(spec, [{"role": "user", "content": "Hello"}])
-        assert payload["chat_template_kwargs"] == {"enable_thinking": False}
+        if spec.model == "nvidia/nemotron-3.5-super-vl-120b-a12b":
+            assert payload["reasoning_effort"] == "low" and payload["stream"] is False
+        else:
+            assert payload["chat_template_kwargs"] == {"enable_thinking": False}
         assert "reasoning_budget" not in payload
         assert payload["max_tokens"] == brain.max_tokens
 
@@ -863,3 +866,9 @@ def test_planning_wire_schema_requires_the_explanation_that_admission_requires(t
     execution=brain._payload(ModelSpec(provider,model),[],all_tools)
     assert execution['tools']==original
     assert execution['tool_choice']=='auto'
+
+
+def test_saved_unavailable_super_selection_migrates_and_deduplicates():
+    specs = parse_models('nvidia:nemotron,nvidia:nemotron-super,nvidia:nvidia/nemotron-3-super-120b-a12b')
+    assert specs == [ModelSpec('nvidia', 'nvidia/nemotron-3.5-super-vl-120b-a12b')]
+    assert all(s.provider == 'nvidia' for s in specs)
