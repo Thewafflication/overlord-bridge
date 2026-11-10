@@ -894,6 +894,14 @@ def _local_agent_tools() -> list[dict[str, Any]]:
         {
             "type": "function",
             "function": {
+                "name": "check_acceptance",
+                "description": "Run the owner-assigned task's exact acceptance checks and return observed failures. Use before edits to identify the real blocker and after edits to validate. Does not mark work complete or publish it; completion checks run again independently.",
+                "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+            },
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "run_python",
                 "description": "Execute Python code using the existing project .venv Python interpreter (bridge interpreter fallback) in the project folder. Pass multiline code directly; no shell quoting, heredocs, or python PATH lookup needed. Stdin is closed: pass values in code instead of using input(). Uses the same command restrictions as run_command.",
                 "parameters": {
@@ -2398,6 +2406,18 @@ class WorkerManager:
                     duplicate_result = {"ok": False, "error": "acceptance_checks_failed",
                                         "acceptance": gate,
                                         "message": "Repair required checks or report the concrete blocker before pushing."}
+            if duplicate_result is None and tool_name == "check_acceptance":
+                argument_error = _worker_argument_error(tool_name, arguments)
+                if argument_error:
+                    duplicate_result = argument_error
+                elif not project_task:
+                    duplicate_result = {"ok": False, "error": "no_owner_acceptance_task"}
+                else:
+                    async def run_task_check(tool, args):
+                        return await self._execute_checked(brain, folder, tool, args)
+                    acceptance = await project_tasks.validate(project_task, run_task_check)
+                    duplicate_result = {"ok": acceptance["passed"], "acceptance": acceptance,
+                        "message": "Observed owner checks; completion/publication are checked again independently."}
             result = (duplicate_result if duplicate_result is not None
                       else await self._execute_checked(brain, folder, tool_name, arguments))
             # Keep commands and their results independently of the rolling transcript:
@@ -2524,9 +2544,14 @@ class WorkerManager:
                 if used:
                     free_models.append(used)
                 result = _worker_plan_response(planned)
+                if result.get("ok") and project_task:
+                    # Ready is an explicit owner queue state, not a natural-language
+                    # classifier decision. The model still plans and can report a
+                    # concrete blocked outcome; acceptance remains authoritative.
+                    result["plan"]["readiness"] = worker_readiness.owner_contract(project_task)
                 if result.get("ok"):
                     readiness_issues = worker_readiness.issues(result["plan"].get("readiness"), required=True)
-                    if (phase in ("Planning task", "Deliverable readiness checkpoint") and not readiness_issues
+                    if (not project_task and phase in ("Planning task", "Deliverable readiness checkpoint") and not readiness_issues
                             and result["plan"]["readiness"]["state"] == "ready"
                             and all(item["status"] == "completed" for item in result["plan"]["plan"])):
                         readiness_issues.append("ready requires at least one unfinished step; otherwise choose already_complete")
@@ -2671,11 +2696,20 @@ class WorkerManager:
                         session=sid, status="skipped", reason="no_ready_project_task"))
                     return
                 if project_task:
-                    messages.append({"role": "system", "content":
-                        "The owner assigned this concrete project task. Complete its requirement and "
-                        "deliverable before selecting any other work. The harness runs its acceptance "
-                        "checks independently before accepting completion. Failed checks require repair "
-                        "or an honest blocked outcome. Task definition: " + json.dumps(project_task)})
+                    contract = {k: project_task[k] for k in ("id", "requirement", "task")}
+                    contract["checks"] = [check["name"] for check in project_task["checks"]]
+                    if project_task.get("publication"):
+                        contract["publication"] = project_task["publication"]
+                    messages.insert(2, {"role": "system", "content":
+                        "The owner assigned this READY executable contract. Do not replace it with "
+                        "needs_planning because work or diagnosis remains. Plan the implementation, "
+                        "call check_acceptance to obtain actual failing checks, repair, validate and commit. "
+                        "Report a concrete blocked outcome if useful authorized progress is impossible. "
+                        "Acceptance code is held by the harness, not copied into model history. "
+                        "Failed checks prevent completion/publication. Contract: " + json.dumps(contract)})
+                    # Pin the actual owner contract; optional orientation and stale
+                    # handoffs may be trimmed without evicting this instruction.
+                    initial_context_count = 3
 
             if is_free and not answer_only:
                 try:
@@ -2755,7 +2789,8 @@ class WorkerManager:
                     "max_tokens": max_tokens,
                 }
                 if not answer_only:
-                    payload["tools"] = _local_agent_tools()
+                    payload["tools"] = [t for t in _local_agent_tools()
+                        if project_task or t["function"]["name"] != "check_acceptance"]
                     payload["tool_choice"] = "auto"
                 if is_openrouter:
                     payload["provider"] = free_provider_policy()
@@ -3117,6 +3152,12 @@ class WorkerManager:
                     result_tail=report_tail,
                     project_task_id=project_task["id"] if project_task else None,
                     acceptance=acceptance,
+                    action_steps=step,
+                    readiness_source="owner_task" if project_task else "model",
+                    delivery_status=("verified" if not step_limited and not provider_stalled and not progress_stalled
+                        and acceptance and acceptance["passed"] else
+                        "model_reviewed" if not step_limited and not provider_stalled and not progress_stalled
+                        else "unfinished"),
                     result_truncated=report_truncated,
                     effective_local_agent_model=amodel,
                     local_agent_api_base=api_base,

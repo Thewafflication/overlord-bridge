@@ -67,3 +67,12 @@ def issues(value, required=False):
         elif (key in ("evidence", "reason") or value["state"] == "ready") and not value[key].strip():
             errors.append(f"readiness.{key} must explain the actual task")
     return errors
+
+
+def owner_contract(task):
+    """The owner's explicit ready queue supplies admission, never completion."""
+    return {"state": "ready", "requirement": task["requirement"][:1000],
+            "deliverable": task["task"][:1000],
+            "acceptance": "; ".join(check["name"] for check in task["checks"])[:1000],
+            "evidence": "Owner queue task " + task["id"] + " is ready; run check_acceptance for current observed results.",
+            "reason": "Owner-defined executable task; pending diagnosis is authorized work. Completion requires independent acceptance."}

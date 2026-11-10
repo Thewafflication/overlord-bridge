@@ -6,6 +6,17 @@ workflow lands.
 
 ## Current Capabilities
 
+- Executable ready owner contracts: queue readiness controls admission; model
+  planning cannot downgrade an assigned task merely because work remains.
+  `check_acceptance` runs the exact owner checks on demand and returns failures.
+  Compact task contracts stay pinned while optional orientation may be trimmed;
+  acceptance implementation code stays outside model context. Completion and
+  publication still independently rerun checks. Reports label verified,
+  model-reviewed and unfinished outcomes. `python -m modules.worker_outcomes`
+  produces deduplicated rates and unique accepted task IDs. See
+  [measured improvements](docs/overlord-improvements.md).
+
+
 - Worker command safety rejects known process-termination verbs (`tskill`,
   `taskkill`, `Stop-Process`/`spps`, `pkill`, `killall`) and direct `os.kill` /
   `signal.kill` family calls before command approval or execution. Read-only

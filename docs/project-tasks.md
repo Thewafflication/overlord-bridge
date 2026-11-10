@@ -9,7 +9,9 @@ tool and its normal arguments. The earliest ready task for the project is used.
 Projects without queue entries continue using their existing dispatch tasks.
 
 The owner controls the commands. They run through the existing command tools
-and approval policy. The worker receives the full definition before planning.
+and approval policy. The worker receives a pinned compact contract (ID, requirement, deliverable, check names and publication target) before planning. Exact check code stays in the harness. It is available through the `check_acceptance` tool, which executes the unchanged commands and returns their actual results. A probe does not complete the task or authorize publication.
+An explicitly ready owner task supplies readiness; a model planning assessment cannot downgrade it because diagnosis or implementation remains. The model still plans, selects difficulty and can report a concrete blocked outcome. Other projects retain model readiness discovery. Optional orientation/handoff text may be trimmed; the owner contract remains pinned.
+
 Checks execute before recognizable ordinary `git push` commands and again on
 proposed completion. Exit zero, successful execution and absence of timeout are
 required. A failed check rejects completion even when the model reviewer says
@@ -37,3 +39,10 @@ Arbitrary Python or shell wrappers can execute other operations. This mechanism
 does not sandbox project code or prove that an owner-selected test is sufficient.
 The rollout starts with WSH so its results can guide task definitions for the
 remaining projects.
+
+Reports distinguish `delivery_status=verified` (finished with passing owner acceptance),
+`model_reviewed` (finished without independent owner checks), and `unfinished`.
+`action_steps` and `readiness_source` support outcome accounting. Run
+`python -m modules.worker_outcomes --reports <worker_reports> --since <UTC ISO> --output <json>`
+for deduplicated terminal totals, verified rate and unique accepted task IDs.
+A passing configured check is not independent proof of overall test quality or a new product feature.

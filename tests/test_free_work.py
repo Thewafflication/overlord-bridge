@@ -2558,3 +2558,70 @@ def test_planning_budget_failure_yields_incomplete_with_handoff(isolated, tmp_pa
     assert event['status'] == 'incomplete'
     assert 'planning context cannot fit' in event['result_tail']
     assert event['continuation'] is not None
+
+
+@pytest.mark.parametrize('proposed', ['needs_planning', 'blocked', 'discovery', 'already_complete'])
+def test_ready_owner_contract_reaches_checks_and_verified_delivery(isolated, tmp_path, proposed):
+    folder = isolated / 'ready-contract'
+    folder.mkdir()
+    task = {'id': 'bounded', 'folder': str(folder), 'state': 'ready',
+            'requirement': 'Produce accepted output', 'task': 'Repair result.txt, validate and commit owned work',
+            'checks': [{'name': 'Actual result', 'tool': 'run_python',
+                        'arguments': {'code': "from pathlib import Path; assert Path('result.txt').read_text() == 'accepted'"}}]}
+    queue = tmp_path / 'project-tasks.json'
+    queue.write_text(json.dumps({'version': 1, 'tasks': [task]}))
+    pool, seen = scripted_pool([call('check_acceptance', {}),
+        call('write_file', {'path': 'result.txt', 'content': 'accepted'}),
+        call('check_acceptance', {}), final_result('Validated')], plans=[readiness_plan(proposed)])
+    mgr, _, _ = manager(tmp_path, pool, project_tasks_path=queue)
+    start(mgr, folder)
+    event = events(mgr)[-1]
+    assert event['status'] == 'finished'
+    assert event['delivery_status'] == 'verified' and event['readiness_source'] == 'owner_task'
+    assert event['acceptance']['passed'] and event['action_steps'] > 0
+    replies = [m['content'] for messages, _ in seen for m in messages if m.get('role') == 'tool']
+    assert any('"passed": false' in text for text in replies)
+    assert any('"passed": true' in text for text in replies)
+
+
+def test_owner_contract_remains_pinned_without_embedding_acceptance_code(isolated, tmp_path):
+    folder = isolated / 'pinned-contract'
+    folder.mkdir()
+    (folder / 'README.md').write_text('Orientation material. ' * 700)
+    queue = tmp_path / 'project-tasks.json'
+    secret_marker = 'EXACT_CHECK_IMPLEMENTATION_STAYS_IN_HARNESS'
+    task = {'id': 'pin-owner-contract', 'folder': str(folder), 'state': 'ready',
+            'requirement': 'Keep this owner requirement', 'task': 'Inspect and validate bounded work',
+            'checks': [{'name': 'Preserved check', 'tool': 'run_python',
+                        'arguments': {'code': '# ' + secret_marker + '\n' + '# evidence\n' * 900 + 'print("accepted")'}}]}
+    queue.write_text(json.dumps({'version': 1, 'tasks': [task]}))
+    pool, _ = scripted_pool([*context_pressure_actions(folder), final_result('Validated')])
+    mgr, _, _ = manager(tmp_path, pool, project_tasks_path=queue)
+    start(mgr, folder)
+    assert events(mgr)[-1]['status'] == 'finished'
+    assert len(pool.planning) >= 2
+    for request in pool.planning:
+        assert len(json.dumps(request, ensure_ascii=False)) <= 48000
+        assert secret_marker not in json.dumps(request)
+        inner = json.loads(request[1]['content'].split('\n', 1)[1])
+        assert inner[2]['role'] == 'system' and 'pin-owner-contract' in inner[2]['content']
+
+
+def test_acceptance_probe_cannot_grant_completion_after_later_bad_edit(isolated, tmp_path):
+    folder = isolated / 'probe-not-completion'
+    folder.mkdir()
+    (folder / 'result.txt').write_text('accepted')
+    task = {'id': 'probe', 'folder': str(folder), 'state': 'ready', 'requirement': 'Keep accepted output',
+            'task': 'Validate final output', 'checks': [{'name': 'Actual output', 'tool': 'run_python',
+            'arguments': {'code': "from pathlib import Path; assert Path('result.txt').read_text() == 'accepted'"}}]}
+    queue = tmp_path / 'project-tasks.json'
+    queue.write_text(json.dumps({'version': 1, 'tasks': [task]}))
+    pool, _ = scripted_pool([call('check_acceptance', {}),
+        call('write_file', {'path': 'result.txt', 'content': 'wrong'}), final_result('All passed'),
+        {'content': json.dumps({'final': 'Final check failed', 'outcome': 'blocked'})}])
+    mgr, _, _ = manager(tmp_path, pool, project_tasks_path=queue)
+    start(mgr, folder)
+    event = events(mgr)[-1]
+    assert event['status'] == 'incomplete' and event['delivery_status'] == 'unfinished'
+    assert event['acceptance']['passed'] is False
+    assert json.loads(queue.read_text())['tasks'][0]['state'] == 'ready'
