@@ -265,3 +265,17 @@ read-only evidence after capacity no longer extends discovery. This is a bounded
 4096-observation safety policy; checkout changes still reset the stall streak.
 
 Validation: canonical checks exited zero: 1,563 passed, one skipped in 196.92s. After the saturation addition, eight focused checks, lint and a fresh wheel build passed. Live completion improvement remains unmeasured.
+
+Deployment: code commit 8e62d1e and tag v1.0.97 pushed. GitHub Project checks
+42911753567 and signed package build 42911753649 passed. WPM trusted-signature
+verification passed; archive SHA256:
+552531a2b0633be7deb15b77e7266b90b29f28ae578bb4b8db2487b5165abef8.
+Installation exited zero. Three regressions rerun against the installed module
+passed. Local control acknowledged v1.0.97, instance
+72d5b5f561a8404f8c2763290dfa6950, with scheduled Free-wsp work active.
+All 16 schedule IDs, prompts, enabled flags and intervals matched preserved
+pre-install state. The initial exact schedule hash check failed because normal
+scheduler last_dispatch/next_run fields advanced; those were the only differing
+fields. The project task queue hash stayed unchanged. Proof:
+out/checks/1.0.97-installed-verification.json. No new live deliverable or cohort
+rate gain is claimed by this release.
