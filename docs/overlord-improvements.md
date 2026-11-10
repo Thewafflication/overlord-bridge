@@ -31,12 +31,14 @@ Machine snapshot: out/monitoring/improvement-baseline-1.0.93.json (local audit a
 | Version | Evidence and change | Verified result / limitation |
 | --- | --- | --- |
 | 1.0.87 | Difficulty routing within admitted free models | Routing preferences tested; no measured product-delivery improvement established. |
-| 1.0.88–1.0.89 | Repeated discovery windows and continuation handoffs | Automatic unfinished stops observed; novel output and repeated rewrites can still prolong runs. |
+| 1.0.88â€“1.0.89 | Repeated discovery windows and continuation handoffs | Automatic unfinished stops observed; novel output and repeated rewrites can still prolong runs. |
 | 1.0.90 | Structured readiness assessment | Prevented unsupported completion; models repeatedly confused pending work with missing owner decisions. |
 | 1.0.91 | Explicit PowerShell script invocation | Script launch fixture executes and returns real exit status; arbitrary indirect Python subprocess code is outside rewriting. |
 | 1.0.92 | Bounded second assessment of readiness stops | Some owner work proceeded; repeated false needs-planning outcomes remained. |
 | 1.0.93 | Reject observed process-kill verbs; preserve oversized-plan handoff | 1550 tests passed, both CI platforms passed, installed verified. Actual incomplete budget outcomes observed; static command checks are not a sandbox. |
 | 1.0.94 | Ready owner contracts, pinned compact task context, check_acceptance, outcome accounting | Controlled before/after below; live delivery cohort recorded after installation. |
+| 1.0.95 | Execute acceptance before planning; pin actual failure and project instructions | 1,558 tests passed; live Pydecipher pilot remained incomplete after 22 actions. |
+| 1.0.96 | Repair preferred NVIDIA Super route and explicit non-streaming response profile | 1,560 tests passed; installed checks 15/15; live route HTTP 200, first plan rejected. No delivery improvement claimed. |
 
 ## 1.0.94 experiments
 
@@ -103,17 +105,16 @@ schedule or task was created. Pilot started 2026-11-10T16:32:32Z, event
 c08e10dfb0b7449b9bba8113f05b516f, owner task
 pydecipher-remap-committed-cleanup-1. Cohort start: 2026-11-10T16:32:24.597783Z.
 
-The pilot reached execution instead of its previous immediate unready stop.
-Final acceptance and commit evidence are still pending. Do not interpret the
-deterministic fixture results or a started live run as completed project work.
-Update this section with release commit, CI, installed checks, cohort timestamps,
-actual task IDs, commits, independent checks and remaining blockers.
+The pilot reached execution instead of its previous immediate unready stop,
+but was interrupted for the follow-up deployment after 105 actions. Its terminal
+report is 8802288edd734ecebc81e45bf94f7a9e. No verified delivery is counted.
+Do not interpret deterministic fixtures or a started run as completed project work.
 
 
 ## Follow-up: acceptance-first execution (1.0.95)
 
 The 1.0.94 live pilot exposed an insufficient change: admission worked, but the
-worker spent about40 actions rediscovering xdis interpreter/API facts and
+worker spent about 40 actions rediscovering xdis interpreter/API facts and
 editing from stale assumptions, without calling check_acceptance. This is not
 counted as successful delivery or evidence of a higher real completion rate.
 
@@ -142,9 +143,9 @@ Secondpilot started2026-11-10T17:07:46Z (badc54e2833040acaed654d636c3494d). Pref
 ## Follow-up: unavailable preferred model (1.0.96)
 
 The acceptance-first pilot received the real cleanup failure before planning,
-but ended incomplete after22 actions without a valid final result. No delivery
-is counted. Logs showed repeated OpenRouter HTTP429s and the preferred larger
-NVIDIA nvidia/nemotron-3-super-120b-a12b route returning HTTP404. Smaller fallback
+but ended incomplete after 22 actions without a valid final result. No delivery
+is counted. Logs showed repeated OpenRouter HTTP 429s and the preferred larger
+NVIDIA nvidia/nemotron-3-super-120b-a12b route returning HTTP 404. Smaller fallback
 models produced invalid tool code and failed to complete the task.
 
 The public https://integrate.api.nvidia.com/v1/models catalog still lists the old
@@ -167,4 +168,43 @@ Do not infer a runtime regression merely from that positional argument type;
 validate the actual remap behavior. The isolated remap trial still fails its
 real reconstruction case and preserves the old temporary directory.
 
-1.0.96 canonical check:1560passed2skipped189.19s; tools/check.py all exitedzero. The current Super payload explicitly requests stream=false because the model API defaults to streaming and the harness expects one JSON response. Release/install and live current-model results pending.
+1.0.96 canonical check: 1,560 passed, 2 skipped in 189.19 seconds;
+tools/check.py all exited zero. The Super payload explicitly requests stream=false
+because the model API defaults to streaming and the harness expects one JSON response.
+
+Deployment: commit f4f5f4f, tag 1.0.96. Project checks 42866364225 and package
+build 42866364313 passed. WPM verified the trusted signature and SHA256
+dfe3d5e781b03ac8ace3d5ec5472f053506eb435bde428c7c5e57f1c58998018.
+Installation exited zero. All 15 installed regression checks passed in 6.11 seconds.
+The first attempt used system Python without Telegram dependencies; it failed
+collection, then passed using the repository test environment against installed
+modules. This was a verification-environment failure, not a hidden passing result.
+
+Preservation proof: out/checks/project-task-1.0.96-install-preservation.json.
+All 16 existing schedules remain active at 7,200-second intervals, with original
+IDs and prompts. Eight owner queue entries and four sessions survived. Settings
+were checked by metadata only; secret contents were not read. Online instance
+8804de7a41c04a9e94cf813249abbe68 reports version 1.0.96 and active brain free.
+
+The existing Mypal schedule was moved first while stopped; the other 15 schedules
+were unchanged. Cohort start: 2026-11-10T17:44:04.947524Z. The actual preflight
+failed, as expected for the unfinished harness. The new NVIDIA Super chat/tool
+request returned HTTP 200 in 29.64 seconds, proving account availability. Its first
+plan failed schema validation; another admitted free model supplied a valid plan
+and execution began. This proves a repaired route, not a completed project task.
+The live outcome must be recorded below when terminal; pending is not success.
+
+## Continuing measurement policy
+
+For each new terminal report, retain the task ID, baseline check results, final
+acceptance, action count, recorded duration, local commit and required remote SHA.
+Review actual changed code and tests before describing a new product deliverable.
+Count unique accepted task IDs separately from repeated verification runs and
+owner-file recoveries. Keep maintenance interruptions separate from autonomous
+failures when comparing cohorts. A small pilot is not comparable to the whole
+39-run baseline; report both denominators rather than implying a global rate gain.
+
+The durable cursor and inventory live in out/monitoring/overlord-project-work.json.
+Use modules.worker_outcomes for rotated-event deduplication and machine snapshots.
+Keep this document current when a repair, release, experiment or failed pilot adds
+evidence. Do not release cosmetic ledger-only updates.
