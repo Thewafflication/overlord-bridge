@@ -46,3 +46,11 @@ Reports distinguish `delivery_status=verified` (finished with passing owner acce
 `python -m modules.worker_outcomes --reports <worker_reports> --since <UTC ISO> --output <json>`
 for deduplicated terminal totals, verified rate and unique accepted task IDs.
 A passing configured check is not independent proof of overall test quality or a new product feature.
+
+Before the first owner-task model plan, the harness runs an acceptance preflight
+through the same approval and safety path and pins the bounded observed results.
+Stale model-generated continuation plans are omitted for a fresh executable
+contract; source orientation remains available and project AGENTS.md stays pinned.
+A failing preflight is a repair target, not a model-readiness downgrade. A passing
+preflight does not automatically complete a task or waive final revalidation.
+Reports keep acceptance_baseline separately from final acceptance results.

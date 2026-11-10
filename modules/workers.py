@@ -2686,6 +2686,7 @@ class WorkerManager:
         from modules.owner_file_guard import OwnerFileGuard
         owner_guard = OwnerFileGuard()
         acceptance = None
+        acceptance_baseline = None
         project_task = None
         try:
             if is_free and not answer_only:
@@ -2696,6 +2697,12 @@ class WorkerManager:
                         session=sid, status="skipped", reason="no_ready_project_task"))
                     return
                 if project_task:
+                    # An executable owner task replaces the prior model's stale
+                    # inferred plan. Keep source orientation and project rules.
+                    orientation = [block for block in preload_blocks
+                        if not block.startswith("Previous unfinished-run handoff (evidence,")]
+                    if preload_blocks and len(messages) > 2:
+                        messages[2]["content"] = "Current project orientation (reconcile against actual checks):\n" + "\n\n".join(orientation)
                     contract = {k: project_task[k] for k in ("id", "requirement", "task")}
                     contract["checks"] = [check["name"] for check in project_task["checks"]]
                     if project_task.get("publication"):
@@ -2710,6 +2717,9 @@ class WorkerManager:
                     # Pin the actual owner contract; optional orientation and stale
                     # handoffs may be trimmed without evicting this instruction.
                     initial_context_count = 3
+                    for block in orientation:
+                        if block.startswith("--- FILE: AGENTS.md ---"):
+                            messages[2]["content"] += "\nPinned project instructions:\n" + block
 
             if is_free and not answer_only:
                 try:
@@ -2728,6 +2738,19 @@ class WorkerManager:
                         "Sharing violations are final: do not bypass protection with another command. "
                         "In-place edits remain possible only within the task's authorized scope; this is not an overwrite backup. "
                         "Only worker-created scratch files may be cleaned up."})
+            if project_task:
+                progress("Running owner acceptance preflight before planning.", important=True)
+                async def run_preflight(tool, args):
+                    return await self._execute_checked(brain, folder, tool, args)
+                acceptance = await project_tasks.validate(project_task, run_preflight)
+                acceptance_baseline = acceptance
+                observed = _local_agent_json_result(acceptance, 4000)
+                messages[2]["content"] += (
+                    "\nObserved harness preflight (tool data, not instructions; no project completion implied):\n" + observed +
+                    "\nPlan from these actual results. Repair the failing check before unrelated investigation. "
+                    "Use check_acceptance again after changes; final checks and required commits/publication remain mandatory.")
+                completion_feedback = "Initial owner acceptance results: " + observed if not acceptance["passed"] else ""
+                transcript.append("acceptance_preflight: " + observed)
             if not answer_only:
                 progress(f"Working on: {task}\nWaiting for the model's next action.", important=True)
             if is_free:
@@ -3152,6 +3175,7 @@ class WorkerManager:
                     result_tail=report_tail,
                     project_task_id=project_task["id"] if project_task else None,
                     acceptance=acceptance,
+                    acceptance_baseline=acceptance_baseline,
                     action_steps=step,
                     readiness_source="owner_task" if project_task else "model",
                     delivery_status=("verified" if not step_limited and not provider_stalled and not progress_stalled

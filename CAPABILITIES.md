@@ -6,6 +6,15 @@ workflow lands.
 
 ## Current Capabilities
 
+- Owner acceptance preflight: ready queue tasks run their actual checks before
+  the first model plan. The observed baseline is pinned with the owner contract;
+  stale inferred continuation plans are omitted for these tasks, while project
+  AGENTS.md instructions stay pinned. Reports retain acceptance_baseline for
+  before/after verification; worker_outcomes counts preflight runs and initially
+  failing contracts. Failed baseline checks guide repair and do not waive final
+  acceptance, commit or publication requirements.
+
+
 - Executable ready owner contracts: queue readiness controls admission; model
   planning cannot downgrade an assigned task merely because work remains.
   `check_acceptance` runs the exact owner checks on demand and returns failures.

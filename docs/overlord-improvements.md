@@ -85,7 +85,53 @@ that overall delivery rate improved.
 ## Deployment and live observations
 
 Local canonical check: 1557 passed, 2 skipped in 197.56 seconds; tools/check.py all exited zero.
-1.0.94 release/install verification and the post-install pilot are pending.
-Do not interpret the deterministic fixture results as completed project work.
+1.0.94 is committed and pushed as ac1d397, tagged and released. Project checks
+42854350091 passed on Windows and Linux; signed-package build 42854349888 passed.
+Signed ZIP SHA256: 6fde0dbc20e40e90d20227a03642dce40ac1698726df0e0988fb33d06684c7c4.
+Trusted signing fingerprint: 6c21ebda96b16bfa64700d28fcdeb20dc4b19de448a723a970ac09b720f04b1d.
+
+Normal local-control stop acknowledged idle, shutdown left no installed Python
+process, WPM installed successfully, and 11 installed regression checks passed in
+12.46 seconds. All 16 original schedules retained their prompts and 7200-second
+intervals; owner queues and four session files were preserved. Settings size was
+unchanged (secret contents were not read); runtime free mode was verified.
+Preservation proof: out/checks/project-task-1.0.94-install-preservation.json.
+
+The existing Pydecipher schedule 2b692635e7db was prioritized while offline after
+preservation verification; the other 15 schedule records were unchanged. No new
+schedule or task was created. Pilot started 2026-11-10T16:32:32Z, event
+c08e10dfb0b7449b9bba8113f05b516f, owner task
+pydecipher-remap-committed-cleanup-1. Cohort start: 2026-11-10T16:32:24.597783Z.
+
+The pilot reached execution instead of its previous immediate unready stop.
+Final acceptance and commit evidence are still pending. Do not interpret the
+deterministic fixture results or a started live run as completed project work.
 Update this section with release commit, CI, installed checks, cohort timestamps,
 actual task IDs, commits, independent checks and remaining blockers.
+
+
+## Follow-up: acceptance-first execution (1.0.95)
+
+The 1.0.94 live pilot exposed an insufficient change: admission worked, but the
+worker spent about40 actions rediscovering xdis interpreter/API facts and
+editing from stale assumptions, without calling check_acceptance. This is not
+counted as successful delivery or evidence of a higher real completion rate.
+
+1.0.95 runs actual owner acceptance before planning, pins the observed result,
+omits the prior inferred model plan for these explicit owner contracts, and
+pins project AGENTS.md instructions. acceptance_baseline is retained independently
+of final acceptance. Passing the baseline never waives completion/publication.
+The new preflight regression fails against ac1d397 (1.0.94) and passes with the
+follow-up; twelve contract/outcome focused checks pass. Artifacts:
+out/checks/owner-preflight-before.txt and owner-preflight-focused.txt.
+
+An audit also found a flaw in the monitor-authored Pydecipher acceptance: its
+old fixed temporary directory already exists and must be preserved. The updated
+check redirects only temporary-directory allocation to a fresh isolated root,
+runs the same real pytest test_data3 with unchanged assertions, and requires the
+test itself to remove that directory before harness cleanup. It requires an
+actual passed test report, so a skip cannot satisfy it. Existing source-hash,
+commit and no-op cleanup protections remain. This is an isolation correction,
+not permission to delete owner artifacts or weaken the runtime check.
+
+1.0.95 local canonical check: 1558 passed, 2 skipped in 195.07 seconds; tools/check.py all exited zero. Release/install proof and the next live cohort are pending.

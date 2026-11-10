@@ -26,6 +26,8 @@ def summarize(events, since=None):
     durations = sum(float(e.get('duration_seconds') or 0) for e in rows.values())
     return {'since': since, 'terminal_runs': len(rows), 'status_counts': dict(sorted(counts.items())),
             'model_finished_runs': finished, 'verified_acceptance_runs': len(verified),
+            'preflight_runs': sum(isinstance(e.get('acceptance_baseline'), dict) for e in rows.values()),
+            'initially_failing_contracts': sum((e.get('acceptance_baseline') or {}).get('passed') is False for e in rows.values()),
             'unique_verified_tasks': sorted({e['project_task_id'] for e in verified}),
             'unverified_finished_runs': finished - len(verified),
             'verified_rate': round(len(verified) / len(rows), 4) if rows else None,

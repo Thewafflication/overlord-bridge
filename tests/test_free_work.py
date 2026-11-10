@@ -2625,3 +2625,28 @@ def test_acceptance_probe_cannot_grant_completion_after_later_bad_edit(isolated,
     assert event['status'] == 'incomplete' and event['delivery_status'] == 'unfinished'
     assert event['acceptance']['passed'] is False
     assert json.loads(queue.read_text())['tasks'][0]['state'] == 'ready'
+
+
+def test_owner_preflight_precedes_model_and_omits_stale_inferred_handoff(isolated, tmp_path):
+    folder = isolated / 'preflight'
+    folder.mkdir()
+    (folder / 'AGENTS.md').write_text('PROJECT_RULE_MUST_STAY_PINNED: preserve owner tests.')
+    queue = tmp_path / 'project-tasks.json'
+    task = {'id': 'fresh-evidence', 'folder': str(folder), 'state': 'ready',
+            'requirement': 'Repair actual failing output', 'task': 'Produce accepted output',
+            'checks': [{'name': 'REAL_BASELINE_FAILURE', 'tool': 'run_python',
+                        'arguments': {'code': 'raise AssertionError("OBSERVED_FAILURE_NOT_A_MODEL_GUESS")'}}]}
+    queue.write_text(json.dumps({'version': 1, 'tasks': [task]}))
+    pool, _ = scripted_pool([{'content': json.dumps({'final': 'Actual check blocks work', 'outcome': 'blocked'})}])
+    mgr, _, _ = manager(tmp_path, pool, project_tasks_path=queue)
+    mgr.report_store.record({'name': 'Free-app', 'folder': str(folder), 'status': 'incomplete',
+        'continuation': {'plan': {'explanation': 'STALE_MODEL_PLAN_MUST_NOT_RETURN'}, 'recent_evidence': 'old guess'}})
+    start(mgr, folder)
+    request = pool.planning[0]
+    inner = json.loads(request[1]['content'].split('\n', 1)[1])
+    assert 'OBSERVED_FAILURE_NOT_A_MODEL_GUESS' in inner[2]['content']
+    assert 'PROJECT_RULE_MUST_STAY_PINNED' in inner[2]['content']
+    assert 'STALE_MODEL_PLAN_MUST_NOT_RETURN' not in json.dumps(request)
+    event = events(mgr)[-1]
+    assert event['status'] == 'incomplete' and event['acceptance']['passed'] is False
+    assert 'acceptance_preflight' in event['result_tail']
