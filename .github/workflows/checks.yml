@@ -25,7 +25,24 @@ jobs:
             requirements-dev.txt
       - name: Provision Tcl for headless console tests
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y python3-tk
+        timeout-minutes: 8
+        run: |
+          probe_tcl() {
+            python -c 'import tkinter; t = tkinter.Tcl(); assert t.eval("expr {6*7}") == "42"; print("Headless Tcl ready:", tkinter.TclVersion)'
+          }
+          if ! probe_tcl; then
+            . /etc/os-release
+            sources="$RUNNER_TEMP/overlord-tcl-sources.list"
+            empty_parts="$RUNNER_TEMP/overlord-tcl-sourceparts"
+            mkdir -p "$empty_parts"
+            printf 'deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://archive.ubuntu.com/ubuntu %s main universe\n' "$VERSION_CODENAME" > "$sources"
+            printf 'deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://archive.ubuntu.com/ubuntu %s-updates main universe\n' "$VERSION_CODENAME" >> "$sources"
+            printf 'deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://security.ubuntu.com/ubuntu %s-security main universe\n' "$VERSION_CODENAME" >> "$sources"
+            options=(-o "Dir::Etc::sourcelist=$sources" -o "Dir::Etc::sourceparts=$empty_parts" -o Acquire::Retries=2 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20)
+            sudo apt-get "${options[@]}" update
+            sudo apt-get "${options[@]}" install -y python3-tk
+            probe_tcl
+          fi
       - run: python -m pip install -r requirements-dev.txt
       - run: python -m pre_commit validate-config
       - run: python tools/check.py all

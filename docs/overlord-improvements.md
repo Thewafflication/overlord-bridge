@@ -504,3 +504,5 @@ and existing Kertex work resumed. WSP HEAD remains54a5c07: its live commit and
 factual project acceptance remain unverified, so no new delivery is counted.
 The pre-update false blocker also appears in reportc3ec23ef47e24f278b444ebf65862849;
 maintenance interruption19fcdc5d304248c2a199ef20d43686f9 is not a completed run.
+
+1.0.104 was not installed. Windows CI passed; two fresh Linux runners failed before tests on temporary DNS resolution of azure.archive.ubuntu.com while installing Tcl. The correction probes the actual Tcl interpreter first, otherwise uses signed official Ubuntu repositories through a temporary APT source list and probes again before running all tests. Repository signatures remain enforced. The corrected release is1.0.105; runtime owner-file protection is unchanged. Candidate1.0.104 is prerelease.
