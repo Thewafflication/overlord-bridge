@@ -100,3 +100,53 @@ Independent status acknowledgement at 15:57 UTC: v1.0.103, instance
 tests passed in 0.13 seconds. This documentation audit does not alter running
 workers, task checks, schedules or release code. Release/install remains
 serialized behind the active repair chat; no newer deployment is claimed here.
+
+
+## Follow-up cohort at 21:56 UTC
+
+Inclusive cutoff: 2026-11-11T15:57:20.890960Z. Snapshot generated at
+2026-11-11T21:56:26.895938Z from installed journals, deduplicated by event ID.
+Evidence: out/checks/automation-20261111-2200-cohort.json.
+
+| Measure | Observed |
+| --- | ---: |
+| Terminal runs | 7 |
+| Incomplete / stalled / interrupted | 3 / 3 / 1 |
+| Model-finished runs | 0 |
+| Acceptance-verified runs / unique tasks | 0 / 0 |
+| Preflights / initially failing contracts | 1 / 1 |
+| Recorded worker seconds | 18,186.562 |
+| Verified acceptance rate | 0% |
+
+These are mixed-version operational measurements, not a controlled experiment.
+No new delivery gain is demonstrated. Outcome-accounting regressions independently
+passed: four tests in 0.16 seconds.
+
+Follow-up terminal reports:
+
+- KerTeX 08d520301ba34f54953da320583e8a6f stalled on repeated observations;
+  09adbd498b2842daaf033d2296ba0965 subsequently remained incomplete.
+- Silver Searcher 3a36b908afc24d7288fad00f0aed0340 incomplete; the concurrent
+  repair investigation identifies protected-context capacity as a separate issue.
+- WSH c8082282e2fa40a888b1eae04d5cf3c5 stalled on ready owner task
+  wsh-public-header-repair-1. Full acceptance remains unverified after timeout.
+- TinyPP ccce1f9c5e8d40aab79dc9d508794f0b stalled on repeated observations,
+  without an executable owner task ID attached to this report.
+- WSP c9ba85d5de3a4db7aae79db9408207d2 interrupted; Jordan site
+  d3692a96d2654ef19a2d166eec758fd7 incomplete. Neither is a delivery.
+
+Independent local-control acknowledgement: v1.0.105, instance
+392e4daa4bc3491195ddd1c1ac4f6d1c, Free-kertex_package active. Installed schedule
+inventory has 17 entries: four active, 13 paused. This count check does not
+establish full prompt/ID equivalence or installation preservation.
+
+The active chat "Fix Overlord command execution" owns the uncommitted 1.0.106
+source-reacquisition repair and deployment. Its controlled regression reproduces
+retained denials blocking evicted source; its focused checks passed while the
+canonical suite is still running. This automation preserves those changes and
+serializes behind that release/install rather than issuing a competing version
+or restarting healthy work. No 1.0.106 release/install success is claimed here.
+Next verify its signed release, installed-module regression, schedule/queue
+preservation and live acknowledgement, then measure newly terminated runs.
+Pydecipher remains quarantined pending the four original owner hashes; preserve
+the four-active/13-paused policy and independent acceptance checks.
