@@ -333,3 +333,30 @@ No automatic reset/revert or owner-file deletion was performed. Later worker
 reports cannot reclassify that ownership violation as a product deliverable.
 Retained event logs are not a cumulative metric: the independently proven Mypal
 delivery remains recorded after its original event rotates away.
+
+
+## 1.0.100 — reliable terminal cohort boundaries (2026-11-10)
+
+Outcome accounting compared ISO timestamps lexically. Offset representations and
+fractional-second boundaries could exclude runs occurring after the cutoff or
+include earlier runs. Cohorts now compare parsed UTC instants, inclusively.
+Legacy naive dates mean UTC; invalid cutoffs and missing/malformed terminal times
+in filtered cohorts fail explicitly rather than quietly biasing the denominator.
+Unfiltered legacy accounting remains available.
+
+Measured regression: a three-event cohort (exact boundary, 30 minutes before,
+30 minutes after, each with a different UTC offset) previously counted one run;
+now correctly counts two for both equivalent cutoff representations. Four focused
+tests cover this plus legacy timestamps and invalid input. This fixes measurement,
+not worker delivery behavior, and does not establish a higher delivery rate.
+
+Live snapshot at 2026-11-11T04:02:40Z, since the automation cursor
+2026-11-10T22:03:00.042Z: 23 terminal runs, zero acceptance-verified runs,
+12 stalled, eight incomplete, two interrupted, one unverified finished run.
+Four preflights all started with failing contracts; 11,698.266 recorded worker
+seconds. This mixed-version, overlapping cohort is not a controlled comparison.
+The unverified finished report has no owner task ID; it is not a verified product
+delivery. Evidence: out/checks/1.0.100-cohort.json. Next prioritize the stalled
+ready-contract runs, preserving independent acceptance and ownership checks.
+
+Validation: canonical project-environment checks passed: lint, fresh wheel build, 1,574 tests passed and one skipped in 219.68 seconds. Release version consistency and diff whitespace checks passed.

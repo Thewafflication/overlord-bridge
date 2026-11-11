@@ -17,3 +17,33 @@ def test_outcomes_do_not_count_claims_or_failed_checks_as_verified():
     assert result['unverified_finished_runs'] == 2
     assert result['verified_rate'] == 0.4
     assert summarize(data, '2026-11-11')['terminal_runs'] == 0
+
+
+def test_cohort_compares_instants_and_includes_exact_boundary():
+    def row(identity, at):
+        return {'event_id': identity, 'brain': 'free', 'name': 'fixture',
+                'status': 'finished', 'timestamp': at}
+    events = [row('exact', '2026-11-10T17:00:00-05:00'),
+              row('before', '2026-11-11T00:30:00+03:00'),
+              row('after', '2026-11-10T16:30:00-06:00')]
+    for cutoff in ('2026-11-10T22:00:00Z', '2026-11-10T16:00:00-06:00'):
+        assert summarize(events, cutoff)['terminal_runs'] == 2
+    assert summarize([row('legacy', '2026-11-10T22:00:00')],
+                     '2026-11-10T22:00:00Z')['terminal_runs'] == 1
+
+
+def test_cohort_rejects_invalid_cutoff_even_without_events():
+    import pytest
+    with pytest.raises(ValueError, match='cohort timestamp'):
+        summarize([], 'yesterday')
+
+
+def test_cohort_rejects_missing_or_malformed_terminal_time():
+    import pytest
+    for timestamp in ('', 'not-a-time', 123):
+        event = {'brain': 'free', 'event_id': 'bad', 'status': 'finished',
+                 'timestamp': timestamp}
+        with pytest.raises(ValueError, match='cohort timestamp'):
+            summarize([event], '2026-11-10')
+    # Unfiltered accounting remains usable for legacy events without timestamps.
+    assert summarize([event])['terminal_runs'] == 1

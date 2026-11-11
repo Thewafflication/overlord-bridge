@@ -7,13 +7,25 @@ from pathlib import Path
 TERMINAL = frozenset({'finished', 'incomplete', 'stalled', 'crashed', 'failed', 'interrupted', 'cancelled', 'rejected'})
 
 
+def _utc_timestamp(value):
+    """Parse ISO timestamps before comparison; naive legacy values mean UTC."""
+    try:
+        parsed = datetime.fromisoformat(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError('Invalid report cohort timestamp') from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
 def summarize(events, since=None):
+    cutoff = _utc_timestamp(since) if since is not None else None
     rows = {}
     for event in events:
         if event.get('brain') != 'free' or event.get('status') not in TERMINAL:
             continue
         at = event.get('finished_at') or event.get('timestamp') or event.get('recorded_at') or ''
-        if since and at < since:
+        if cutoff is not None and _utc_timestamp(at) < cutoff:
             continue
         identity = event.get('event_id')
         if not identity:
