@@ -63,3 +63,28 @@ states and must not silently re-enable finished or undefined-goal projects.
 Next measurable result: a real TPP-001 implementation and accepted negative
 controls, followed by the separate four-cell native class-value gate. Adding goal
 documents and scheduling work is setup, not a completed compiler deliverable.
+
+
+## Owner follow-up: continuous readiness and agent instructions
+
+The owner requested that Overlord always have work queued. Replaced the four
+active two-hour schedules with one-minute recurring schedules through live
+commands. The scheduler polls every five seconds and defers dispatch while any
+foreground turn or worker runs. Thus defined-goal work can continue as soon as
+the worker is free, subject to provider capacity and actual task prerequisites;
+no unbounded productivity or delivery guarantee is implied. All 13 paused
+schedules remain byte-for-byte unchanged. Previous four IDs were replaced;
+the before/after mapping is retained in
+out/checks/goal-schedule-20261111/continuous-verification.json. Current IDs:
+kerTeX 915d87422d5b; Silver Searcher d45d0b52ef73; WSH 7c99f90c83c6;
+TinyPP 1bc3bc3d9881. The durable monitor now expects 60-second intervals.
+
+All four active repositories lacked AGENTS.md. Added narrow project instructions
+covering the assigned bounded goal, actual validation, local commits, owner-file
+preservation, existing publication limits and stopping when no ready goal remains.
+Local documentation commits: TinyPP dd67154, WSH 5f96368, Silver Searcher
+60b9e9a, kerTeX 2e9f064. Explicit staging/commits included only each new
+AGENTS.md, preserving existing project diffs and artifacts. These files are
+worker guidance; Overlord does not technically require them to dispatch.
+TinyPP continues to use PROJECT-WORK.md and AGENT-TASKS.md for its goal queue.
+No implementation or compiler/runtime acceptance is claimed from these changes.
