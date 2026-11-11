@@ -2388,7 +2388,7 @@ def test_groq_input_fit_continues_worker_through_validation_commit_and_push(isol
     work._pool=get_pool
     mgr,_,_=manager(tmp_path,work.complete)
     start(mgr,project)
-    assert events(mgr)[-1]['status']=='finished' and not actions
+    assert events(mgr)[-1]['status']=='finished' and not actions, events(mgr)[-1]
     assert rejected and all(p['max_tokens']==8192 for p in rejected+accepted)
     assert any('Worker context checkpoint' in str(p['messages']) for p in accepted)
     assert git('rev-list','--count','HEAD')=='2'

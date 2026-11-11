@@ -2745,7 +2745,9 @@ class WorkerManager:
                     self._send(self.owner, f"⚠️ [{name}] did not run: could not protect existing owner files.")
                     return
                 if index_guard.protected:
-                    messages[0]["content"] += "\nPinned ownership baseline: " + json.dumps(index_guard.context())
+                    messages[0]["content"] += (
+                        "\nOwner files present before work; never commit them to satisfy review: " +
+                        json.dumps(index_guard.context()["preexisting_untracked_owner_paths"]))
                 if os.name == "nt":
                     messages.append({"role": "system", "content":
                         f"Windows deletion protection holds {owner_guard.count} pre-existing uncommitted files "

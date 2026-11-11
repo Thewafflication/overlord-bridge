@@ -219,7 +219,7 @@ Local control acknowledged stop and idle at 2026-11-10T19:43Z; checkout/handoff
 were preserved. This shows the observation guard still misses some mixed loops.
 Record it for focused reproduction; do not claim the anti-loop problem solved.
 
-## Ownership failure and repair (1.0.98)
+## Ownership failure and repair (1.0.98–1.0.99)
 
 At 2026-11-11T01:49Z, active Word-GPT work had committed four pre-existing owner
 helpers as 9513809392044f47c1abefcb8a0a4ec753a880d5. The reviewer demanded a
@@ -309,3 +309,7 @@ scheduler last_dispatch/next_run fields advanced; those were the only differing
 fields. The project task queue hash stayed unchanged. Proof:
 out/checks/1.0.97-installed-verification.json. No new live deliverable or cohort
 rate gain is claimed by this release.
+
+1.0.98 Windows CI failed its constrained Groq case while Linux passed. It was not installed and is marked prerelease. Reproducing under a CI-length Windows path showed the expanded immutable ownership notice exhausted fitting room. A compact pinned notice retains all listed owner paths; full reviewer ownership evidence and index enforcement remain. The same long-path case passes without changing the provider limit. The corrected next patch is 1.0.99.
+
+Corrected 1.0.99 canonical checks exited zero: 1,571 passed, one skipped in 166.17 seconds. The mechanical owner-index guard is unchanged; the pinned execution notice is compact, and the reviewer still receives the complete bounded ownership evidence.
