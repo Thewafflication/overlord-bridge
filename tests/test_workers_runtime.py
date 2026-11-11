@@ -1287,8 +1287,12 @@ def test_worker_readonly_process_inspection_remains_allowed(isolated):
     ('run_python', {'code': 'import subprocess; subprocess.run(["git","add","file"],env={"git_index_file":"alternate.index"})'}),
 ])
 def test_alternate_git_index_is_denied_before_launch(isolated, tool, args):
+    command = args.get('code', args.get('command', ''))
+    assert _local_agent_command_denial(command, isolated) == 'command_denied_alternate_git_index'
     result = execute(tool, args, isolated)
-    assert result['error'] == 'command_denied_alternate_git_index'
+    expected = ('unsupported_shell' if args.get('shell') == 'powershell' and __import__('os').name != 'nt'
+                else 'command_denied_alternate_git_index')
+    assert result['error'] == expected
     assert not (isolated / 'alternate.index').exists()
 
 

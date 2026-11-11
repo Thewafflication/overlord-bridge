@@ -400,3 +400,7 @@ only for an explicit semantic comparison). Proof:
 out/checks/1.0.100-installed-verification.json. No live delivery gain claimed.
 
 1.0.101 canonical checks exited zero: lint, fresh wheel build, 1,579 tests passed and one skipped in 231.69 seconds. Five focused known-bypass/normal-Git controls passed. Comparing the saved verified1.0.99 schedule snapshot with the offline1.0.100 inventory confirms identical16IDs, prompts, intervals and enabled states; scheduler clocks are excluded from that definition comparison.
+
+1.0.101 was not installed: Windows CI passed, Linux CI caught a test assuming PowerShell tool mode exists there. The corrected test checks literal command denial on all platforms and expects unsupported_shell for unsupported tool mode. Production protection is unchanged; corrected deployment version is1.0.102. Candidate1.0.101 is marked prerelease.
+
+Corrected1.0.102 canonical checks exited zero: lint, fresh wheel build, 1,578 tests passed and two skipped in212.64seconds. Production bypass rejection is unchanged from the Windows-verified1.0.101 candidate; the test now respects unsupported shell modes on Linux.
