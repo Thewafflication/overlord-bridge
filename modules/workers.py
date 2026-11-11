@@ -2432,7 +2432,15 @@ class WorkerManager:
                 result = duplicate_result
             else:
                 async with index_guard.command(folder, tool_name, arguments) as index_error:
-                    result = index_error or await self._execute_checked(brain, folder, tool_name, arguments)
+                    execution_arguments = index_guard.execution_arguments(tool_name, arguments)
+                    result = index_error or await self._execute_checked(brain, folder, tool_name, execution_arguments)
+                    if execution_arguments is not arguments and not index_error:
+                        result['git_commit_execution'] = 'Literal multiline commit executed with PowerShell to preserve its message.'
+                    if index_guard.lock_held and 'index.lock' in json.dumps([arguments, result]).lower():
+                        result['git_index_guard'] = (
+                            'This tool ran under the harness temporary index lock, released when the tool returns. '
+                            'It is not evidence of a stale external lock. Do not delete it or stop processes. '
+                            'Use separate literal git add <owned paths> and git commit -m "message" calls.')
             # Keep commands and their results independently of the rolling transcript:
             # a final claim must be checked against actions, not just the last prose.
             if tool_name in {"run_command", "run_python", "run", "bash", "shell"}:

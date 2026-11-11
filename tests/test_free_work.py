@@ -772,6 +772,39 @@ def test_free_worker_cannot_stage_preexisting_helpers_to_satisfy_review(isolated
                for messages in reviews)
 
 
+def test_free_worker_commits_literal_multiline_message_without_staging_owner_files(isolated, tmp_path):
+    import subprocess
+    folder = isolated / 'multiline-commit'
+    folder.mkdir()
+    def git(*args):
+        return subprocess.check_output(['git', '-C', str(folder), *args], text=True).strip()
+    git('init')
+    git('config', 'user.name', 'Fixture')
+    git('config', 'user.email', 'fixture@example.invalid')
+    (folder / 'seed').write_text('before')
+    git('add', 'seed')
+    git('commit', '-m', 'baseline')
+    (folder / 'owner.ps1').write_text('owner bytes')
+    message = 'Repair seed\n\nRecord verified source change.'
+    pool, seen = scripted_pool([
+        call('run_python', {'code': 'from pathlib import Path; print(Path(".git/index.lock").exists())'}),
+        call('write_file', {'path': 'seed', 'content': 'after'}),
+        call('run_python', {'code': 'from pathlib import Path; assert Path("seed").read_text()=="after"'}),
+        call('run_command', {'command': 'git add seed'}),
+        call('run_command', {'command': 'git commit -m "' + message + '"'}),
+        final_result('Validated seed change and committed; owner helper remains untracked.')])
+    mgr, _, _ = manager(tmp_path, pool)
+    start(mgr, folder)
+    assert git('rev-list', '--count', 'HEAD') == '2'
+    assert git('log', '-1', '--format=%B') == message
+    assert git('show', '--format=', '--name-only', 'HEAD') == 'seed'
+    assert git('status', '--porcelain') == '?? owner.ps1'
+    assert (folder / 'owner.ps1').read_text() == 'owner bytes'
+    assert events(mgr)[-1]['status'] == 'finished'
+    assert any('git_index_guard' in str(messages) and 'not evidence of a stale external lock' in str(messages)
+               for messages, _ in seen)
+
+
 def test_default_free_worker_continues_past_thirty_steps(isolated, tmp_path):
     project = isolated / "long-task"
     project.mkdir()

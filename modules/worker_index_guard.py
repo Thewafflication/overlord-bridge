@@ -15,10 +15,19 @@ from pathlib import Path
 from modules.worker_changes import _git
 
 
+def _literal_commit(command):
+    if not isinstance(command, str):
+        return None
+    match = re.fullmatch(
+        r'[ \t]*git(?:\.exe)?[ \t]+commit[ \t]+(-m|--message)[ \t]+"([^"\x00]*)"[ \t]*', command)
+    return match if match and not re.search(r"[`$%!]", match[2]) else None
+
+
 class WorkerIndexGuard:
     def __init__(self):
         self.protected = set()
         self.index = None
+        self.lock_held = False
 
     async def acquire(self, folder, allowed, owned_paths=()):
         if not (folder / ".git").exists():
@@ -44,6 +53,16 @@ class WorkerIndexGuard:
                         "Read-only validation needs no commit. An unrelated dirty tree is allowed. "
                         "A model reviewer cannot grant ownership or require a clean tree."}
 
+    def execution_arguments(self, tool, arguments):
+        command = arguments.get('command', arguments.get('cmd', ''))
+        literal = _literal_commit(command) if tool == 'run_command' else None
+        if (os.name == 'nt' and arguments.get('shell', 'default') == 'default'
+                and literal and '\n' in literal[2]):
+            # CMD truncates a quoted multi-line argument. The existing encoded
+            # PowerShell tool mode preserves it; expansions were excluded above.
+            return {**arguments, 'shell': 'powershell'}
+        return arguments
+
     @asynccontextmanager
     async def command(self, folder, tool, arguments):
         if not self.protected or tool not in {"run_command", "run_python"}:
@@ -62,6 +81,11 @@ class WorkerIndexGuard:
                 tokens = [t.strip('\"') for t in shlex.split(command, posix=False)]
             except ValueError:
                 pass
+        # A quoted literal commit body may contain newlines. They are message
+        # data, not shell command boundaries. Keep expansion-bearing forms out.
+        multiline = _literal_commit(command)
+        if multiline:
+            tokens = ["git", "commit", multiline[1], multiline[2]]
         direct = len(tokens) >= 2 and tokens[0].lower() in {"git", "git.exe"}
         unlock = False
         if direct and tokens[1] == "add":
@@ -90,6 +114,11 @@ class WorkerIndexGuard:
         if unlock:
             yield None
             return
+        if re.search(r'(?i)\bgit(?:\.exe)?\s+(?:add|commit)\b', command):
+            # Do not launch a known write under our own lock and report an
+            # opaque native index.lock failure as if another process caused it.
+            yield error
+            return
         lock = Path(str(self.index) + ".lock")
         try:
             fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
@@ -97,7 +126,9 @@ class WorkerIndexGuard:
             yield error
             return
         try:
+            self.lock_held = True
             yield None
         finally:
+            self.lock_held = False
             os.close(fd)
             lock.unlink()

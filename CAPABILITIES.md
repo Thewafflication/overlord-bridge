@@ -6,6 +6,13 @@ workflow lands.
 
 ## Current Capabilities
 
+- Literal standalone Git commits accept quoted multiline messages through the
+  ownership guard. Windows default execution uses the existing encoded
+  PowerShell mode to preserve the complete message; shell expansion forms stay
+  blocked. Unsupported compound staging/commit requests receive explicit retry
+  guidance before launch. Results that inspect the harness's per-call index
+  lock identify it as temporary, not evidence of a stale external lock.
+
 - Worker commands reject the literal `GIT_INDEX_FILE` variable in shell and
   Python tools before execution. An observed empty alternate-index commit
   recorded hundreds of unrelated deletions; use the normal repository index.

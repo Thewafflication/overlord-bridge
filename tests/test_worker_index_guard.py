@@ -52,11 +52,14 @@ def test_indirect_cooperating_git_cannot_stage_owner_file(project, tool, argumen
         guard = WorkerIndexGuard()
         await guard.acquire(project, lambda p: True)
         async with guard.command(project, tool, arguments) as error:
-            assert error is None
-            proc = subprocess.run([sys.executable, '-c',
-                "import subprocess; raise SystemExit(subprocess.run(['git','add','owner.ps1']).returncode)"],
-                cwd=project, capture_output=True)
-            assert proc.returncode != 0 and b'index.lock' in proc.stderr
+            if tool == 'run_command':
+                assert error and 'separate git commit' in error['message']
+            else:
+                assert error is None
+                proc = subprocess.run([sys.executable, '-c',
+                    "import subprocess; raise SystemExit(subprocess.run(['git','add','owner.ps1']).returncode)"],
+                    cwd=project, capture_output=True)
+                assert proc.returncode != 0 and b'index.lock' in proc.stderr
         assert not (project / '.git/index.lock').exists()
         assert git(project, 'ls-files', '--cached') == 'seed'
     asyncio.run(scenario())
@@ -91,4 +94,21 @@ def test_explicit_owner_publication_path_exempt_and_external_staging_blocks_comm
         async with guard.command(project, 'run_command', {'command': 'git commit -m wrong'}) as error:
             assert error
         assert 'owner.ps1' in git(project, 'diff', '--cached', '--name-only')
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('command', [
+    'git commit -m "first"\ngit add owner.ps1',
+    'git commit -m "first" && git add owner.ps1',
+    'git commit -m "%TEMP%"',
+    'git commit -m "$(git add owner.ps1)"',
+])
+def test_multiline_support_does_not_unlock_shell_boundaries_or_expansions(project, command):
+    async def scenario():
+        guard = WorkerIndexGuard()
+        await guard.acquire(project, lambda p: True)
+        async with guard.command(project, 'run_command', {'command': command}) as error:
+            assert error and 'separate git commit' in error['message']
+            assert not guard.lock_held
+        assert git(project, 'ls-files', '--cached') == 'seed'
     asyncio.run(scenario())

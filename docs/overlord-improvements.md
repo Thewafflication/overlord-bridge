@@ -1,5 +1,28 @@
 # Overlord improvement record
 
+## Multiline commit and temporary-lock repair (1.0.103)
+
+The WSP report 4b4f145e131f4cf9808078ef1a01f816 stalled after 108 actions;
+the next run's step6 again failed a valid multiline commit message. The worker
+attributed the lock to bridge Python processes and proposed removing it after
+stopping them. Inspection reproduced the actual cause: the guard rejected all
+newlines, including quoted message data, then held its own index lock during Git.
+
+Literal standalone double-quoted messages now pass ownership validation. A native Git
+test exposed a second defect: Windows CMD discarded the body even after the guard
+unlocked. Default Windows execution now selects the existing encoded PowerShell
+mode for this narrow literal form; approval and result metadata expose that mode.
+Expansion-bearing inputs and outside-quote command boundaries remain blocked.
+Known unsupported Git write wrappers return explicit separate-command guidance
+before launch; lock-inspection results explain the temporary harness lock.
+
+Eleven focused checks pass. The end-to-end worker validates an actual file edit,
+commits it with the exact full multiline message, and leaves owner.ps1 untracked
+and unchanged. Negative cases cover command injection boundaries and expansion
+forms. This is a harness reproduction, not a claim that WSP's factual approval
+fields or project deliverable have been independently accepted. Previous project
+stalls and Word-GPT's validation-only finish remain excluded from new deliveries.
+
 ## Alternate-index incident (1.0.101)
 
 At 2026-11-11T05:43Z the installed 1.0.100 process was offline; no shutdown
@@ -418,3 +441,5 @@ free mode verified and existing Pydecipher work resumed. WSH HEAD remains the
 restoreda2d84c5; damaged3df90a1 remains under the backup ref. This recovery and
 known-bypass repair are not counted as a new project feature. The earlier process
 exit remains unexplained and requires monitoring; do not claim it was fixed.
+
+1.0.103 controlled reproduction: the same Git-backed integration fails on086395a (1.0.102), leaving one baseline commit. An intermediate unlock-only experiment created a commit but lost its message body under CMD; the final encoded-PowerShell execution preserves the exact body. Canonical tools/check.py all exited zero: lint, fresh wheel build, 1,584 tests passed and one skipped in304.44seconds. These are harness measurements, not new project deliveries.
