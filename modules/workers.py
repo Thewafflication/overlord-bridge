@@ -1309,26 +1309,58 @@ def _bounded_worker_messages(messages: list[dict[str, Any]], evidence: list[str]
 
 
 def _retained_discovery_calls(messages: list[dict[str, Any]]) -> set[str]:
-    """Identify tool requests still in context; trimming isn't universal amnesia."""
+    """Retain guards only for discovery requests with usable results in context."""
     found = set()
+    pending = {}
+    fallback_request = None
+
+    def remember(request, content):
+        if request is None:
+            return
+        try:
+            result = json.loads(content)
+        except (ValueError, TypeError):
+            return
+        if isinstance(result, dict) and result.get("ok") is True and not result.get("error"):
+            found.add(request)
+
+    def fingerprint(tool, args):
+        tool = worker_tool_name(tool)
+        if tool in {"read_file", "list_files", "search_file"} and isinstance(args, dict):
+            return json.dumps({"tool": tool, "arguments": args}, sort_keys=True)
+        return None
+
     for message in messages:
-        if message.get("role") != "assistant":
-            continue
-        requests = []
-        for call in message.get("tool_calls") or []:
-            if not isinstance(call, dict) or not isinstance(call.get("function"), dict):
-                continue
-            function = call["function"]
-            try:
-                args = function.get("arguments", {})
-                requests.append((worker_tool_name(function.get("name")), json.loads(args) if isinstance(args, str) else args))
-            except (ValueError, TypeError):
-                continue
-        fallback = _extract_json_object(str(message.get("content") or "")) or {}
-        requests.append((worker_tool_name(fallback.get("tool") or fallback.get("name")), fallback.get("arguments", {})))
-        for tool, args in requests:
-            if tool in {"read_file", "list_files", "search_file"} and isinstance(args, dict):
-                found.add(json.dumps({"tool": tool, "arguments": args}, sort_keys=True))
+        role = message.get("role")
+        if role == "tool":
+            remember(pending.get(message.get("tool_call_id")), message.get("content"))
+        elif role == "user" and fallback_request:
+            tool, request = fallback_request
+            prefix = f"Tool result ({tool}):\n"
+            content = message.get("content")
+            if isinstance(content, str) and content.startswith(prefix):
+                remember(request, content[len(prefix):])
+                fallback_request = None
+        elif role == "assistant":
+            pending = {}
+            fallback_request = None
+            for call in message.get("tool_calls") or []:
+                if not isinstance(call, dict) or not isinstance(call.get("function"), dict):
+                    continue
+                function = call["function"]
+                try:
+                    args = function.get("arguments", {})
+                    args = json.loads(args) if isinstance(args, str) else args
+                    request = fingerprint(function.get("name"), args)
+                    if isinstance(call.get("id"), str) and request:
+                        pending[call["id"]] = request
+                except (ValueError, TypeError):
+                    continue
+            fallback = _extract_json_object(str(message.get("content") or "")) or {}
+            tool = worker_tool_name(fallback.get("tool") or fallback.get("name"))
+            request = fingerprint(tool, fallback.get("arguments", {}))
+            if request:
+                fallback_request = tool, request
     return found
 
 

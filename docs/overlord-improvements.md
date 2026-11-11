@@ -1,5 +1,28 @@
 # Overlord improvement record
 
+## Evicted source retained as a denial (1.0.106)
+
+New KerTeX report09adbd498b2842daaf033d2296ba0965 stopped after26 actions,
+asking for reauthorization of a source read even though the bounded requirement
+was supplied. A controlled worker reproduction on1.0.105 confirms a concrete
+harness defect: after successful source responses are evicted, a retained
+blocked third read keeps the fingerprint protected from rereading. The fourth
+read returns another denial rather than the missing source. Pairing retained
+requests with successful results fixes this starvation for native and JSON
+fallback exchanges. Reacquisition does not reset command/write guards or the
+run-wide repeated-observation memory. The same read is blocked again when its
+successful result remains available. Existing readiness/owner checks stay in
+force; this is not permission to renew discovery or bypass a blocked tool.
+
+Four reviewed reports produced no newly verified project delivery. KerTeX's
+first run08d520301ba34f54953da320583e8a6f stalled; the next stopped at readiness.
+Silver Searcher3a36b908afc24d7288fad00f0aed0340 stopped on protected-context
+capacity. WSHc8082282e2fa40a888b1eae04d5cf3c5 has local source commitb32964f
+(two uint32_t type corrections); header/configure/build pass in its report, but
+full native CTest timed out before completion. That partial source commit is
+not a verified delivery. Preserve current17/4/13 owner schedule policy, including
+60-second active checks and every intentional pause. Seventeen focused checks passed. Canonical tools/check.py all exited zero: lint, fresh wheel and1,601 tests passed, two skipped in368.06seconds. Deployment proof follows.
+
 ## Protected owner-byte failure (1.0.105; candidate1.0.104 not installed)
 
 Report da033837f6ec43969c0b02961febdc70 failed Pydecipher's exact owner-byte

@@ -6,6 +6,13 @@ workflow lands.
 
 ## Current Capabilities
 
+- Duplicate discovery guards retain a request only when its successful paired
+  source result remains in worker context. A denied repeat alone cannot prevent
+  reacquiring an evicted read/list/search result. Native and JSON-fallback tool
+  exchanges use this rule; command/write duplicate guards and run-wide repeated
+  observation budgets remain enforced. This repairs one source starvation case,
+  not general model planning or context-capacity limits.
+
 - Ready free-worker owner tasks can declare `protected_files` as relative paths
   and exact SHA-256 baselines. On Windows these files receive handles denying
   writes and deletion, including clean tracked files. Hashes are checked while

@@ -222,6 +222,40 @@ def test_trimming_does_not_allow_repeating_reads_still_in_context(isolated, tmp_
     assert final_tool_result(seen, 'third')['error'] == 'duplicate_tool_call_blocked'
 
 
+def test_evicted_successful_read_can_be_reacquired_when_only_denial_remains(isolated, tmp_path, monkeypatch):
+    project = isolated / 'evicted-source-with-retained-denial'
+    project.mkdir()
+    (project / 'target.py').write_text('source needed for the authorized repair')
+    original = workers._bounded_worker_messages
+    evicted = False
+
+    def evict_successes(messages, *args, **kwargs):
+        nonlocal evicted
+        if not evicted and any(m.get('tool_call_id') == 'blocked-3' for m in messages):
+            evicted = True
+            request = next(m for m in messages if any(
+                c.get('id') == 'blocked-3' for c in m.get('tool_calls', [])))
+            denial = next(m for m in messages if m.get('tool_call_id') == 'blocked-3')
+            return messages[:kwargs.get('prefix_count', 3)] + [request, denial]
+        return original(messages, *args, **kwargs)
+
+    monkeypatch.setattr(workers, '_bounded_worker_messages', evict_successes)
+    completer, seen = scripted_pool([
+        call('read_file', {'path': 'target.py'}, 'read-1'),
+        call('read_file', {'path': 'target.py'}, 'read-2'),
+        call('read_file', {'path': 'target.py'}, 'blocked-3'),
+        call('read_file', {'path': 'target.py'}, 'reacquired-4'),
+        call('read_file', {'path': 'target.py'}, 'read-5'),
+        call('read_file', {'path': 'target.py'}, 'blocked-6'),
+        final_result('Recovered the missing source'),
+    ])
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert evicted
+    assert final_tool_result(seen, 'reacquired-4')['content'] == 'source needed for the authorized repair'
+    assert final_tool_result(seen, 'blocked-6')['error'] == 'duplicate_tool_call_blocked'
+
+
 def test_project_orientation_preloads_document_heads_and_preserves_them_after_trimming(isolated, tmp_path):
     project = isolated / 'orientation'
     project.mkdir()
@@ -254,9 +288,28 @@ def test_repeated_compaction_replaces_old_checkpoint_instead_of_nesting_it():
 def test_retained_discovery_detection_handles_fallback_and_malformed_calls():
     args = {'path': 'README.md'}
     messages = [{'role': 'assistant', 'content': json.dumps({'tool': 'read_file', 'arguments': args}),
-                 'tool_calls': [None, 'invalid', {'function': None}, {'function': {'arguments': '{'}}]}]
+                 'tool_calls': [None, 'invalid', {'function': None}, {'function': {'arguments': '{'}}]},
+                {'role': 'user', 'content': 'Tool result (read_file):\n' + json.dumps({'ok': True, 'content': 'source'})}]
     assert workers._retained_discovery_calls(messages) == {
         json.dumps({'tool': 'read_file', 'arguments': args}, sort_keys=True)}
+
+
+@pytest.mark.parametrize('fallback', [False, True])
+@pytest.mark.parametrize('result', [None, {'ok': False, 'error': 'duplicate_tool_call_blocked'},
+                                  {'ok': False, 'error': 'file_not_found'}, {'ok': True, 'content': 'source'}])
+def test_retained_discovery_requires_successful_paired_result(fallback, result):
+    args = {'path': 'target.py'}
+    if fallback:
+        messages = [{'role': 'assistant', 'content': json.dumps({'tool': 'read_file', 'arguments': args})}]
+        if result is not None:
+            messages.append({'role': 'user', 'content': 'Tool result (read_file):\n' + json.dumps(result)})
+    else:
+        messages = [call('read_file', args, 'source')]
+        messages[0]['role'] = 'assistant'
+        if result is not None:
+            messages.append({'role': 'tool', 'tool_call_id': 'source', 'content': json.dumps(result)})
+    expected = {json.dumps({'tool': 'read_file', 'arguments': args}, sort_keys=True)} if result and result['ok'] else set()
+    assert workers._retained_discovery_calls(messages) == expected
 
 
 class Gate:
