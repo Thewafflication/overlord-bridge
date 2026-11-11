@@ -52,3 +52,51 @@ in 0.23 seconds. This report preserves the pre-deployment cohort rather than
 silently replacing its denominator after installation. Next evaluate new runs
 against owner acceptance checks; investigate the separately recorded Pydecipher
 protected-planning-context fitting failure. A higher delivery rate remains unproven.
+
+
+## Follow-up cohort at 15:57 UTC
+
+Inclusive cutoff: 2026-11-11T10:01:31.850Z. Snapshot generated at
+2026-11-11T15:57:20.890960Z, deduplicated by event ID from the installed
+report journals. Evidence: out/checks/automation-20261111-1600-cohort.json.
+
+| Measure | Observed |
+| --- | ---: |
+| Terminal runs | 11 |
+| Incomplete | 6 |
+| Stalled | 4 |
+| Interrupted | 1 |
+| Model-finished runs | 0 |
+| Acceptance-verified runs / unique tasks | 0 / 0 |
+| Preflights / initially failing contracts | 2 / 2 |
+| Recorded worker seconds | 14,364.829 |
+
+No delivery-rate improvement is established. These cohorts overlap around the
+prior release and have different populations; they are not a controlled before/
+after experiment. Maintenance interruption is included in terminal runs and must
+not be counted as a completed delivery. Projects assessed already complete by the
+model are still unverified here.
+
+Important failure: Pydecipher report da033837f6ec43969c0b02961febdc70
+failed the owner check "Owned source quality and unrelated owner bytes preserved"
+with `AssertionError: Unrelated owner source changed:
+pydecipher/artifact_types/__init__.py`. Its terminal status is stalled, but that
+label alone hides the more serious failed preservation check. Do not normalize
+expected hashes or claim recovery. The active "Fix Overlord command execution"
+chat is investigating four baseline hash mismatches and adding explicit owner
+write protection; it reported pausing Pydecipher pending recovery evidence.
+This audit does not independently prove the provenance or recoverability of
+those bytes.
+
+Other concrete follow-ups: WCRT report 9a0c2eee0b5249e9bcbfb5b316b46fd3
+cannot fit protected planning context; TCC package report
+be21151a8e87419d95fbe9a262d16869 could not admit owner-file protection
+(OSError). WSH ready task wsh-public-header-repair-1 still fails acceptance
+(report 75d90f607fb5450898db2684acd46400). Ordinary project implementation
+remains with Overlord workers.
+
+Independent status acknowledgement at 15:57 UTC: v1.0.103, instance
+76aa033a66af45f38112ffed768ead7b, Free-wsp active. Four outcome-accounting
+tests passed in 0.13 seconds. This documentation audit does not alter running
+workers, task checks, schedules or release code. Release/install remains
+serialized behind the active repair chat; no newer deployment is claimed here.
