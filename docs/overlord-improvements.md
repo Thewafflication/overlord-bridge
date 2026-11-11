@@ -404,3 +404,17 @@ out/checks/1.0.100-installed-verification.json. No live delivery gain claimed.
 1.0.101 was not installed: Windows CI passed, Linux CI caught a test assuming PowerShell tool mode exists there. The corrected test checks literal command denial on all platforms and expects unsupported_shell for unsupported tool mode. Production protection is unchanged; corrected deployment version is1.0.102. Candidate1.0.101 is marked prerelease.
 
 Corrected1.0.102 canonical checks exited zero: lint, fresh wheel build, 1,578 tests passed and two skipped in212.64seconds. Production bypass rejection is unchanged from the Windows-verified1.0.101 candidate; the test now respects unsupported shell modes on Linux.
+
+1.0.102 deployment verified: code commit26b0ef2, tagv1.0.102. Project checks
+42969507593 passed on Windows and Linux; signed package build42969507552 passed.
+Trusted signature and archive SHA256 verified:
+ff252c20f0c363c6a730d889be8f1d145c7d1c2b6353889202e1807588bfd829.
+WPM installation exited zero. Five checks against installed modules passed in
+0.63seconds. Exact frozen schedules and owner queue survived; all16original
+schedules are active at7200seconds and four sessions survived. Settings were
+checked by metadata only. Proof: out/checks/project-task-1.0.102-install-preservation.json.
+Local control acknowledgedv1.0.102, instance245156c51d30449e889e31af3106336c;
+free mode verified and existing Pydecipher work resumed. WSH HEAD remains the
+restoreda2d84c5; damaged3df90a1 remains under the backup ref. This recovery and
+known-bypass repair are not counted as a new project feature. The earlier process
+exit remains unexplained and requires monitoring; do not claim it was fixed.
