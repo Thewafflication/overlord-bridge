@@ -313,3 +313,23 @@ rate gain is claimed by this release.
 1.0.98 Windows CI failed its constrained Groq case while Linux passed. It was not installed and is marked prerelease. Reproducing under a CI-length Windows path showed the expanded immutable ownership notice exhausted fitting room. A compact pinned notice retains all listed owner paths; full reviewer ownership evidence and index enforcement remain. The same long-path case passes without changing the provider limit. The corrected next patch is 1.0.99.
 
 Corrected 1.0.99 canonical checks exited zero: 1,571 passed, one skipped in 166.17 seconds. The mechanical owner-index guard is unchanged; the pinned execution notice is compact, and the reviewer still receives the complete bounded ownership evidence.
+
+Deployment verified: code commit abb4fd9, tag v1.0.99. Project checks 42944485484
+passed on Windows and Linux; signed package build 42944485465 passed. Trusted
+WPM signature and archive SHA256 verified:
+3e0dfc70b50c14e59e21cad17b3f7de727b0611c514a7d7e555751adafb87ef8.
+Installation exited zero. Nine tests against the installed modules passed in
+21.73 seconds, including real Git index rejection and owned commit/publication.
+All 16 original schedules remained active at 7,200 seconds; frozen schedule
+state and owner queue were preserved exactly by installation. Four sessions
+survived; settings were checked by metadata only. Preservation proof:
+out/checks/project-task-1.0.99-install-preservation.json. Local control reports
+v1.0.99, instance a97e2466666849478bdddec6c1d442d0; free mode verified and the
+existing WSH schedule resumed. No new live project-delivery gain is claimed.
+
+The unwanted local Word-GPT commit 9513809 remains preserved for owner review.
+Origin lookup returned Repository not found; its publication state is unknown.
+No automatic reset/revert or owner-file deletion was performed. Later worker
+reports cannot reclassify that ownership violation as a product deliverable.
+Retained event logs are not a cumulative metric: the independently proven Mypal
+delivery remains recorded after its original event rotates away.
