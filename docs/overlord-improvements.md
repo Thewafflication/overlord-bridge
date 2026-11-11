@@ -219,7 +219,37 @@ Local control acknowledged stop and idle at 2026-11-10T19:43Z; checkout/handoff
 were preserved. This shows the observation guard still misses some mixed loops.
 Record it for focused reproduction; do not claim the anti-loop problem solved.
 
-## Continuing measurement policy
+## Ownership failure and repair (1.0.98)
+
+At 2026-11-11T01:49Z, active Word-GPT work had committed four pre-existing owner
+helpers as 9513809392044f47c1abefcb8a0a4ec753a880d5. The reviewer demanded a
+clean tree and called those files worker-created; the worker explicitly stated
+they were pre-existing, then staged them anyway. The files and local commit are
+preserved for owner review. The worker was stopped with acknowledged idle. This
+is an ownership failure and is not counted as a meaningful delivery.
+
+The deletion guard did not cover Git index state. A separate guard now snapshots
+pre-existing untracked paths, pins that ownership for worker/reviewer, and uses
+a temporary default-index lock around model command/Python tools. Only separate,
+literal owned-path adds and commits may proceed without the temporary lock.
+Explicit queue publication paths are exempt. External locks remain untouched;
+cancellation releases the worker's lock. No secret or owner file contents are
+read by this new inventory. See release notes for the cooperating-Git boundary;
+it is not a general code sandbox and does not rewrite owner history.
+
+Controlled before/after: the same integration case on caac3bf (1.0.97) fails
+because original_backup.ps1 becomes staged. With the repair it remains untracked,
+and the completion reviewer receives its ownership baseline. Seven focused checks
+pass. This measures the reproduced ownership bug, not live delivery throughput.
+Artifacts: out/checks/index-guard-before.txt and index-guard-focused-final.txt.
+The first broad test run caught two publication fixtures using Python subprocesses
+for Git staging/commit, now intentionally locked when owner files exist. Those
+fixtures now use separate explicit Git commands and retain their real regression,
+commit and remote-SHA assertions; both pass. The fresh canonical tools/check.py all
+exited zero: 1,571 passed, one skipped in 166.92 seconds, with lint/build checks.
+Release and installation evidence follows after verification.
+
+## Continuing measurement policy (ongoing)
 
 For each new terminal report, retain the task ID, baseline check results, final
 acceptance, action count, recorded duration, local commit and required remote SHA.

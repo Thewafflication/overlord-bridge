@@ -2423,8 +2423,11 @@ class WorkerManager:
                     acceptance = await project_tasks.validate(project_task, run_task_check)
                     duplicate_result = {"ok": acceptance["passed"], "acceptance": acceptance,
                         "message": "Observed owner checks; completion/publication are checked again independently."}
-            result = (duplicate_result if duplicate_result is not None
-                      else await self._execute_checked(brain, folder, tool_name, arguments))
+            if duplicate_result is not None:
+                result = duplicate_result
+            else:
+                async with index_guard.command(folder, tool_name, arguments) as index_error:
+                    result = index_error or await self._execute_checked(brain, folder, tool_name, arguments)
             # Keep commands and their results independently of the rolling transcript:
             # a final claim must be checked against actions, not just the last prose.
             if tool_name in {"run_command", "run_python", "run", "bash", "shell"}:
@@ -2689,7 +2692,9 @@ class WorkerManager:
                 "Progress checkpoint")
 
         from modules.owner_file_guard import OwnerFileGuard
+        from modules.worker_index_guard import WorkerIndexGuard
         owner_guard = OwnerFileGuard()
+        index_guard = WorkerIndexGuard()
         acceptance = None
         acceptance_baseline = None
         project_task = None
@@ -2728,6 +2733,9 @@ class WorkerManager:
 
             if is_free and not answer_only:
                 try:
+                    await index_guard.acquire(folder, lambda path:
+                        _local_agent_path_denial(path, folder, write=False) is None,
+                        (project_task or {}).get("publication", {}).get("paths", ()))
                     await owner_guard.acquire(folder, lambda path:
                         _local_agent_path_denial(path, folder, write=False) is None)
                 except Exception as exc:
@@ -2736,6 +2744,8 @@ class WorkerManager:
                         result_tail=f"Worker did not run: owner-file protection unavailable ({type(exc).__name__})."))
                     self._send(self.owner, f"⚠️ [{name}] did not run: could not protect existing owner files.")
                     return
+                if index_guard.protected:
+                    messages[0]["content"] += "\nPinned ownership baseline: " + json.dumps(index_guard.context())
                 if os.name == "nt":
                     messages.append({"role": "system", "content":
                         f"Windows deletion protection holds {owner_guard.count} pre-existing uncommitted files "
@@ -3037,6 +3047,7 @@ class WorkerManager:
                                 {"role": "user", "content": json.dumps({
                                     "task": task[:8000], "proposed_final": final_text[:6000],
                                     "required_acceptance": acceptance,
+                                    "ownership_baseline": index_guard.context(),
                                     "last_successful_file_edit_step": last_edit_step,
                                     "confirmed_file_changes": mutation_evidence,
                                     "independent_git_changes": actual_changes,

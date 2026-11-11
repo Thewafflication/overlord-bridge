@@ -746,6 +746,32 @@ def test_real_free_worker_python_cannot_repeat_owner_file_deletion(isolated, tmp
     owner.unlink()  # actual manager teardown released the protection
 
 
+def test_free_worker_cannot_stage_preexisting_helpers_to_satisfy_review(isolated, tmp_path):
+    import subprocess
+    folder = isolated / "owner-index"
+    folder.mkdir()
+    def git(*args):
+        return subprocess.check_output(['git', '-C', str(folder), *args], text=True).strip()
+    git('init')
+    git('config', 'user.name', 'Fixture')
+    git('config', 'user.email', 'fixture@example.invalid')
+    (folder / 'seed').write_text('baseline')
+    git('add', 'seed')
+    git('commit', '-m', 'baseline')
+    (folder / 'original_backup.ps1').write_text('owner bytes')
+    pool, seen = scripted_pool([
+        call('run_command', {'command': 'git add original_backup.ps1'}),
+        final_result('Validation only; owner helper preserved, no owned changes to commit.')])
+    mgr, _, _ = manager(tmp_path, pool)
+    start(mgr, folder)
+    assert git('ls-files', '--cached') == 'seed'
+    assert (folder / 'original_backup.ps1').read_text() == 'owner bytes'
+    assert any('owner_git_index_protected' in str(messages) for messages, _ in seen)
+    reviews = pool.reviews
+    assert any('ownership_baseline' in str(messages) and 'original_backup.ps1' in str(messages)
+               for messages in reviews)
+
+
 def test_default_free_worker_continues_past_thirty_steps(isolated, tmp_path):
     project = isolated / "long-task"
     project.mkdir()
@@ -2193,7 +2219,9 @@ def test_real_pool_checkpoint_fallback_reaches_validated_commit_and_push(isolate
     actions = [*context_pressure_actions(project),
         call('edit_file', {'path': 'value.py', 'old_text': 'return 0', 'new_text': 'return 42'}),
         call('run_python', {'code': 'from value import answer; assert answer() == 42; print("regression passed")'}),
-        call('run_python', {'code': 'import subprocess; subprocess.run(["git","add","value.py"],check=True); subprocess.run(["git","commit","-m","Repair answer regression"],check=True); subprocess.run(["git","push","origin","HEAD"],check=True)'}),
+        call('run_command', {'command': 'git add value.py'}),
+        call('run_command', {'command': 'git commit -m "Repair answer regression"'}),
+        call('run_command', {'command': 'git push origin HEAD'}),
         final_result('Regression passed; repair committed and pushed.')]
     planning = []
     valid = call('update_plan', {'plan': [{'step': 'Repair answer, validate and publish', 'status': 'in_progress'}],
@@ -2336,7 +2364,9 @@ def test_groq_input_fit_continues_worker_through_validation_commit_and_push(isol
     git('remote','add','origin',str(remote));git('push','-u','origin','HEAD')
     actions=[*context_pressure_actions(project),call('edit_file',{'path':'value.py','old_text':'return 0','new_text':'return 42'}),
         call('run_python',{'code':'from value import answer; assert answer()==42; print("regression passed")'}),
-        call('run_python',{'code':'import subprocess; subprocess.run(["git","add","value.py"],check=True); subprocess.run(["git","commit","-m","Repair verified answer"],check=True); subprocess.run(["git","push","origin","HEAD"],check=True)'}),final_result('Regression passed; owned repair committed and pushed.')]
+        call('run_command',{'command':'git add value.py'}),
+        call('run_command',{'command':'git commit -m "Repair verified answer"'}),
+        call('run_command',{'command':'git push origin HEAD'}),final_result('Regression passed; owned repair committed and pushed.')]
     rejected=[];accepted=[]
     async def post(url,payload,key,timeout):
         if size([payload['messages'],payload.get('tools')])>28000:

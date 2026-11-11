@@ -6,6 +6,16 @@ workflow lands.
 
 ## Current Capabilities
 
+- Free-worker Git ownership: pre-existing untracked files are pinned as owner
+  evidence for both worker and completion reviewer. During model command/Python
+  tools, a temporary Git index lock blocks indirect cooperating Git staging.
+  Single explicit `git add <owned-file>...` and `git commit -m <message>` calls
+  can proceed; broad adds and protected owner paths cannot. Explicit owner queue
+  publication paths are exempt. The lock lasts only for the tool call, preserves
+  a pre-existing external lock, and releases on cancellation. This is not a
+  sandbox against alternate indexes, direct Git database writes, nested repo
+  indexes or detached child processes; no clean-tree demand grants ownership.
+
 - Worker observation memory fails closed at its 4,096-entry capacity: uncached
   results cannot indefinitely renew discovery. Actual repository changes still
   reset the stall streak. New read-only findings after saturation are conservatively
