@@ -2,7 +2,9 @@
 
 Handles prevent delete/rename, including child-process cleanup, without reading
 file contents. In-place writes remain possible: this is not a code sandbox or
-an overwrite backup. Committed clean files and worker-created files are exempt.
+an overwrite backup. Explicit owner contracts can additionally deny writes;
+their named files are included even when committed clean. Other committed clean
+files and worker-created files remain exempt.
 """
 from __future__ import annotations
 
@@ -29,8 +31,10 @@ class OwnerFileGuard:
         while self._handles:
             self._close(self._handles.pop())
 
-    async def acquire(self, folder: Path, allowed: Callable[[Path], bool]):
+    async def acquire(self, folder: Path, allowed: Callable[[Path], bool], read_only=()):
         if os.name != "nt":
+            if read_only:
+                raise RuntimeError('Read-only owner protection requires Windows file sharing')
             return
         import ctypes
         from ctypes import wintypes
@@ -44,12 +48,17 @@ class OwnerFileGuard:
         kernel.CloseHandle.restype = wintypes.BOOL
         self._close = kernel.CloseHandle
         try:
-            paths = await _owner_paths(folder, allowed)
+            if any(not path.is_relative_to(folder.resolve()) or not allowed(path) for path in read_only):
+                raise RuntimeError('Read-only owner path is not allowed')
+            paths = sorted(set(await _owner_paths(folder, allowed)).union(read_only))
+            if len(paths) > MAX_FILES:
+                raise RuntimeError('owner-file inventory exceeds protection limit')
             for path in paths:
                 # GENERIC_READ is required for mandatory sharing enforcement;
                 # metadata-only access does NOT prevent DeleteFile on Windows.
                 # No ReadFile call, inheritable handle, or reparse traversal.
-                handle = create(str(path), 0x80000000, 3, None, 3, 0x00200080, None)
+                share = 1 if path in read_only else 3
+                handle = create(str(path), 0x80000000, share, None, 3, 0x00200080, None)
                 if handle in (None, ctypes.c_void_p(-1).value):
                     raise OSError(ctypes.get_last_error(), "cannot protect pre-existing owner file")
                 self._handles.append(handle)

@@ -1,5 +1,51 @@
 # Overlord improvement record
 
+## Protected owner-byte failure (1.0.104)
+
+Report da033837f6ec43969c0b02961febdc70 failed Pydecipher's exact owner-byte
+acceptance. All four files now equal HEAD but differ from the recorded baseline;
+LF/CRLF and BOM transformations do not explain the mismatch. The retained reports
+show the same preservation failure at 2026-11-11T07:02:01Z. Earlier monitor
+summaries recorded failed acceptance/stalls without surfacing the ownership
+failure. That audit omission is corrected; failed-check stderr is now included
+in the local collector's summary instead of only a boolean.
+
+The files, relative to the Pydecipher repository, are:
+
+- pydecipher/artifact_types/__init__.py
+- pydecipher/artifact_types/pyc.py
+- pydecipher/artifact_types/pyinstaller.py
+- pydecipher/bytecode.py
+
+Exact expected/current hashes and recovery searches are retained in
+out/checks/pydecipher-owner-baseline-mismatch.json. Known path history, five
+reflog/unreachable commits and project-local source backup searches found no
+matching original copies; no unreachable objects remained. The specific
+overwrite cause is not established. Do not label the difference a stat-cache
+artifact or change expected hashes to pass. Owner originals/backups are needed.
+
+Existing schedule 2b692635e7db is intentionally paused; retain all16 definitions
+and 7200-second intervals, with15 other schedules enabled. Resume only after all
+four original hashes match and the read-only guard is installed and verified.
+This exception is recorded in intentional_paused_schedules, not treated as a
+lost schedule. The four hashes are mirrored into the task's protected_files
+contract without weakening the original acceptance checks.
+
+The old Windows guard denied deletion but allowed writes. Explicit protected
+files now receive write/deletion-denying handles, including committed clean
+files. Hash verification occurs while locked, before preflight and model calls.
+Mismatches yield incomplete with structured paths/hashes and zero model actions.
+Other platforms fail closed for this explicit contract. This protects future
+ordinary child-process writes; it cannot recover already-changed data or provide
+an administrative sandbox.
+
+The same changed-baseline integration fails on4b35054 (1.0.103): it invokes the
+model. With the repair, it stops before any model call and releases handles.
+Native Windows tests prove old-policy writes succeed, explicit read-only writes
+fail, and owner editing works after cleanup. Eight focused tests pass with one
+platform-specific skip. Canonical checks exited zero: lint, fresh wheel build,
+1,591 tests passed and three skipped in265.12seconds. Release/install proof follows.
+
 ## Multiline commit and temporary-lock repair (1.0.103)
 
 The WSP report 4b4f145e131f4cf9808078ef1a01f816 stalled after 108 actions;

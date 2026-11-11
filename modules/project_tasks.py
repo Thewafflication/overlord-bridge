@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 from modules.command_activity import redact_text
 
@@ -37,6 +38,13 @@ def load_task(path: Path | None, folder: Path) -> dict | None:
                     or not isinstance(check.get("name"), str) or not check["name"].strip()):
                 raise ValueError("Invalid acceptance check")
         publication = task.get("publication")
+        protected = task.get('protected_files', {})
+        if (not isinstance(protected, dict) or len(protected) > 100
+                or not all(isinstance(p, str) and p and not Path(p).anchor and not PureWindowsPath(p).anchor
+                           and '..' not in re.split(r'[\\/]', p)
+                           and isinstance(h, str) and re.fullmatch(r'[0-9a-f]{64}', h)
+                           for p, h in protected.items())):
+            raise ValueError('Invalid protected owner files')
         if publication is not None:
             if (not isinstance(publication, dict) or set(publication) != {"remote", "branch", "paths"}
                     or not all(isinstance(publication[k], str) and re.fullmatch(r"[\w./-]+", publication[k])
@@ -47,6 +55,37 @@ def load_task(path: Path | None, folder: Path) -> dict | None:
                 raise ValueError("Invalid publication requirement")
         return task
     return {"state": "idle"} if configured else None
+
+
+def protected_paths(task, allowed):
+    """Resolve explicit owner files without following links or reading secrets."""
+    root = Path(task['folder']).resolve()
+    paths = []
+    for name in task.get('protected_files', {}):
+        path = root / name
+        if not path.is_relative_to(root) or not allowed(path):
+            raise ValueError('Protected owner path is not allowed')
+        for part in (path, *path.parents):
+            if part == root:
+                break
+            if part.is_symlink() or (hasattr(part, 'is_junction') and part.is_junction()):
+                raise ValueError('Protected owner path traverses a link')
+        if not path.is_file() or path.stat().st_size > 2_000_000:
+            raise ValueError('Protected owner file unavailable or exceeds 2MB')
+        paths.append(path)
+    return paths
+
+
+def protected_file_failures(task, paths):
+    """Call after acquiring read-only handles so the checked bytes stay pinned."""
+    failures = []
+    for (name, expected), path in zip(task.get('protected_files', {}).items(), paths, strict=True):
+        with path.open('rb') as stream:
+            data = stream.read(2_000_001)
+        actual = hashlib.sha256(data).hexdigest()
+        if len(data) > 2_000_000 or actual != expected:
+            failures.append({'path': name, 'expected_sha256': expected, 'actual_sha256': actual})
+    return failures
 
 
 def is_git_push(tool: str, arguments: dict) -> bool:

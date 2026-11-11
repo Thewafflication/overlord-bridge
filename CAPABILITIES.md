@@ -6,6 +6,14 @@ workflow lands.
 
 ## Current Capabilities
 
+- Ready free-worker owner tasks can declare `protected_files` as relative paths
+  and exact SHA-256 baselines. On Windows these files receive handles denying
+  writes and deletion, including clean tracked files. Hashes are checked while
+  locked, before preflight or model planning; a mismatch yields incomplete with
+  zero model actions. Cleanup releases the handles. Other platforms fail closed
+  for this explicit contract. This prevents ordinary child-process overwrites;
+  it does not recover already-changed data or provide an administrative sandbox.
+
 - Literal standalone Git commits accept quoted multiline messages through the
   ownership guard. Windows default execution uses the existing encoded
   PowerShell mode to preserve the complete message; shell expansion forms stay

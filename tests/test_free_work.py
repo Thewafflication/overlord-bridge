@@ -2623,6 +2623,31 @@ def test_planning_budget_failure_yields_incomplete_with_handoff(isolated, tmp_pa
     assert event['continuation'] is not None
 
 
+@pytest.mark.skipif(__import__('os').name != 'nt', reason='Windows mandatory owner protection')
+def test_changed_protected_owner_baseline_stops_before_any_model_call(isolated, tmp_path):
+    import hashlib
+    project = isolated / 'protected-owner'
+    project.mkdir()
+    source = project / 'owner.py'
+    source.write_bytes(b'changed outside authorized task')
+    task = {'id': 'protected', 'folder': str(project), 'state': 'ready',
+            'requirement': 'Repair owned.py only', 'task': 'Repair owned.py; preserve owner.py',
+            'protected_files': {'owner.py': hashlib.sha256(b'approved owner bytes').hexdigest()},
+            'checks': [{'name': 'check', 'tool': 'run_python', 'arguments': {'code': 'pass'}}]}
+    queue = tmp_path / 'project-tasks.json'
+    queue.write_text(json.dumps({'version': 1, 'tasks': [task]}))
+    async def no_model(*args):
+        pytest.fail('Model must not run with a changed protected owner baseline')
+    mgr, _, _ = manager(tmp_path, no_model, project_tasks_path=queue)
+    start(mgr, project)
+    event = events(mgr)[-1]
+    assert event['status'] == 'incomplete' and event['action_steps'] == 0
+    assert event['reason'] == 'protected_owner_files_changed'
+    assert event['protected_owner_file_failures'][0]['path'] == 'owner.py'
+    assert source.read_bytes() == b'changed outside authorized task'
+    source.write_bytes(b'owner can restore after cleanup')
+
+
 @pytest.mark.parametrize('proposed', ['needs_planning', 'blocked', 'discovery', 'already_complete'])
 def test_ready_owner_contract_reaches_checks_and_verified_delivery(isolated, tmp_path, proposed):
     folder = isolated / 'ready-contract'

@@ -2728,6 +2728,8 @@ class WorkerManager:
                         messages[2]["content"] = "Current project orientation (reconcile against actual checks):\n" + "\n\n".join(orientation)
                     contract = {k: project_task[k] for k in ("id", "requirement", "task")}
                     contract["checks"] = [check["name"] for check in project_task["checks"]]
+                    if project_task.get('protected_files'):
+                        contract['read_only_owner_files'] = list(project_task['protected_files'])
                     if project_task.get("publication"):
                         contract["publication"] = project_task["publication"]
                     messages.insert(2, {"role": "system", "content":
@@ -2746,16 +2748,29 @@ class WorkerManager:
 
             if is_free and not answer_only:
                 try:
+                    protected_paths = project_tasks.protected_paths(project_task, lambda path:
+                        _local_agent_path_denial(path, folder, write=False) is None) if project_task else []
                     await index_guard.acquire(folder, lambda path:
                         _local_agent_path_denial(path, folder, write=False) is None,
                         (project_task or {}).get("publication", {}).get("paths", ()))
-                    await owner_guard.acquire(folder, lambda path:
-                        _local_agent_path_denial(path, folder, write=False) is None)
+                    guard_allowed = lambda path: _local_agent_path_denial(path, folder, write=False) is None
+                    if protected_paths:
+                        await owner_guard.acquire(folder, guard_allowed, protected_paths)
+                    else:
+                        await owner_guard.acquire(folder, guard_allowed)
                 except Exception as exc:
                     self._emit_report(self._base_report(name=name, folder=folder, brain=brain,
                         session=sid, status="incomplete", reason="owner_file_protection_unavailable",
                         result_tail=f"Worker did not run: owner-file protection unavailable ({type(exc).__name__})."))
                     self._send(self.owner, f"⚠️ [{name}] did not run: could not protect existing owner files.")
+                    return
+                failures = project_tasks.protected_file_failures(project_task, protected_paths) if protected_paths else []
+                if failures:
+                    self._emit_report(dict(self._base_report(name=name, folder=folder, brain=brain,
+                        session=sid, status='incomplete', reason='protected_owner_files_changed',
+                        result_tail='Worker did not run: protected owner files differ from the approved baseline.'),
+                        protected_owner_file_failures=failures, action_steps=0))
+                    self._send(self.owner, f'⚠️ [{name}] did not run: protected owner baseline changed; restore owner files.')
                     return
                 if index_guard.protected:
                     messages[0]["content"] += (

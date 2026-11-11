@@ -10,6 +10,40 @@ import pytest
 from modules import owner_file_guard as guard
 
 
+@pytest.mark.skipif(os.name != 'nt', reason='Windows mandatory read-only sharing')
+@pytest.mark.parametrize('read_only', [False, True])
+def test_explicit_owner_file_denies_child_overwrite_and_releases_on_close(tmp_path, read_only):
+    repository(tmp_path)
+    owner = tmp_path / 'owner.py'
+    owner.write_bytes(b'owner baseline')
+    git(tmp_path, 'add', 'owner.py')
+    git(tmp_path, 'commit', '-qm', 'clean owner baseline')
+    protection = guard.OwnerFileGuard()
+    async def scenario():
+        await protection.acquire(tmp_path, lambda p: True, [owner] if read_only else [])
+        try:
+            p = subprocess.run([sys.executable, '-c',
+                'from pathlib import Path; Path("owner.py").write_bytes(b"overwritten")'],
+                cwd=tmp_path, capture_output=True)
+            if read_only:
+                assert p.returncode != 0 and b'PermissionError' in p.stderr
+                assert owner.read_bytes() == b'owner baseline'
+            else:
+                assert p.returncode == 0 and owner.read_bytes() == b'overwritten'
+        finally:
+            protection.close()
+        owner.write_bytes(b'owner can edit after worker cleanup')
+    asyncio.run(scenario())
+
+
+@pytest.mark.skipif(os.name == 'nt', reason='Non-Windows admission policy')
+def test_explicit_read_only_owner_contract_fails_closed_without_windows(tmp_path):
+    owner = tmp_path / 'owner.py'
+    owner.write_text('baseline')
+    with pytest.raises(RuntimeError, match='requires Windows'):
+        asyncio.run(guard.OwnerFileGuard().acquire(tmp_path, lambda p: True, [owner]))
+
+
 def git(folder, *args):
     return subprocess.run(["git", "-C", str(folder), *args], check=True,
                           capture_output=True, text=True).stdout

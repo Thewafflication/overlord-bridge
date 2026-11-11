@@ -1,5 +1,14 @@
 # Project task queues
 
+Optional `protected_files` maps relative owner paths to lowercase SHA-256
+digests. These are immutable inputs, not repair targets. Windows free workers
+hold write/deletion-denying handles and verify hashes before preflight or model
+planning. A changed baseline produces `protected_owner_files_changed` with zero
+model actions. Invalid, linked, disallowed or over-2MB paths fail closed; at most
+100 files can be named. Other platforms refuse this explicit contract until a
+supported protection mechanism is available. Cleanup releases the handles so
+the owner can edit/restore normally. Never update hashes merely to pass checks.
+
 The bridge reads owner-maintained `run/project-tasks.json` at the start of each
 free project worker. Package updates preserve this file. The queue has version
 1 and a `tasks` array. Each task names its absolute project folder, stable ID,
