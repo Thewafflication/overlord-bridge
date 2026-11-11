@@ -443,3 +443,18 @@ known-bypass repair are not counted as a new project feature. The earlier proces
 exit remains unexplained and requires monitoring; do not claim it was fixed.
 
 1.0.103 controlled reproduction: the same Git-backed integration fails on086395a (1.0.102), leaving one baseline commit. An intermediate unlock-only experiment created a commit but lost its message body under CMD; the final encoded-PowerShell execution preserves the exact body. Canonical tools/check.py all exited zero: lint, fresh wheel build, 1,584 tests passed and one skipped in304.44seconds. These are harness measurements, not new project deliveries.
+
+1.0.103 deployment verified: code commit8112427, tagv1.0.103. Project checks
+43000250224 passed on Windows and Linux; signed package build43000250090 passed.
+Trusted signature and archive SHA256 verified:
+1bd9d177df1baed8c264e956cc3535124b833e685b818dd934af1a82809b1729.
+Installation exited zero. Fourteen checks against installed modules passed in
+29.50seconds, including exact multiline Git message preservation, owner-file
+isolation and owned publication. All16original schedules are active at7200seconds;
+owner queue and four sessions survived. Settings were checked by metadata only.
+Proof: out/checks/project-task-1.0.103-install-preservation.json. Local control
+acknowledgedv1.0.103, instance76aa033a66af45f38112ffed768ead7b; free mode verified
+and existing Kertex work resumed. WSP HEAD remains54a5c07: its live commit and
+factual project acceptance remain unverified, so no new delivery is counted.
+The pre-update false blocker also appears in reportc3ec23ef47e24f278b444ebf65862849;
+maintenance interruption19fcdc5d304248c2a199ef20d43686f9 is not a completed run.
