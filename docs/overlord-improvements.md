@@ -360,3 +360,18 @@ delivery. Evidence: out/checks/1.0.100-cohort.json. Next prioritize the stalled
 ready-contract runs, preserving independent acceptance and ownership checks.
 
 Validation: canonical project-environment checks passed: lint, fresh wheel build, 1,574 tests passed and one skipped in 219.68 seconds. Release version consistency and diff whitespace checks passed.
+
+
+Deployment: code commit b1ce691 and tag v1.0.100 pushed. Tagged Project checks
+42957141496 passed on Windows and Linux; signed package build 42957141560
+passed. WPM trusted-signature verification succeeded, archive SHA256
+7ab55bad148dead853c2b0946193d2c96c549263a1b3a4ab2efae4df8bdcd572.
+Installation exited zero. Four tests rerun against the installed module passed.
+After initial startup latency, local control acknowledged v1.0.100, instance
+cf5383fb366c49c6b4cda7ba446e7148, with Free-wsh resumed. Owner queue hash
+is unchanged. Sixteen schedules remain, but the schedule hash changed; only a
+pre-install hash was retained, so complete schedule-definition equivalence is
+unproven. Do not report this preservation check as passed. Next installation
+must retain definition snapshots before restart (excluding scheduler clocks
+only for an explicit semantic comparison). Proof:
+out/checks/1.0.100-installed-verification.json. No live delivery gain claimed.
