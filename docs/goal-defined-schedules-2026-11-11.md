@@ -88,3 +88,18 @@ AGENTS.md, preserving existing project diffs and artifacts. These files are
 worker guidance; Overlord does not technically require them to dispatch.
 TinyPP continues to use PROJECT-WORK.md and AGENT-TASKS.md for its goal queue.
 No implementation or compiler/runtime acceptance is claimed from these changes.
+
+
+## Required work records verified
+
+Owner clarified that PROJECT-WORK.md and AGENT-TASKS.md are the required entry
+points. All four active scheduled projects now have both, with goals, bounded
+tasks, prerequisites, actual acceptance commands and continuation rules. Created
+missing WSH files (local commit 1a42564) and Silver Searcher files (16ab983).
+Prepended kerTeX's current native build contract (2347436), retaining its earlier
+tracker as explicitly historical. TinyPP's existing records from5505570 remain
+valid. Updated all four live schedule prompts to read both files before planning.
+Verified eight nonempty files, local links, exact schedule read order and retained
+60-second cadence. Proof: out/checks/goal-schedule-20261111/work-record-verification.json.
+No native builds or product acceptance are claimed by this documentation setup;
+no paused project was re-enabled and no unrelated staged changes were included.
