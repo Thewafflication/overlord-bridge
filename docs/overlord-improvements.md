@@ -1,5 +1,28 @@
 # Overlord improvement record
 
+## Alternate-index incident (1.0.101)
+
+At 2026-11-11T05:43Z the installed 1.0.100 process was offline; no shutdown
+request or installed Python process was present. The exit cause is unknown.
+No new completed reports existed. The work log instead exposed WSH bypassing
+the default-index guard with `set GIT_INDEX_FILE=...`. Its local commit
+3df90a1b2a53c74e4b396a53145157e0bea508d9 recorded 458 file deletions despite
+the files remaining in the normal index and working directory. Default remote
+master remained f305eeecec151acff99cd393babc19911f481205.
+
+Recovery: preserve the bad commit under
+refs/heads/codex/monitor-wsh-damaged-index-3df90a1, then soft-reset master to
+a2d84c50714a6976c9102b743915f245de9c9ef8. Index bytes and the edited header
+bytes matched before/after. This repairs automation-caused history damage;
+it does not count as a new project deliverable. Proof:
+out/checks/wsh-alternate-index-recovery.json. No hard reset or file deletion.
+
+The known literal GIT_INDEX_FILE bypass now fails before shell/Python execution.
+Five focused cases pass, including ordinary Git compatibility. Constructed names
+and arbitrary database writes remain outside this mechanical rule; do not claim
+a general sandbox or full ownership isolation. The offline exit remains an
+unreproduced separate finding. Release and install evidence follows.
+
 This is the durable change and results ledger. A successful dispatch, model
 "finished" report, repeated validation or recovery of an earlier mistake is not
 counted as a new product feature. Keep failed experiments and limitations here.
@@ -375,3 +398,5 @@ unproven. Do not report this preservation check as passed. Next installation
 must retain definition snapshots before restart (excluding scheduler clocks
 only for an explicit semantic comparison). Proof:
 out/checks/1.0.100-installed-verification.json. No live delivery gain claimed.
+
+1.0.101 canonical checks exited zero: lint, fresh wheel build, 1,579 tests passed and one skipped in 231.69 seconds. Five focused known-bypass/normal-Git controls passed. Comparing the saved verified1.0.99 schedule snapshot with the offline1.0.100 inventory confirms identical16IDs, prompts, intervals and enabled states; scheduler clocks are excluded from that definition comparison.

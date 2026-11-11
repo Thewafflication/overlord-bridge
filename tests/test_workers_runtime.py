@@ -1278,3 +1278,19 @@ def test_worker_process_termination_is_denied_before_launch(isolated, command):
 
 def test_worker_readonly_process_inspection_remains_allowed(isolated):
     assert _local_agent_command_denial('Get-Process python | Select-Object Id,ProcessName', isolated) is None
+
+
+@pytest.mark.parametrize('tool,args', [
+    ('run_command', {'command': 'set GIT_INDEX_FILE=%TEMP%\\wsh-temp.index && git add include/wsh/wsh.h && git commit -m repair'}),
+    ('run_command', {'command': '$env:GIT_INDEX_FILE="alternate.index"; git commit -m repair', 'shell': 'powershell'}),
+    ('run_python', {'code': 'import os, subprocess; os.environ["GIT_INDEX_FILE"]="alternate.index"; subprocess.run(["git","commit","-m","repair"])'}),
+    ('run_python', {'code': 'import subprocess; subprocess.run(["git","add","file"],env={"git_index_file":"alternate.index"})'}),
+])
+def test_alternate_git_index_is_denied_before_launch(isolated, tool, args):
+    result = execute(tool, args, isolated)
+    assert result['error'] == 'command_denied_alternate_git_index'
+    assert not (isolated / 'alternate.index').exists()
+
+
+def test_normal_git_commit_command_is_not_denied(isolated):
+    assert _local_agent_command_denial('git add include/wsh/wsh.h && git commit -m repair', isolated) is None

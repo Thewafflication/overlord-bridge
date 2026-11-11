@@ -1143,6 +1143,11 @@ def _worker_plan_response(planned: dict[str, Any]) -> dict[str, Any]:
 def _local_agent_command_denial(command: str, folder: Path) -> str | None:
     # Windows-style separators must not slip past the "/"-based fragments.
     lowered = command.lower().replace("\\", "/")
+    # Observed bypass: an empty alternate index produced a commit deleting the
+    # rest of the repository. This is mechanical command protection, not intent
+    # classification or a sandbox against constructed/indirect variable names.
+    if re.search(r"\bgit_index_file\b", lowered):
+        return "command_denied_alternate_git_index"
     for fragment in _LOCAL_AGENT_DENY_FRAGMENTS:
         if fragment.lower() in lowered:
             return f"command_references_offlimits_fragment:{fragment}"

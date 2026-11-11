@@ -6,6 +6,12 @@ workflow lands.
 
 ## Current Capabilities
 
+- Worker commands reject the literal `GIT_INDEX_FILE` variable in shell and
+  Python tools before execution. An observed empty alternate-index commit
+  recorded hundreds of unrelated deletions; use the normal repository index.
+  This is a mechanical known-bypass check, not a sandbox against constructed
+  variable names or arbitrary Git database writes.
+
 - Free-worker Git ownership: pre-existing untracked files are pinned as owner
   evidence for both worker and completion reviewer. During model command/Python
   tools, a temporary Git index lock blocks indirect cooperating Git staging.
