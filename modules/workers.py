@@ -55,7 +55,7 @@ import threading
 import time
 import uuid
 
-from modules import shared_job
+from modules import shared_job, project_tasks
 from modules import worker_readiness
 from modules.windows_scripts import explicit_powershell_files
 from modules.request_budget import BudgetedMessages, review_messages as budget_review_messages, size as request_size
@@ -1744,11 +1744,12 @@ class WorkerManager:
                 except ValueError as exc:
                     return {"ok": False, "error": "powershell_script_requires_shell",
                             "message": str(exc) + "; use shell='powershell' and & './script.ps1' arguments."}
-            timeout = arguments.get("timeout_seconds", DEFAULT_LOCAL_AGENT_COMMAND_TIMEOUT)
+            timeout_limit = project_tasks.owner_check_timeout() or DEFAULT_LOCAL_AGENT_COMMAND_TIMEOUT
+            timeout = arguments.get("timeout_seconds", timeout_limit)
             try:
-                timeout_i = max(1, min(int(timeout), DEFAULT_LOCAL_AGENT_COMMAND_TIMEOUT))
+                timeout_i = max(1, min(int(timeout), timeout_limit))
             except (TypeError, ValueError):
-                timeout_i = DEFAULT_LOCAL_AGENT_COMMAND_TIMEOUT
+                timeout_i = timeout_limit
             log_command("worker", "started", command, folder)
             environment = _worker_command_environment()
             # Tool results are decoded as UTF-8 below. Redirected Python on
@@ -1804,6 +1805,7 @@ class WorkerManager:
                 "command": command,
                 "exit_code": proc.returncode,
                 "timed_out": timed_out,
+                "timeout_seconds": timeout_i,
                 "stdout": stdout_tail,
                 "stdout_truncated": stdout_truncated,
                 "stderr": stderr_tail,

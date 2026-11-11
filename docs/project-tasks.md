@@ -1,5 +1,13 @@
 # Project task queues
 
+Trusted configured acceptance checks receive a600-second default and maximum
+command deadline. An explicit shorter timeout_seconds is honored. Ordinary
+model commands remain capped at180seconds, including oversized timeout requests.
+The longer deadline applies only while the harness executes owner-defined queue
+checks; it is task-local and resets on errors/cancellation. Reports retain the
+effective timeout_seconds. Timeouts still fail acceptance; no assertion or
+command is replaced, skipped or treated as successful.
+
 Optional `protected_files` maps relative owner paths to lowercase SHA-256
 digests. These are immutable inputs, not repair targets. Windows free workers
 hold write/deletion-denying handles and verify hashes before preflight or model

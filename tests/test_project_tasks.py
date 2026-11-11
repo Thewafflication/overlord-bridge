@@ -8,6 +8,38 @@ import pytest
 from modules import project_tasks
 
 
+@pytest.mark.parametrize('failure', [RuntimeError, asyncio.CancelledError])
+def test_owner_check_deadline_resets_after_failure(failure):
+    async def execute(tool, arguments):
+        assert project_tasks.owner_check_timeout() == 600
+        raise failure()
+    async def probe():
+        with pytest.raises(failure):
+            await project_tasks.validate({'id': 'fixture', 'checks': [
+                {'name': 'test', 'tool': 'run_python', 'arguments': {'code': 'pass'}}]}, execute)
+        assert project_tasks.owner_check_timeout() is None
+    asyncio.run(probe())
+
+
+def test_owner_check_deadline_is_task_local_and_records_effective_limit():
+    async def probe():
+        entered, release = asyncio.Event(), asyncio.Event()
+        async def execute(tool, arguments):
+            assert project_tasks.owner_check_timeout() == 600
+            entered.set()
+            await release.wait()
+            return {'ok': True, 'exit_code': 0, 'timed_out': False, 'timeout_seconds': 600}
+        task = asyncio.create_task(project_tasks.validate({'id': 'fixture', 'checks': [
+            {'name': 'test', 'tool': 'run_python', 'arguments': {'code': 'pass'}}]}, execute))
+        await entered.wait()
+        assert project_tasks.owner_check_timeout() is None
+        release.set()
+        result = await task
+        assert result['passed'] and result['checks'][0]['result']['timeout_seconds'] == 600
+        assert project_tasks.owner_check_timeout() is None
+    asyncio.run(probe())
+
+
 def test_protected_owner_paths_and_exact_hashes(tmp_path):
     import hashlib
     source = tmp_path / 'owner.py'

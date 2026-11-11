@@ -6,6 +6,14 @@ workflow lands.
 
 ## Current Capabilities
 
+- Trusted owner-queue acceptance commands have a separate bounded600-second
+  default/ceiling while project_tasks.validate executes them. Ordinary model
+  commands remain capped at180seconds. Explicit shorter check deadlines remain
+  effective; larger requests cannot exceed the owner ceiling. Task-local scope
+  resets on failure/cancellation and does not change concurrent ordinary tools.
+  Command/acceptance results retain the effective timeout_seconds. Assertions,
+  ownership, permissions and required success checks remain enforced.
+
 - Duplicate discovery guards retain a request only when its successful paired
   source result remains in worker context. A denied repeat alone cannot prevent
   reacquiring an evicted read/list/search result. Native and JSON-fallback tool

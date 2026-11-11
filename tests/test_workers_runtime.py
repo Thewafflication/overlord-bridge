@@ -465,6 +465,35 @@ def execute(tool, arguments, folder):
     return run(manager._local_agent_execute_tool(folder, tool, arguments))
 
 
+@pytest.mark.parametrize('requested', [None, 999])
+def test_owner_acceptance_can_finish_beyond_model_command_deadline(isolated, tmp_path, monkeypatch, requested):
+    from modules import project_tasks
+    folder = isolated / 'long-owner-check'
+    folder.mkdir()
+    manager, _, _ = make_manager(tmp_path)
+    monkeypatch.setattr(workers, 'DEFAULT_LOCAL_AGENT_COMMAND_TIMEOUT', 1)
+    monkeypatch.setattr(project_tasks, 'OWNER_CHECK_TIMEOUT_SECONDS', 4, raising=False)
+    arguments = {'code': 'import time; time.sleep(1.3); print("all checks finished")'}
+    if requested is not None:
+        arguments['timeout_seconds'] = requested
+    task = {'id': 'native-validation', 'checks': [
+        {'name': 'full suite', 'tool': 'run_python', 'arguments': arguments}]}
+
+    async def probe():
+        async def execute_check(tool, args):
+            return await manager._local_agent_execute_tool(folder, tool, args)
+        ordinary = await execute_check('run_python', arguments)
+        assert ordinary['timed_out']
+        acceptance = await project_tasks.validate(task, execute_check)
+        assert acceptance['passed'], acceptance
+        assert acceptance['checks'][0]['result']['stdout'].strip() == 'all checks finished'
+        assert acceptance['checks'][0]['result']['timeout_seconds'] == 4
+        after = await execute_check('run_python', {'code': 'print("ordinary")', 'timeout_seconds': 999})
+        assert after['timeout_seconds'] == 1
+
+    run(probe())
+
+
 def test_agent_tools_read_write_and_list_inside_the_folder_only(isolated):
     folder = isolated / "app"
     folder.mkdir()

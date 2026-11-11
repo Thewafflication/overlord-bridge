@@ -1,5 +1,27 @@
 # Overlord improvement record
 
+## Owner acceptance deadline prevented full validation (1.0.107)
+
+Post1.0.106 reportscec14ca383ba4803a38120da3f0ff4f1 (Silver),
+b82a873a889f48098d31d2d30a4ae2e1 (WSH) and450f9d4cf32c42bb894079e29b5ea26f
+(TinyPP) each stalled after48actions. Their actual source HEADs remain16ab983,
+b32964f anddd67154 respectively. No new implementation/delivery was verified.
+WSH's header/configure/build checks pass, but its full native CTest is killed at
+180seconds before finishing115tests. The command tool clamps even explicitly
+larger timeouts to180, making repeated owner acceptance unable to finish.
+
+A real child-process regression scales the deadlines to one/four seconds: the
+ordinary command times out, while the same owner check must finish and retain
+its output. This fails on1.0.106. The repaired harness grants only trusted queue
+check execution a600-second default/ceiling. Explicit shorter deadlines remain;
+ordinary model commands still clamp at180. Context-local scope prevents leakage
+to concurrent tools and resets on exceptions/cancellation. Reports retain the
+effective deadline. All assertion, ownership and exit/no-timeout gates remain.
+Eight focused checks pass, including native timeout/cancellation process cleanup.
+Independent unchanged WSH native CTest passed all115tests in240.50seconds, exit0, exceeding the old180-second ceiling. Canonical tools/check.py all exited zero: lint, fresh wheel and1,605 tests passed, three skipped in200.96seconds. Installed-path checks are pending. This is validation evidence, not completed publication.
+This is not a fix for ordinary TinyPP command duration or general repeated model
+planning. Preserve17/4/13 goal-defined schedules and all protected owner baselines.
+
 ## Evicted source retained as a denial (1.0.106)
 
 New KerTeX report09adbd498b2842daaf033d2296ba0965 stopped after26 actions,

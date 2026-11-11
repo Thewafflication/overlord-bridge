@@ -5,9 +5,19 @@ import json
 import hashlib
 import os
 import re
+from contextvars import ContextVar
 from pathlib import Path, PureWindowsPath
 
 from modules.command_activity import redact_text
+
+
+OWNER_CHECK_TIMEOUT_SECONDS = 600
+_owner_check_running = ContextVar('owner_check_running', default=False)
+
+
+def owner_check_timeout() -> int | None:
+    """Only trusted queue-check execution gets the longer validation deadline."""
+    return OWNER_CHECK_TIMEOUT_SECONDS if _owner_check_running.get() else None
 
 
 def load_task(path: Path | None, folder: Path) -> dict | None:
@@ -125,12 +135,16 @@ async def validate(task: dict, execute, *, completion: bool = False) -> dict:
         checks.append({"name": "Owned paths committed and remote SHA verified",
                        "tool": "run_python", "arguments": {"code": code}})
     for check in checks:
-        result = await execute(check["tool"], check["arguments"])
+        token = _owner_check_running.set(True)
+        try:
+            result = await execute(check["tool"], check["arguments"])
+        finally:
+            _owner_check_running.reset(token)
         passed = (result.get("ok") is True and type(result.get("exit_code")) is int
                   and result["exit_code"] == 0 and not result.get("timed_out"))
         recorded = {key: redact_text(value)[-4000:] if isinstance(value, str) else value
                     for key, value in result.items() if key in {
-                        "ok", "exit_code", "error", "timed_out", "stdout", "stderr"}}
+                        "ok", "exit_code", "error", "timed_out", "timeout_seconds", "stdout", "stderr"}}
         results.append({"name": check["name"], "passed": passed, "result": recorded})
         if not passed:
             break
