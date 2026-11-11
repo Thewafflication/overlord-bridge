@@ -23,6 +23,35 @@ full native CTest timed out before completion. That partial source commit is
 not a verified delivery. Preserve current17/4/13 owner schedule policy, including
 60-second active checks and every intentional pause. Seventeen focused checks passed. Canonical tools/check.py all exited zero: lint, fresh wheel and1,601 tests passed, two skipped in368.06seconds. Deployment proof follows.
 
+
+1.0.106 deployment verified: commit5ff6a68, tagv1.0.106 pushed. Tag Project
+checks43107922884 passed on Windows (1,600 passed, three skipped,94.05seconds)
+and Linux (1,572 passed,31 skipped,43.42seconds). Signed package build43107922736
+passed. Trusted signature fingerprint6c21ebda96b16bfa64700d28fcdeb20dc4b19de448a723a970ac09b720f04b1d
+and archive SHA256c24ff8ad66955da13b35f75fc5215e31089e2267a89dfa3bf26a4cafcbcae2f0
+were verified, including the published checksum. Installation exited zero after
+acknowledged idle and normal exit of both bridge Python processes. Twenty-five
+checks against installed modules passed, one platform skip in6.97seconds.
+They cover source reacquisition, renewed duplicate blocking, native/fallback
+pairing, command/write protection and explicit read-only owner contracts.
+
+All17 schedule definitions, IDs, prompts, intervals and owner queue survived;
+original four active60-second schedules and13 intentional pauses were restored.
+Four session files retained exact metadata; settings checked by metadata only.
+Proof: out/checks/project-task-1.0.106-install-preservation.json. Overlord is
+online in free mode as instance9489a7d8b435421ca71b620eee1e9f55; existing Silver
+Searcher work resumed. Pydecipher remains paused with original expected hashes;
+no owner source was repaired or baseline weakened by this release.
+
+Additional TinyPP reportccce1f9c5e8d40aab79dc9d508794f0b stalled after48 actions,
+with clean checkout atdd67154 (guidance only). Baseline unittest counts61/18/12
+passed, but tools/verify.py timed out after build-Release. Its model-maintained
+plan incorrectly asserts completed foundation tests; retained tool evidence
+contradicts it. No TPP-001 implementation or completed foundation gate is counted.
+Five reviewed project outcomes and one installation interruption produced zero
+new independently verified deliveries. The controlled harness regression is
+fixed; a higher live delivery rate remains unproven.
+
 ## Protected owner-byte failure (1.0.105; candidate1.0.104 not installed)
 
 Report da033837f6ec43969c0b02961febdc70 failed Pydecipher's exact owner-byte
