@@ -1,6 +1,6 @@
 # Overlord improvement record
 
-## Protected owner-byte failure (1.0.104)
+## Protected owner-byte failure (1.0.105; candidate1.0.104 not installed)
 
 Report da033837f6ec43969c0b02961febdc70 failed Pydecipher's exact owner-byte
 acceptance. All four files now equal HEAD but differ from the recorded baseline;
@@ -45,6 +45,35 @@ Native Windows tests prove old-policy writes succeed, explicit read-only writes
 fail, and owner editing works after cleanup. Eight focused tests pass with one
 platform-specific skip. Canonical checks exited zero: lint, fresh wheel build,
 1,591 tests passed and three skipped in265.12seconds. Release/install proof follows.
+
+
+1.0.105 deployment verified: runtime protection commit85677c7; release commit
+466325d, tagv1.0.105. Canonical local checks exited zero: fresh wheel/lint and
+1,592 passed, two skipped in253.62seconds. Tag CI43060293014 passed on Windows
+(1,592 passed, two skipped,92.03seconds) and Linux (1,563 passed,31 platform
+skips,52.30seconds). Signed package CI43060292894 passed. Trusted signing
+fingerprint6c21ebda96b16bfa64700d28fcdeb20dc4b19de448a723a970ac09b720f04b1d;
+archive SHA256187223ee54c31474af4be6caf52103d8af2d83aa95b11a550a859718d31070b4.
+Installation exited zero after acknowledged idle and normal process exit.
+Eight installed-module checks passed, one skipped in7.93seconds, including native
+child-process write denial, cleanup release and zero-model-action rejection of a
+changed owner baseline. These are harness regressions, not project deliveries.
+
+All16 original schedule definitions/IDs/7200-second intervals survived;15 are
+active and Pydecipher2b692635e7db remains intentionally paused. The owner queue
+survived exactly, including original acceptance checks. WSH's existing five
+acceptance hashes were independently confirmed unchanged and mirrored into its
+read-only contract while workers were stopped; no project source was written.
+Installed queue validation confirms WSH zero mismatches and Pydecipher four.
+Four saved sessions retained exact metadata; settings checked by metadata only.
+Preservation proof: out/checks/project-task-1.0.105-install-preservation.json.
+Overlord is online in free mode, instance392e4daa4bc3491195ddd1c1ac4f6d1c.
+WSP interruptionc9ba85d5de3a4db7aae79db9408207d2 was authorized maintenance,
+not completed work. No new independently verified project delivery is counted.
+Owner action remains: provide original/backed-up bytes for the four Pydecipher
+files listed above. The overwrite cause remains unproven; expected hashes have
+not been replaced with HEAD hashes. Do not resume that schedule until recovery
+matches every original hash.
 
 ## Multiline commit and temporary-lock repair (1.0.103)
 
