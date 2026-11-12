@@ -206,3 +206,57 @@ a version bump, repeat the installation, or claim a completed product delivery.
 Preserve four active/13 paused schedules, original owner hashes and Pydecipher
 quarantine. Remaining release improvement work is unfinished: actual worker
 completion and independently verified publication still need to be demonstrated.
+
+
+## 2026-11-12 10:00 UTC — first verified closure, remaining discovery stalls
+
+Independent audit captured 2026-11-12T09:59:03.643647+00:00, inclusive cursor
+2026-11-12T04:03:48.797607Z. Read the installed worker_reports directory
+(outside run/); the latter has no event files and would incorrectly yield zero.
+Local proof: out/checks/automation-20261112-1000-cohort.json.
+
+| Measure | Result |
+| --- | ---: |
+| Terminal runs | 20 |
+| Acceptance-verified runs / unique tasks | 1 / 1 |
+| Finished / stalled / incomplete / interrupted | 1 / 15 / 3 / 1 |
+| Verified rate | 5% |
+| Preflights / initially failing contracts | 3 / 2 |
+| Recorded worker seconds | 16,326.704 |
+
+This is a mixed-version cohort, not a controlled improvement estimate. The
+previous window had zero verified deliveries; this window establishes one
+accepted task, not general completion reliability. Cumulative independent
+inventory already records two unique tasks; do not count this WSH audit again.
+
+WSH report f42d8787e2c24437b47cd34d984c674c passed all six final gates,
+including 115/115 native tests in 195.97 seconds, with 24 worker actions in
+1,545.546 seconds. Existing independent evidence verifies commit/publication
+b32964fcf1dfc5ce69ef6ffb2196ef2c73250c6d, all five original protected hashes,
+and completed queue state. The ABI return-type repair is an existing committed
+change; this audit creates no new product implementation. Evidence:
+out/checks/wsh-independent-delivery-1.0.108.json.
+
+Independently queried GitHub: v1.0.108 is published, non-draft and non-prerelease;
+Project checks 43165450906 and signed-package build 43165450884 both succeeded.
+The earlier installer exited zero and its preservation proof records all 17
+schedule definitions, owner queue and four session metadata records retained.
+Current local control acknowledges v1.0.108, instance
+7479c2c403494c5394fcb098a5c90d5b, Free-the_silver_searcher active. Current schedule
+inventory independently confirms four active and 13 paused definitions. This
+is deployment verification of the intervening release, not a new installation.
+
+Remaining measurable blocker: TinyPP report 6e382fb9bfa94066ba9586a263e0f3b5
+stalled after 132 actions / 2,018.938 seconds, repeating semantic_ir.py and
+ADR-0011.md while still deriving schema spelling. Its readiness assessment
+already identifies a bounded implementation and passing baseline tests. Silver
+8b9c8e79fe124de4bf0568fff65ac631 and kerTeX
+fc64a8541fa14c2080826e33c778157c each stalled at 48 actions. Next harness
+investigation should reproduce cross-run continuation/discovery behavior with
+these concrete reports; extending test deadlines or rereleasing the console
+fix does not address that evidence. Preserve acceptance, original hashes,
+Pydecipher quarantine, and the four-active/13-paused policy.
+
+Four accounting regressions passed in 0.06 seconds. No runtime source change,
+new release or restart was performed by this audit. The tracking document is
+committed and pushed; active worker execution is preserved.
