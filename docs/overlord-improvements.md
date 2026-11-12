@@ -20,6 +20,38 @@ two legacy negative controls still fail as expected after repair. Twenty-two
 focused checks pass in3.94seconds. Canonical tools/check.py all exited zero: lint, fresh wheel and1,609 passed, three skipped in229.62seconds. Four additional Windows PowerShell5.1 native cases pass in4.72seconds. Installed hidden-launch acceptance follows. This repairs a reproduced launch condition, not the
 remaining repeated model planning or context-capacity problems.
 
+
+1.0.108 deployment verified: commit94f868b, tagv1.0.108. Project checks43165450906
+passed: Windows1,609 passed/three skipped in116.00seconds; Linux1,577 passed/35
+skipped in55.94seconds. Windows reports one existing Tkinter-finalizer warning
+in local-control cleanup, not a test failure. Signed build43165450884 passed.
+Trusted fingerprint6c21ebda96b16bfa64700d28fcdeb20dc4b19de448a723a970ac09b720f04b1d;
+archive SHA256150e1e33ef4756d5e9966e3c8a954a8a9dfcc380af3fb8c1faefab1a30ad426c
+matched the published checksum. Installation exited zero after acknowledged idle
+and normal exit of both old bridge Python processes. Fifty-five installed checks
+passed, one platform skip in32.30seconds; launcher fixtures target the installed
+script, not the development copy.
+
+The full installed owner-acceptance path then ran in a hidden new console forced
+to code page437. Invoking the actual installed launcher initialized65001; all
+five original WSH checks passed, including all115 CTest tests in181.69seconds.
+No model actions, WSH source edits, expected-hash changes, queue completion or
+publication occurred. Queue bytes and source HEADb32964f remain
+unchanged. Proof: out/checks/wsh-installed-owner-acceptance-1.0.108.json and its
+text trace. The former no-window/hidden-console failures are controlled launch
+regressions; current publication/final completion still require real verification.
+The existing WSH validation milestone is updated, not counted as a second task.
+
+All17 IDs/prompts/intervals and owner queue survived; four active60-second
+schedules and13 intentional pauses restored. Four session files retained exact
+metadata; settings checked by metadata only. Proof:
+out/checks/project-task-1.0.108-install-preservation.json. Overlord is online in
+free mode, instance7479c2c403494c5394fcb098a5c90d5b; existing Silver Searcher work resumed.
+Pydecipher remains paused with original expected hashes. Initial11reviewed
+project runs consumed528actions with zero verified deliveries; two later stalls
+and maintenance interruptionf1841262b2ca4493a05696b4def4c084 add no delivery.
+Remaining repeated planning/context-capacity issues are separate follow-ups.
+
 ## Owner acceptance deadline prevented full validation (1.0.107)
 
 Post1.0.106 reportscec14ca383ba4803a38120da3f0ff4f1 (Silver),
