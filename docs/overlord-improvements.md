@@ -1,5 +1,30 @@
 # Overlord improvement record
 
+## First independently verified WSH closure after1.0.108
+
+Reportf42d8787e2c24437b47cd34d984c674c finished wsh-public-header-repair-1
+in24actions/1545.546seconds. All six completion gates passed,
+including115/115 native tests in195.97seconds and committed
+owned paths/live remote SHA verification. Independently queried local HEAD and
+live origin/master both equalb32964fcf1dfc5ce69ef6ffb2196ef2c73250c6d. All five original
+protected test/build hashes still match; owned files match HEAD and the queue
+state is completed. Proof: out/checks/wsh-independent-delivery-1.0.108.json.
+
+Count one unique accepted existing ABI-regression repair/publication. No new
+implementation was created in this run: b32964f changes two return-type lines in
+include/wsh/wsh.h and src/wshlib.c. The final narrative's guard restoration refers
+to earlier source history, not a new change in that commit. This distinction is
+retained rather than inflated into a new feature or another native milestone.
+
+The reviewed post-release window has five terminal runs: one accepted WSH task
+and four known unfinished Silver/TinyPP/kerTeX outcomes. It is a small retained
+cohort, not a controlled delivery-rate comparison. The cumulative independently
+verified task inventory now has2unique IDs (including the earlier Mypal
+regression harness). Existing17definitions/four active60-second schedules/13
+intentional pauses and free mode are preserved. WSH's completed queue skips
+model work until another owner-defined ready task exists; no filler task or
+cosmetic Overlord release was created. Active TinyPP work was left running.
+
 ## Hidden Windows launch changed Unicode acceptance (1.0.108)
 
 Eleven newly terminal reports after the saved cursor remain unfinished: nine
