@@ -150,3 +150,59 @@ Next verify its signed release, installed-module regression, schedule/queue
 preservation and live acknowledgement, then measure newly terminated runs.
 Pydecipher remains quarantined pending the four original owner hashes; preserve
 the four-active/13-paused policy and independent acceptance checks.
+
+## Follow-up cohort at 2026-11-12 04:03 UTC
+
+Cutoff 2026-11-11T21:56:26.895938Z, generated
+2026-11-12T04:03:48.797607+00:00. Deduplicated installed-journal snapshot:
+
+| Measure | Observed |
+| --- | ---: |
+| Terminal runs | 17 |
+| Stalled / incomplete / interrupted | 13 / 2 / 2 |
+| Model-finished runs | 0 |
+| Acceptance-verified runs / unique tasks | 0 / 0 |
+| Preflights / initially failing contracts | 3 / 3 |
+| Recorded worker seconds | 18,199.781 |
+| Verified acceptance rate | 0% |
+
+Evidence: out/checks/automation-20261112-cohort.json and
+out/checks/automation-20261112-terminal-evidence.json (local runtime artifacts).
+Four independent accounting regressions passed in 0.14 seconds. The cohort
+spans deployments; it does not isolate the effect of any single release.
+
+The previous pending deployment is now resolved: v1.0.107 is a published,
+non-draft, non-prerelease release. Tagged Project checks 43123325882 and signed
+package workflow 43123325917 succeeded. The existing improvement ledger records
+signature/checksum verification, installation, 33 installed-module checks and
+schedule/queue preservation. Independent live control in this audit acknowledged
+v1.0.107, instance f5d03110e5e44946b6ccfee3dfaad233, Free-wsh active. This
+confirms the current runtime version; historical preservation evidence belongs
+to that earlier installation, not a new install performed by this audit.
+
+### New discriminating failure: WSH frontend-process
+
+Terminal report 413659d781ce4d198f2b86d3ea749078 proves that the installed
+600-second owner deadline is effective: all five checks ran and the native suite
+finished in 181.77 seconds without timeout. It failed test 22, frontend-process:
+114/115 passed, exit 8. Its preflight also failed that test (165.68 seconds).
+The header compile, configure, build and retained-file hashes passed. The earlier
+115/115 independent validation remains valid historical evidence, but cannot
+supersede these subsequent failures or establish delivery.
+
+The same report stalled after 48 actions. Diagnostics report 16 reads of
+include/wsh/api.h, 12 of src/wshlib.c, 10 of tests/abi_header_hygiene.c and eight
+of tests/embedding/abi1-exports.txt, with no repository evidence change. These
+counts describe tool observations; they do not establish a general model cause.
+Next bounded investigation should obtain frontend-process failure diagnostics
+through the assigned WSH worker and reproduce the actual failing environment,
+then rerun the unchanged full acceptance and publication checks. Repeating
+header surveys or extending the already sufficient deadline does not address
+this observed failure. No project source was edited by this audit.
+
+No new runtime defect was reproduced sufficiently to justify another deployment.
+This run commits/pushes the measured tracking document; it does not manufacture
+a version bump, repeat the installation, or claim a completed product delivery.
+Preserve four active/13 paused schedules, original owner hashes and Pydecipher
+quarantine. Remaining release improvement work is unfinished: actual worker
+completion and independently verified publication still need to be demonstrated.
