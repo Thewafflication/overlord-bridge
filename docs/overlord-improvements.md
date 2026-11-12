@@ -22,6 +22,35 @@ Independent unchanged WSH native CTest passed all115tests in240.50seconds, exit0
 This is not a fix for ordinary TinyPP command duration or general repeated model
 planning. Preserve17/4/13 goal-defined schedules and all protected owner baselines.
 
+
+1.0.107 deployment verified: commit1b3df42, tagv1.0.107. Tagged Project
+checks43123325882 passed: Windows1,606 passed/two skipped in104.85seconds;
+Linux1,577 passed/31 skipped in54.66seconds. Signed build43123325917 passed.
+Trusted fingerprint6c21ebda96b16bfa64700d28fcdeb20dc4b19de448a723a970ac09b720f04b1d;
+archive SHA2568eb5d3987943023bc7be3476bfe426b142b29a5824028b014f69c964398f1153,
+also matched published SHA256SUMS. Installation exited zero after acknowledged
+idle and normal process exit. Thirty-three checks against installed modules
+passed, one platform skip in22.81seconds, including deadline scope, real child
+processes, cancellation cleanup, read-only ownership and source reacquisition.
+
+Actual installed Python/modules then executed the unchanged ready WSH queue:
+all five owner checks passed with effective600-second limits, including all
+115 native CTest tests in206.10seconds. Original protected hashes match;
+queue bytes and HEADb32964f remain unchanged. No model action,
+project source edit, push or queue completion occurred in this audit. Proof:
+out/checks/wsh-installed-owner-acceptance-1.0.107.json. This is an independently
+verified validation milestone, not a completed publication/delivery. Its scheduled
+worker must still satisfy original commit/publication/final acceptance rules.
+
+All17 schedule definitions/IDs/prompts/intervals and owner queue survived;
+four active60-second schedules and13 intentional pauses were restored. Four
+sessions retained exact metadata; settings checked by metadata only. Proof:
+out/checks/project-task-1.0.107-install-preservation.json. Overlord is online in
+free mode, instance928f27305ded47c0b50caa6f569138f7. Pydecipher remains paused and original
+expected hashes are unchanged. Three reviewed project stalls plus installation
+interruptionffbf6f6b1d4a45de9f98d0723b09d9be produce zero newly verified deliveries.
+Ordinary TinyPP command duration and general repeated planning remain follow-up.
+
 ## Evicted source retained as a denial (1.0.106)
 
 New KerTeX report09adbd498b2842daaf033d2296ba0965 stopped after26 actions,
