@@ -1,5 +1,34 @@
 # Overlord improvement record
 
+## Restart memory dropped diagnostics mid-JSON (1.0.109)
+
+Owner asked whether runs lack time or memory. Confirmed: free workers default to
+zero/unlimited steps and return before the native CLI's30-minute timeout path.
+A current TinyPP run used96steps/2,172.906seconds and stopped on repeated evidence;
+its diagnostics count50reads of semantic_ir.py. The retained audit at inspection
+already had42unfinished runs/2,180actions across TinyPP, kerTeX and Silver; that
+snapshot excludes the next three reports and is not a controlled rate measure.
+Bridge working set was73MB with12GB physical RAM free. This is a context/strategy
+problem rather than evidence of a machine-RAM or total-runtime failure.
+
+The worker's serialized active history is capped at48,000characters, with further
+provider fitting possible. Restart preloading previously sliced an8,000-character
+JSON serialization regardless of field boundaries. In the sampled Silver report,
+9,087characters become invalid/unterminated JSON and its bounded diagnostic tail
+is lost. Sampled TinyPP and kerTeX handoffs fit intact; do not blame their loops
+on that exact crop. Evidence: out/checks/handoff-truncation-observed-20261112.json.
+
+The integration reproduces the broken handoff on1.0.108. Structural fitting now
+prioritizes last action, bounded observed evidence and completion feedback;
+compacts optional prior model-plan detail, retains current/next action and labels
+omissions. JSON escaping counts toward the budget; values are redacted before
+encoding and source records remain unchanged. Replay turns Silver into complete
+5,112-character JSON with its diagnostic excerpt intact. TinyPP/KerTeX retain
+their bounded evidence and prior action too. Eleven focused checks pass in12.72s.
+This does not persist all source contents, expand active context, implement
+cross-run loop escalation or establish improved live completion. Canonical tools/check.py all passed:1,615passed/3skipped in384.21seconds.
+Deployment proof follows; acceptance/owner protection/free mode remain.
+
 ## First independently verified WSH closure after1.0.108
 
 Reportf42d8787e2c24437b47cd34d984c674c finished wsh-public-header-repair-1

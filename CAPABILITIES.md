@@ -6,6 +6,14 @@ workflow lands.
 
 ## Current Capabilities
 
+- Unfinished-run handoffs fit within8,000 characters as complete JSON. The last
+  action number, bounded failure evidence and completion feedback take priority
+  over verbose previous model-plan detail. Oversized plans retain their current
+  action and next pending steps with explicit omission markers; JSON escaping
+  counts toward the budget, strings are redacted before encoding, and input data
+  is not mutated. This repairs observed mid-string diagnostic loss, not all
+  cross-run loops or the separate48,000-character active-history budget.
+
 - The Windows launcher initializes console input/output and PowerShell pipeline
   encoding to UTF-8 without BOM before Python starts, including hidden/detached
   launches. This keeps native grandchildren's redirected Unicode capture

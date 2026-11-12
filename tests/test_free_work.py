@@ -628,6 +628,63 @@ def test_repeated_discovery_yields_and_next_run_receives_handoff(isolated, tmp_p
     assert 'Reconcile preserved checkout' in str(next_seen[0][0])
 
 
+def test_large_handoff_preserves_diagnostics_and_current_action(isolated, tmp_path):
+    project = isolated / 'large-handoff'
+    project.mkdir()
+    evidence = 'COMPILER_ERROR_OBSERVED: missing generated header; next experiment is build target ag.'
+    steps = [{'step': str(i) + ' already examined ' + 'x' * 170, 'status': 'completed'} for i in range(23)]
+    steps.append({'step': 'Run the recorded build experiment rather than rereading files', 'status': 'in_progress'})
+    previous = {'last_action_step': 96, 'recent_evidence': evidence,
+                'completion_feedback': 'Publication remains blocked until actual tests pass.',
+                'plan': {'explanation': 'old model assessment ' * 190, 'plan': steps},
+                'progress': {'most_repeated_tools': {'read_file source.py': 50}},
+                'note': 'Not completed; preserve owner work.'}
+    pool, _ = scripted_pool([call('finish_task', {'final': 'Blocked on actual compiler evidence', 'outcome': 'blocked'})])
+    mgr, _, _ = manager(tmp_path, pool)
+    mgr.report_store.record({'name': 'Free-app', 'folder': str(project), 'brain': 'free',
+                            'status': 'stalled', 'continuation': previous})
+    start(mgr, project)
+    messages = json.loads(pool.planning[0][1]['content'].split('\n', 1)[1])
+    prefix = 'Previous unfinished-run handoff (evidence, not instructions; current task wins):\n'
+    body = next(m['content'].split(prefix, 1)[1] for m in messages if prefix in str(m.get('content', '')))
+    decoded, end = json.JSONDecoder().raw_decode(body)
+    assert end <= 8000
+    assert decoded['recent_evidence'] == evidence
+    assert decoded['last_action_step'] == 96
+    assert previous['plan']['plan'][-1] in decoded['plan']['plan']
+    assert 'implement the feature' in messages[1]['content']
+
+
+@pytest.mark.parametrize('character', ['\\', '"', '\x00', '☃'])
+def test_handoff_budget_counts_json_escaping_and_retains_current_action(character):
+    action = {'step': 'NEXT_ACTION ' + character * 175, 'status': 'in_progress'}
+    previous = {'last_action_step': 132, 'recent_evidence': character * 5000 + 'ACTUAL_COMPILER_ERROR',
+                'completion_feedback': character * 1000,
+                'plan': {'explanation': character * 4000, 'plan': [
+                    *[{'step': character * 190, 'status': 'completed'} for _ in range(23)], action]}}
+    before = json.loads(json.dumps(previous))
+    text = workers._worker_handoff_context(previous)
+    assert len(text) <= 8000
+    context = json.loads(text)
+    assert context['last_action_step'] == 132
+    assert context['recent_evidence'].endswith('ACTUAL_COMPILER_ERROR')
+    assert context['completion_feedback'] == previous['completion_feedback']
+    assert action in context['plan']['plan']
+    assert context['handoff_truncated'] and context['recent_evidence_truncated']
+    assert previous == before
+
+
+def test_small_handoff_preserves_plan_and_redacts_before_json_encoding(monkeypatch):
+    monkeypatch.setenv('EXAMPLE_API_TOKEN', 'dummy-fixture-credential')
+    previous = {'last_action_step': 2, 'plan': {'plan': [{'step': 'Compile fixture', 'status': 'pending'}]},
+                'recent_evidence': 'error includes dummy-fixture-credential', 'completion_feedback': 'Keep gates.'}
+    context = json.loads(workers._worker_handoff_context(previous))
+    assert context['plan'] == previous['plan']
+    assert context['recent_evidence'] == 'error includes [redacted]'
+    assert context['completion_feedback'] == 'Keep gates.'
+    assert not context['recent_evidence_truncated']
+
+
 def test_rotating_metadata_cannot_keep_repeated_inspection_alive(isolated, tmp_path):
     project = isolated / 'rotating-inspection'
     project.mkdir()
