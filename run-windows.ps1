@@ -12,6 +12,12 @@ param(
 $ErrorActionPreference = "Stop"
 $LaunchDirectory = (Get-Location).Path
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+# Hidden/detached hosts otherwise leave native grandchildren on a legacy code
+# page, while worker output and native acceptance contracts require UTF-8.
+$OverlordUtf8 = [System.Text.UTF8Encoding]::new($false)
+[Console]::InputEncoding = $OverlordUtf8
+[Console]::OutputEncoding = $OverlordUtf8
+$OutputEncoding = $OverlordUtf8
 # A dev checkout has a .git directory; a deployed/managed install is a plain copy.
 $IsManagedInstall = -not (Test-Path -LiteralPath (Join-Path $ProjectRoot ".git"))
 $InstallMode = if ($IsManagedInstall) { "managed (deployed copy)" } else { "dev (source checkout)" }

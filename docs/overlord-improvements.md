@@ -1,5 +1,25 @@
 # Overlord improvement record
 
+## Hidden Windows launch changed Unicode acceptance (1.0.108)
+
+Eleven newly terminal reports after the saved cursor remain unfinished: nine
+repeat-heavy stalls and two protected-context-capacity stops. WSH reports
+6231dd350df84875b167d90bf8281b07 and3eab20b016ea4903899cfdfc1710141c run the
+full suite (no timeout) but fail frontend-process Unicode capture; this must not
+be excluded as unrelated to the header repair. No accepted publication is proven.
+
+An exact native context experiment resolves the earlier discrepancy: the
+unchanged frontend test passes with inherited console context, but fails under
+CREATE_NO_WINDOW and a hidden CREATE_NEW_CONSOLE. UTF-8 initialization restores
+both, first with a bounded probe and then through the real run-windows.ps1
+launcher. Evidence: out/checks/wsh-console-context-probe-20261112.json and
+out/checks/wsh-console-launcher-probe-20261112.json. The launcher initializes
+console input/output and pipeline encoding before Python; no WSH source or
+acceptance assertion changed. Two native positive regressions fail on1.0.107;
+two legacy negative controls still fail as expected after repair. Twenty-two
+focused checks pass in3.94seconds. Canonical tools/check.py all exited zero: lint, fresh wheel and1,609 passed, three skipped in229.62seconds. Four additional Windows PowerShell5.1 native cases pass in4.72seconds. Installed hidden-launch acceptance follows. This repairs a reproduced launch condition, not the
+remaining repeated model planning or context-capacity problems.
+
 ## Owner acceptance deadline prevented full validation (1.0.107)
 
 Post1.0.106 reportscec14ca383ba4803a38120da3f0ff4f1 (Silver),
