@@ -182,3 +182,38 @@ Live control acknowledged v1.0.112 instance742ec4df1fd748d6819184f489369180,
 initially idle. No accepted project delivery or delivery-rate gain claimed.
 Continue cohort measurement from15:58:24.377320Z with the maintenance interruption
 identified separately. Preserve original acceptance/hashes and Pydecipher quarantine.
+
+
+### Post-install outcome audit — 2026-11-13 21:57 UTC
+
+Measured cohort from 15:58:24.377320Z through 21:57:21.174981Z:
+29 terminal runs, 27 stalled, two incomplete, zero finished, zero acceptance-verified
+runs, zero unique verified tasks; 17,541.966 recorded worker seconds (4.87 hours).
+No acceptance preflight was recorded. The cohort begins before installation;
+it is not a controlled before/after comparison. Raw accounting:
+`out/checks/automation-20261113-post112.json`; terminal evidence retained separately
+in `out/checks/automation-20261113-post112-terminal-evidence.json`.
+
+Live control acknowledged v1.0.112 instance742ec4df1fd748d6819184f489369180,
+with Free-kertex_package active. Published v1.0.112 remains non-prerelease;
+tag CI43460814948 and signed build43460814969 both conclude success.
+Installed workers.py, worker_outcomes.py and version.py match repository bytes.
+Six outcome-accounting regressions pass. Existing install/preservation proof
+above remains the deployment evidence; no reinstall or worker interruption occurred.
+
+Feedback did not establish delivery improvement. Latest TinyPP terminal
+e2ae9bf20557464a8354124d2b442cc2 stopped at action48: 39/41 observations
+repeated or failed in its last checkpoint; ADR-0011 read43 times, project-goals
+read23 times; no observed repository change. Its saved next action still says
+read ADR-0011. Kertex786d646d3583492793ec07ea123aebd1 stopped with20/32
+repeated/failed observations and partial repository evidence; next action again
+reads memory.h. Silverd2b3be73b23f4a14be342770cdef05f2 never entered implementation:
+readiness remained needs_planning for selecting the build/toolchain path.
+These are unfinished outcomes, not accepted deliverables.
+
+Next experiment must reproduce the repeated-source loop with the actual pinned
+plan, retained source exchanges and checkpoint boundaries. Test whether context
+trimming evicts the requested source before the next action; do not assume lost
+handoff, remove guards, force edits or weaken acceptance. A successful fix needs
+live movement from source discovery to bounded implementation and independently
+passing owner acceptance. No new runtime fix/release is claimed by this audit.
