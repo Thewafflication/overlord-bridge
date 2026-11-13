@@ -6,6 +6,10 @@ workflow lands.
 
 ## Current Capabilities
 
+- Worker outcome accounting rejects missing report directories or absent event
+  journals. An existing empty journal is a valid zero-run cohort; a wrong path
+  is an error rather than evidence of zero failures.
+
 - Unfinished-run handoffs fit within8,000 characters as complete JSON. The last
   action number, bounded failure evidence and completion feedback take priority
   over verbose previous model-plan detail. Oversized plans retain their current

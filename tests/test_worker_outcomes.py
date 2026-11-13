@@ -47,3 +47,22 @@ def test_cohort_rejects_missing_or_malformed_terminal_time():
             summarize([event], '2026-11-10')
     # Unfiltered accounting remains usable for legacy events without timestamps.
     assert summarize([event])['terminal_runs'] == 1
+
+
+def test_event_reader_rejects_missing_directory_and_missing_journals(tmp_path):
+    import pytest
+    from modules.worker_outcomes import read_events
+    with pytest.raises(FileNotFoundError, match='directory does not exist'):
+        list(read_events(tmp_path / 'missing'))
+    with pytest.raises(FileNotFoundError, match='no event journals'):
+        list(read_events(tmp_path))
+
+
+def test_event_reader_accepts_empty_journal_and_reads_rotations(tmp_path):
+    import json
+    from modules.worker_outcomes import read_events
+    (tmp_path / 'events.jsonl').write_text('', encoding='utf-8')
+    assert list(read_events(tmp_path)) == []
+    (tmp_path / 'events.1.jsonl').write_text(json.dumps({'event_id': 'old'}) + '\n', encoding='utf-8')
+    (tmp_path / 'events.jsonl').write_text('\n' + json.dumps({'event_id': 'new'}) + '\n', encoding='utf-8')
+    assert [e['event_id'] for e in read_events(tmp_path)] == ['old', 'new']

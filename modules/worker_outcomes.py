@@ -50,8 +50,13 @@ def summarize(events, since=None):
 
 
 def read_events(root):
-    for name in ('events.1.jsonl', 'events.jsonl'):
-        path = Path(root) / name
+    root = Path(root)
+    if not root.is_dir():
+        raise FileNotFoundError('Worker reports directory does not exist')
+    journals = [root / name for name in ('events.1.jsonl', 'events.jsonl')]
+    if not any(path.is_file() for path in journals):
+        raise FileNotFoundError('Worker reports directory contains no event journals')
+    for path in journals:
         if path.exists():
             for line in path.read_text(encoding='utf-8').splitlines():
                 if line.strip():

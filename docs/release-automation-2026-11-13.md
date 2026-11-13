@@ -43,3 +43,24 @@ WPM installation exited zero. Local control acknowledged v1.0.109, instance
 startup polling returned unavailable before the service came online. No new
 project delivery is claimed. Runtime repair was already committed/pushed as
 6ef7997; this audit completes its release/install verification.
+
+## 1.0.110: reject invalid measurement sources
+
+At 2026-11-13T04:02:15.270418Z, the cohort since
+2026-11-13T02:21:18.297894Z contains ten terminal runs: nine stalled and one
+maintenance interruption, zero finished or acceptance-verified deliveries,
+and 5,466.703 recorded worker seconds. Raw evidence:
+out/checks/automation-20261113-post109.json. This is a short follow-up cohort,
+not a controlled comparison proving improvement or regression.
+
+Found a concrete accounting defect: supplying run/worker_reports instead of
+worker_reports silently yielded zero runs because missing journals were skipped.
+The reader now rejects nonexistent directories and directories without either
+journal. Existing empty journals still yield a valid empty cohort; rotated
+journals retain their order. Six accounting regressions pass in 0.22 seconds.
+This prevents an invalid data source from masquerading as measurement evidence.
+Cross-run stalling is still unresolved; no product-delivery improvement claimed.
+
+Canonical checks passed: syntax/inventory lint, fresh wheel build, and
+1,618 tests passed with two skipped in 254.31 seconds. Release version check
+matches v1.0.110. Signed publication and installation verification follow.
