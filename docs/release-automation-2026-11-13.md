@@ -161,3 +161,24 @@ The fitter now shrinks by at least 1 KiB and continues while the budget is posit
 preserving the existing protected-task failure. This gives a finite bound of at
 most 42 adjustments from 43,000 characters rather than an arbitrary eight retries.
 This repair and live diagnostic feedback ship together as 1.0.112.
+
+
+Deployment verified 2026-11-13T16:20:59.731604+00:00: v1.0.112, code 7e1c860. Main checks43460258260
+and tag checks43460814948 passed Windows/Linux; signed build43460814969 passed.
+Local canonical lint/fresh wheel passed, 1,616 tests passed/four skipped in
+193.58 seconds. Two local GUI skips reflected unavailable Tk; two were platform
+skips. The earlier 1.0.111 local run had 1,618 passes/two skips; Linux CI caught
+its fitting defect, and that prerelease was never installed.
+Trusted-signature verification passed and archive SHA256 matched publication:
+07dde35781869f44e08a838fc1150c89a85adf4d0a17564b02127264ec4ed6b7.
+WPM install exited zero after acknowledged idle and normal console shutdown.
+17 installed-module checks passed in 5.51 seconds, including the formerly failing
+context-pressure test and both live checkpoint formats. All17frozen schedules,
+owner task queue and installed owned source matched; four active60-second schedules
+and13intentional pauses restored; four session metadata records unchanged.
+Settings checked by size only. Proof:
+out/checks/project-task-1.0.112-install-preservation.json.
+Live control acknowledged v1.0.112 instance742ec4df1fd748d6819184f489369180,
+initially idle. No accepted project delivery or delivery-rate gain claimed.
+Continue cohort measurement from15:58:24.377320Z with the maintenance interruption
+identified separately. Preserve original acceptance/hashes and Pydecipher quarantine.
