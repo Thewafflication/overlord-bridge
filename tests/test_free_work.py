@@ -2080,7 +2080,7 @@ def test_confirmed_mutations_survive_discovery_and_context_trimming(isolated, tm
     ])
     mgr, _, _ = manager(tmp_path, completer)
     start(mgr, project)
-    assert completer.reviews, events(mgr)[-1]
+    assert completer.reviews, json.dumps(events(mgr)[-1], indent=2)
     payload = json.loads(completer.reviews[0][1]['content'])
     changes = [json.loads(item) for item in payload['confirmed_file_changes']]
     assert changes == [{'step': 1, 'tool': 'write_file', 'path': 'changed.py'}]
