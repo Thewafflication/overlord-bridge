@@ -6,6 +6,10 @@ workflow lands.
 
 ## Current Capabilities
 
+- Planning-context fitting reduces its budget by at least 1 KiB per retry until
+  it fits or encounters protected task evidence, rather than stopping after
+  eight small adjustments. Nested JSON escaping remains included in the bound.
+
 - Progress checkpoints expose recorded action/repetition counts and the five most
   repeated tools to the active worker before stopping a stalled run. These
   bounded, redacted diagnostics are evidence for the model, not instructions.

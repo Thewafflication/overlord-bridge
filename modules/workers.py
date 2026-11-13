@@ -1490,7 +1490,10 @@ def _budgeted_planning_request(request, context, evidence, *, prefix_count, plan
                               mutations, completion_feedback):
     def fit(limit):
         context_limit = min(43000, limit)
-        for _ in range(8):
+        # Nested JSON escaping can need more than eight small adjustments.
+        # Always shrink by at least 1 KiB, so fitting terminates without an
+        # arbitrary retry cutoff rejecting history that can still be trimmed.
+        while context_limit > 0:
             bounded = _bounded_worker_messages(context, evidence, limit=context_limit,
                 prefix_count=prefix_count, plan=plan, mutations=mutations,
                 completion_feedback=completion_feedback)
@@ -1499,7 +1502,7 @@ def _budgeted_planning_request(request, context, evidence, *, prefix_count, plan
             excess = request_size(fitted) - limit
             if excess <= 0:
                 return fitted
-            context_limit -= excess + 128
+            context_limit -= max(1024, excess + 128)
         raise ValueError("Protected planning context cannot fit")
     return BudgetedMessages(fit(48000), fit)
 

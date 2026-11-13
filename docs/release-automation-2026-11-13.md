@@ -147,3 +147,17 @@ higher delivery rate. Compare the next live cohort using the same accounting.
 
 Canonical validation: syntax/inventory lint and fresh wheel passed; 1,618 tests
 passed, two skipped in 257.74 seconds. Release version check passed.
+
+
+### Cross-platform failure caught before installation; corrected in 1.0.112
+
+1.0.111 was published by the signed-build workflow but Linux tag CI failed the
+confirmed-mutations/context-trimming scenario at action 49. Windows local full
+checks passed. Marked 1.0.111 prerelease; did not install it. Diagnostic commits
+31d5a1a and 7551b50 expose the complete terminal outcome instead of IndexError.
+The worker had 12 novel observations and zero repeats in its latest window;
+its actual stop was protected planning context failing to fit after eight retries.
+The fitter now shrinks by at least 1 KiB and continues while the budget is positive,
+preserving the existing protected-task failure. This gives a finite bound of at
+most 42 adjustments from 43,000 characters rather than an arbitrary eight retries.
+This repair and live diagnostic feedback ship together as 1.0.112.
