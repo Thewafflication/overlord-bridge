@@ -1,5 +1,23 @@
 # Overlord improvement record
 
+## First live follow-up after1.0.109 — no delivery improvement yet
+
+Eight runs completed after installation verification: all stopped for repeated
+observations, totaling396recorded actions and4,590.344worker-seconds. TinyPP,
+kerTeX and Silver HEADs remain unchanged; no accepted task or new project commit
+is established. The structural handoff repair passes its retention checks but
+has not solved plan execution or cross-run discovery loops. Longer runs and
+extra system RAM are not supported remedies by this evidence. Active context
+capacity and cross-run strategy remain separate unresolved harness concerns.
+
+Reviewed25previously unreviewed outcomes/1,236recorded actions in total,
+including pre-install readiness/context-capacity stops, the known context-budget
+crash and one acknowledged deployment interruption. These are not deliveries.
+Preserved17schedule definitions, four active60-second intervals,13intentional
+pauses, completed WSH queue and original Pydecipher baseline contract. Existing
+healthy work was left running. Proof:
+out/checks/handoff-live-follow-up-20261113.json. No additional release created.
+
 ## Restart memory dropped diagnostics mid-JSON (1.0.109)
 
 Owner asked whether runs lack time or memory. Confirmed: free workers default to
