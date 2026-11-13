@@ -6,6 +6,11 @@ workflow lands.
 
 ## Current Capabilities
 
+- Progress checkpoints expose recorded action/repetition counts and the five most
+  repeated tools to the active worker before stopping a stalled run. These
+  bounded, redacted diagnostics are evidence for the model, not instructions.
+  Plan updates alone remain insufficient evidence of execution progress.
+
 - Worker outcome accounting rejects missing report directories or absent event
   journals. An existing empty journal is a valid zero-run cohort; a wrong path
   is an error rather than evidence of zero failures.

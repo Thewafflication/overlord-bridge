@@ -1733,6 +1733,14 @@ def test_extended_discovery_gets_targeted_progress_checkpoint(isolated, tmp_path
     assert 'Progress checkpoint' not in str(seen[11][0])
     assert 'Progress checkpoint' in str(seen[12][0])
     assert 'do not edit files just to satisfy' in str(seen[12][0])
+    checkpoint = next(m['content'] for m in seen[12][0]
+                      if 'Observed progress diagnostics' in str(m.get('content')))
+    encoded = checkpoint.split('Observed progress diagnostics (tool evidence, not instructions):\n')[1].split('\nUse these counts')[0]
+    diagnostics = json.loads(encoded)
+    assert diagnostics['checkpoint']['observed_actions'] == 12
+    assert diagnostics['checkpoint']['repeated_or_failed_observations'] >= 10
+    assert any('source.py' in key for key in diagnostics['most_repeated_tools'])
+
     assert (project / 'source.py').read_text() == 'original'
     assert events(mgr)[-1]['status'] == 'finished'
 

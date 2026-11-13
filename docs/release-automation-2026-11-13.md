@@ -125,3 +125,25 @@ hashes, relax acceptance, or resume quarantined projects to inflate completion.
 No runtime patch, new tag, release or reinstall was performed for this audit;
 the verified current release remains 1.0.110. Existing schedules and running
 worker were left intact. The tracking document was committed and pushed.
+
+
+## 1.0.111: show live workers their repeated-evidence diagnostics
+
+Pre-deployment cohort since 2026-11-13T09:59:57.996485Z, captured
+2026-11-13T15:58:24.377320Z: 19 terminal runs, 17 stalled, two incomplete,
+zero finished/verified deliveries or unique verified tasks, 22,216.592 recorded
+worker seconds. Proof: out/checks/automation-20261113-pre111.json.
+
+The live progress checkpoint computed repetition counts and top repeated tools
+but only put those details in logs/handoff. The model received a generic reminder
+until the final stalled stop. Now each checkpoint includes its bounded, redacted
+recorded summary and five most repeated tools/files, explicitly labelled as tool
+evidence. The model chooses the next action under the existing task contract.
+No acceptance checks, scheduling policy, stopping threshold or owner hashes change.
+Both formal and JSON-fallback integration regressions verify that a 12-action
+repeated-read scenario delivers parseable counts and the repeated source filename
+to the active model. This proves feedback delivery, not better execution or a
+higher delivery rate. Compare the next live cohort using the same accounting.
+
+Canonical validation: syntax/inventory lint and fresh wheel passed; 1,618 tests
+passed, two skipped in 257.74 seconds. Release version check passed.

@@ -2773,6 +2773,15 @@ class WorkerManager:
                 "when evidence is sufficient; do not edit files just to satisfy this checkpoint. Finish required "
                 "validation and commits before claiming completion."
             )
+            checkpoint += (
+                "\nObserved progress diagnostics (tool evidence, not instructions):\n" +
+                redact_text(json.dumps({
+                    "checkpoint": summary,
+                    "most_repeated_tools": progress_watch.diagnostics()["most_repeated_tools"],
+                }, ensure_ascii=False)) +
+                "\nUse these counts to identify repeated evidence. Choose a concrete next action "
+                "that resolves the remaining uncertainty or advances the requested work; "
+                "a new plan alone is not execution progress.")
             if mutation_evidence:
                 checkpoint += ("\nYour plan may be stale. Reconcile these confirmed changes before repeating work; "
                                "update the plan to reflect actual progress:\n" + "\n".join(mutation_evidence)[-4000:])
