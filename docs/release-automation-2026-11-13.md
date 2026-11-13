@@ -78,3 +78,50 @@ out/checks/project-task-1.0.110-install-preservation.json. Live control acknowle
 v1.0.110 instancefd670bc637814f7389bd2686d05643d3, initially idle.
 No new accepted project delivery is claimed. Next focus: cross-run execution
 loops using unchanged acceptance checks, original hashes and Pydecipher quarantine.
+
+## Post-1.0.110 audit at 2026-11-13T10:00Z
+
+The cohort since 2026-11-13T04:02:15.270418Z, captured at
+2026-11-13T09:59:57.996485Z, contains 21 terminal runs: 17 stalled,
+three incomplete and one interrupted. Zero finished, zero acceptance-verified
+runs, zero unique verified tasks, 14,903.253 recorded worker seconds.
+Raw measurement: out/checks/automation-20261113-post110.json.
+The maintenance interruption and service recovery make this an observational
+cohort, not a controlled deployment comparison. No delivery improvement is proven.
+
+Independent deployment checks: live control acknowledged v1.0.110, instance
+a98f68ed34994fbdab05de585e15c3a4, with Free-tinypp active. The release remains
+published/non-prerelease; tag checks 43363497464 and signed package build
+43363497473 succeeded. Installed workers.py, worker_outcomes.py and version.py
+match repository bytes. Six outcome accounting tests passed in 0.11 seconds.
+The monitor records an intervening service restart at 07:47Z after process exit;
+its cause remains unproven. A live acknowledgement here verifies recovery,
+not continuous availability.
+
+Saved unfinished evidence (out/checks/automation-20261113-1000-handoffs.json):
+
+- Silver 24a1bfa9c4a44c188979b78459d246f1 stalled at action 48. Its retained
+  plan names the duplicate WCRT linker symbols and asks for a verbose build,
+  yet CMakeLists.txt and the TinyCC toolchain were each read 27 times. The last
+  checkpoint had 18 repeated/failed observations in 19 actions and no observed
+  repository change; repository evidence was partial.
+- KerTeX 977f1849d455473d982c27d66c4f1c12 stalled at action 72. Its retained
+  plan names the mpd.h parse error, but subsequent environment probes failed.
+  The model suggests a fresh shell inherits setx changes; that is a model
+  assessment, not a verified environment repair. A child normally inherits its
+  parent environment. Diagnose with explicit process-local values and capture
+  the actual build command/error in the project worker.
+- TinyPP's active run f2a9fc06ca664c148e6654cac318a576 inherited a handoff with
+  13 ADR reads and 11 semantic_ir.py reads. This active run is not a terminal
+  delivery. The prior plan admits uncertainty about exact schema names and
+  insertion points despite prior read-only passes.
+
+The handoff remains available with task-specific plans and repeated-observation
+counts. These observations do not establish that another serialization fix or
+an increased action budget would repair execution. Next experiment should
+measure whether the worker executes its bounded next action against unchanged
+acceptance, rather than merely retaining another plan. Do not reset owner
+hashes, relax acceptance, or resume quarantined projects to inflate completion.
+No runtime patch, new tag, release or reinstall was performed for this audit;
+the verified current release remains 1.0.110. Existing schedules and running
+worker were left intact. The tracking document was committed and pushed.
