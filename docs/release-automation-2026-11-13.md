@@ -64,3 +64,17 @@ Cross-run stalling is still unresolved; no product-delivery improvement claimed.
 Canonical checks passed: syntax/inventory lint, fresh wheel build, and
 1,618 tests passed with two skipped in 254.31 seconds. Release version check
 matches v1.0.110. Signed publication and installation verification follow.
+
+Deployment verified at 2026-11-13T04:15:41Z: published v1.0.110, code083d0ca.
+Tag CI43363497464 passed Windows/Linux; signed build43363497473 passed.
+WPM trusted-key verification passed; archive SHA256 matches published checksum:
+29de7f6830f9d70256b11b16d31c1ebd8f7e0317527b9ba425801cc1ed9c78fd.
+Normal stop confirmed idle, normal shutdown completed, WPM install exited zero.
+Six installed-module accounting tests passed in 0.19 seconds. All owned source
+files checked match; all17frozen schedules and owner task queue survived exactly,
+four active60-second schedules/13intentional pauses restored, four session
+metadata records retained. Settings checked by size only. Preservation proof:
+out/checks/project-task-1.0.110-install-preservation.json. Live control acknowledged
+v1.0.110 instancefd670bc637814f7389bd2686d05643d3, initially idle.
+No new accepted project delivery is claimed. Next focus: cross-run execution
+loops using unchanged acceptance checks, original hashes and Pydecipher quarantine.
