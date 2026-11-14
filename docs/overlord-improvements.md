@@ -762,3 +762,15 @@ The pre-update false blocker also appears in reportc3ec23ef47e24f278b444ebf65862
 maintenance interruption19fcdc5d304248c2a199ef20d43686f9 is not a completed run.
 
 1.0.104 was not installed. Windows CI passed; two fresh Linux runners failed before tests on temporary DNS resolution of azure.archive.ubuntu.com while installing Tcl. The correction probes the actual Tcl interpreter first, otherwise uses signed official Ubuntu repositories through a temporary APT source list and probes again before running all tests. Repository signatures remain enforced. The corrected release is1.0.105; runtime owner-file protection is unchanged. Candidate1.0.104 is prerelease.
+
+## 1.0.113 — longer runs and partial progress
+
+Owner requested longer execution, smaller subtasks and partial-progress measures.
+Extended the repeated-observation allowance from three to twelve windows, keeping
+coaching every twelve actions without a direct edit. Typical unchanged-checkout
+cutoff rises from 48 to 156 actions. Initial and checkpoint plans request one
+concrete action and observable check per subtask. Successful activity and failures
+are reported cumulatively; model-completed steps remain explicitly unverified.
+Outcome summaries disclose counter coverage so legacy runs cannot be misread as
+zero partial progress. Acceptance gates and owner-file protection remain intact.
+See docs/releases/1.0.113.md; live delivery improvement requires later cohorts.

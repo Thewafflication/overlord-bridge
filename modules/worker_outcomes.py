@@ -34,9 +34,33 @@ def summarize(events, since=None):
     counts = Counter(e['status'] for e in rows.values())
     verified = [e for e in rows.values() if e['status'] == 'finished'
                 and e.get('project_task_id') and (e.get('acceptance') or {}).get('passed') is True]
+    progress_fields = ("confirmed_file_mutations", "distinct_successful_command_results",
+                       "new_successful_observations", "new_failure_diagnostics", "repository_change_checkpoints")
+    partial = Counter()
+    runs_with_mutations = 0
+    measured_runs = 0
+    model_steps = 0
+    for event in rows.values():
+        diagnostics = event.get('progress_diagnostics') or {}
+        metrics = diagnostics.get('partial_progress')
+        if isinstance(metrics, dict):
+            measured_runs += 1
+            for key in progress_fields:
+                value = metrics.get(key, 0)
+                if type(value) is int and value >= 0:
+                    partial[key] += value
+            runs_with_mutations += type(metrics.get('confirmed_file_mutations')) is int and metrics['confirmed_file_mutations'] > 0
+        steps = diagnostics.get('model_reported_completed_steps', 0)
+        if type(steps) is int and steps >= 0:
+            model_steps += steps
     finished = counts.get('finished', 0)
     durations = sum(float(e.get('duration_seconds') or 0) for e in rows.values())
     return {'since': since, 'terminal_runs': len(rows), 'status_counts': dict(sorted(counts.items())),
+            'partial_progress': {key: partial[key] for key in progress_fields},
+            'partial_progress_measured_runs': measured_runs,
+            'runs_with_confirmed_mutations': runs_with_mutations,
+            'model_reported_completed_steps': model_steps,
+            'partial_progress_limitation': 'Per-run activity counters, not accepted subtasks or unique deliveries. Commands with identical results count once per run; model step completion is unverified. Legacy runs without counters are unmeasured.',
             'model_finished_runs': finished, 'verified_acceptance_runs': len(verified),
             'preflight_runs': sum(isinstance(e.get('acceptance_baseline'), dict) for e in rows.values()),
             'initially_failing_contracts': sum((e.get('acceptance_baseline') or {}).get('passed') is False for e in rows.values()),

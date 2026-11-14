@@ -605,7 +605,7 @@ def test_repeated_discovery_yields_and_next_run_receives_handoff(isolated, tmp_p
     project.mkdir()
     (project / 'owner.txt').write_text('preserve owner bytes')
     completer, seen = scripted_pool([
-        call('run_command', {'command':f'git status variant-{i}'}, f'c{i}') for i in range(70)
+        call('run_command', {'command':f'git status variant-{i}'}, f'c{i}') for i in range(180)
     ])
     mgr, _, _ = manager(tmp_path, completer)
     async def unchanged(*args):
@@ -689,7 +689,7 @@ def test_rotating_metadata_cannot_keep_repeated_inspection_alive(isolated, tmp_p
     project = isolated / 'rotating-inspection'
     project.mkdir()
     completer, seen = scripted_pool([
-        call('run_command', {'command':f'git status variant-{i}'}, f'c{i}') for i in range(70)
+        call('run_command', {'command':f'git status variant-{i}'}, f'c{i}') for i in range(180)
     ])
     mgr, _, _ = manager(tmp_path, completer)
     count = 0
@@ -701,9 +701,9 @@ def test_rotating_metadata_cannot_keep_repeated_inspection_alive(isolated, tmp_p
     mgr._execute_checked = inspect
     start(mgr, project)
     report = events(mgr)[-1]
-    assert report['status'] == 'stalled' and count <= 48
-    assert len(seen) <= 48
-    assert report['progress_diagnostics']['last_checkpoint']['repeated_windows'] == 3
+    assert report['status'] == 'stalled' and count <= 156
+    assert len(seen) <= 156
+    assert report['progress_diagnostics']['last_checkpoint']['repeated_windows'] == 12
     assert 'Next recorded action' in report['result_tail']
 
 
@@ -2857,3 +2857,30 @@ def test_owner_preflight_precedes_model_and_omits_stale_inferred_handoff(isolate
     event = events(mgr)[-1]
     assert event['status'] == 'incomplete' and event['acceptance']['passed'] is False
     assert 'acceptance_preflight' in event['result_tail']
+
+
+def test_longer_run_can_finish_a_small_subtask_after_old_stall_boundary(isolated, tmp_path):
+    project = isolated / 'longer-subtask'
+    project.mkdir()
+    completer, seen = scripted_pool([
+        *[call('run_command', {'command': f'probe-{i}'}, f'c{i}') for i in range(55)],
+        call('write_file', {'path': 'result.txt', 'content': 'subtask result'}),
+        final_result('Subtask result recorded; validation evidence retained'),
+    ])
+    mgr, _, _ = manager(tmp_path, completer)
+    original = mgr._execute_checked
+    async def execute(brain, folder, tool, arguments, **kwargs):
+        if tool == 'run_command':
+            return {'ok': True, 'stdout': 'same bounded probe', 'stderr': '', 'exit_code': 0}
+        return await original(brain, folder, tool, arguments, **kwargs)
+    mgr._execute_checked = execute
+    start(mgr, project)
+    report = events(mgr)[-1]
+    assert report['status'] == 'finished'
+    assert report['action_steps'] > 48
+    assert (project / 'result.txt').read_text() == 'subtask result'
+    partial = report['progress_diagnostics']['partial_progress']
+    assert partial['confirmed_file_mutations'] == 1
+    assert partial['distinct_successful_command_results'] == 1
+    assert 'small independently checkable subtasks' in str(completer.planning[0])
+    assert any('one edit plus its focused check' in str(messages) for messages, _ in seen)

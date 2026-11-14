@@ -66,3 +66,20 @@ def test_event_reader_accepts_empty_journal_and_reads_rotations(tmp_path):
     (tmp_path / 'events.1.jsonl').write_text(json.dumps({'event_id': 'old'}) + '\n', encoding='utf-8')
     (tmp_path / 'events.jsonl').write_text('\n' + json.dumps({'event_id': 'new'}) + '\n', encoding='utf-8')
     assert [e['event_id'] for e in read_events(tmp_path)] == ['old', 'new']
+
+
+def test_partial_progress_is_measured_without_claiming_acceptance():
+    event = {'event_id': 'partial', 'brain': 'free', 'name': 'worker', 'status': 'incomplete',
+             'progress_diagnostics': {'partial_progress': {'confirmed_file_mutations': 2,
+                 'distinct_successful_command_results': 3, 'new_failure_diagnostics': 1},
+                 'model_reported_completed_steps': 2}}
+    legacy = {'event_id': 'legacy', 'brain': 'free', 'name': 'old', 'status': 'stalled'}
+    summary = summarize([event, event, legacy])
+    assert summary['terminal_runs'] == 2
+    assert summary['partial_progress_measured_runs'] == 1
+    assert summary['runs_with_confirmed_mutations'] == 1
+    assert summary['partial_progress']['confirmed_file_mutations'] == 2
+    assert summary['partial_progress']['distinct_successful_command_results'] == 3
+    assert summary['model_reported_completed_steps'] == 2
+    assert summary['verified_acceptance_runs'] == 0
+    assert summary['unique_verified_tasks'] == []

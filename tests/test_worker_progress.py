@@ -3,7 +3,7 @@ from modules.workers import WorkerReportStore
 
 
 def test_repeated_results_cannot_be_renewed_by_plans_or_different_commands():
-    watch = ProgressWatch()
+    watch = ProgressWatch(repeated_window_limit=3)
     snapshot = {'available':True, 'current_head':'abc', 'files':[]}
     for window in range(4):
         for step in range(12):
@@ -16,7 +16,7 @@ def test_repeated_results_cannot_be_renewed_by_plans_or_different_commands():
 
 
 def test_one_rotating_new_result_cannot_renew_eleven_repeated_results():
-    watch = ProgressWatch()
+    watch = ProgressWatch(repeated_window_limit=3)
     snapshot = {'available':True, 'current_head':'abc', 'files':[]}
     for window in range(4):
         for _ in range(11):
@@ -27,7 +27,7 @@ def test_one_rotating_new_result_cannot_renew_eleven_repeated_results():
 
 
 def test_rotating_failures_do_not_renew_discovery_and_diagnostics_survive():
-    watch = ProgressWatch()
+    watch = ProgressWatch(repeated_window_limit=3)
     for window in range(4):
         for index in range(12):
             watch.observe('run_command', {'ok':False,'stderr':f'failure {window}-{index}','exit_code':1})
@@ -38,7 +38,7 @@ def test_rotating_failures_do_not_renew_discovery_and_diagnostics_survive():
 
 
 def test_novel_read_only_evidence_and_silent_repository_changes_allow_progress():
-    watch = ProgressWatch()
+    watch = ProgressWatch(repeated_window_limit=3)
     for index in range(15):
         watch.observe('read_file', {'ok':True, 'path':f'file{index}', 'content':f'finding{index}'})
         assert not watch.checkpoint({'available':False})[0]
@@ -64,7 +64,7 @@ def test_handoff_does_not_cross_folder_or_brain_and_clears_after_completion(tmp_
 
 
 def test_relative_absolute_and_dot_aliases_are_one_observation(tmp_path):
-    watch = ProgressWatch(tmp_path)
+    watch = ProgressWatch(tmp_path, repeated_window_limit=3)
     snapshot = {'available': True, 'current_head': 'abc', 'files': []}
     for window in range(4):
         for path in ['generated/mpd.h', str(tmp_path / 'generated/mpd.h'),
@@ -76,7 +76,7 @@ def test_relative_absolute_and_dot_aliases_are_one_observation(tmp_path):
 
 
 def test_different_files_and_changed_contents_remain_new_evidence(tmp_path):
-    watch = ProgressWatch(tmp_path)
+    watch = ProgressWatch(tmp_path, repeated_window_limit=3)
     for path, content in [('a.h', 'header'), ('b.h', 'header'), ('a.h', 'new header')]:
         watch.observe('read_file', {'ok': True, 'path': path, 'content': content})
     _, summary = watch.checkpoint({'available': False})
@@ -84,7 +84,7 @@ def test_different_files_and_changed_contents_remain_new_evidence(tmp_path):
 
 
 def test_full_observation_cache_cannot_renew_windows_forever():
-    watch = ProgressWatch()
+    watch = ProgressWatch(repeated_window_limit=3)
     for index in range(4096):
         watch.observe('run_command', {'ok': True, 'stdout': str(index)})
     snapshot = {'available': False}
@@ -96,3 +96,35 @@ def test_full_observation_cache_cannot_renew_windows_forever():
         assert stopped == (window == 2)
         assert summary['new_observations'] == 0
     assert len(watch.seen) == 4096
+
+
+def test_default_allows_twelve_repeated_windows_and_keeps_partial_totals():
+    watch = ProgressWatch()
+    snapshot = {'available': True, 'current_head': 'abc', 'files': []}
+    for window in range(13):
+        for _ in range(12):
+            watch.observe('run_command', {'ok': True, 'exit_code': 0, 'stdout': 'same'})
+        stopped, _ = watch.checkpoint(snapshot)
+        assert stopped == (window == 12)
+    assert watch.diagnostics()['partial_progress']['distinct_successful_command_results'] == 1
+    assert watch.diagnostics()['partial_progress']['repository_change_checkpoints'] == 0
+
+
+def test_partial_progress_distinguishes_mutations_diagnostics_and_plan_claims():
+    watch = ProgressWatch()
+    watch.observe('write_file', {'ok': True, 'changed': False, 'path': 'a'})
+    watch.observe('write_file', {'ok': True, 'changed': True, 'path': 'a'})
+    watch.observe('edit_file', {'ok': True, 'replacements': 1, 'path': 'a'})
+    watch.observe('edit_file', {'ok': False, 'error': 'not_found'})
+    watch.observe('run_command', {'ok': False, 'exit_code': 1, 'stderr': 'missing SDK'})
+    watch.observe('run_command', {'ok': False, 'exit_code': 1, 'stderr': 'missing SDK'})
+    watch.observe('update_plan', {'ok': True, 'plan': {'plan': [
+        {'status': 'completed', 'step': 'diagnose'}, {'status': 'in_progress', 'step': 'repair'}]}})
+    watch.checkpoint({'available': True, 'files': []})
+    watch.checkpoint({'available': True, 'files': ['changed']})
+    data = watch.diagnostics()
+    assert data['partial_progress']['confirmed_file_mutations'] == 2
+    assert data['partial_progress']['new_failure_diagnostics'] == 2
+    assert data['partial_progress']['repository_change_checkpoints'] == 1
+    assert data['model_reported_completed_steps'] == 1
+    assert data['partial_progress']['distinct_successful_command_results'] == 0

@@ -772,3 +772,11 @@ Confirmed file mutations retain their own bounded 20-entry metadata ledger acros
   checkpoints are replaced rather than nested. Trimming refreshes duplicate read,
   list and search protection only for requests no longer present in retained
   context. Model-authored plan findings are surfaced as worker assessments.
+
+Free-worker repetition allowance is twelve consecutive repeated-observation
+windows (previously three), with smaller-subtask coaching at twelve-action
+checkpoints. Report progress_diagnostics.partial_progress includes confirmed
+file mutations, distinct successful command results, new successful observations,
+new failure diagnostics and repository change checkpoints. Model-completed plan
+steps are separate unverified claims. worker_outcomes aggregates activity counters
+with measured-run coverage; these are not acceptance-verified subtasks/deliveries.

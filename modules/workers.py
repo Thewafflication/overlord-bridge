@@ -2345,6 +2345,9 @@ class WorkerManager:
                     "Use list_files with path/pattern (for example path=modules, pattern=*.py) to narrow discovery; "
                     "do not use recursive shell listings that filter generated folders only after traversal. "
                     "Use search_file for literal source search, then read_file line ranges for context.\n"
+                    "Break work into small independently checkable subtasks. Each plan step should name a "
+                    "concrete action and its observable check; keep the next subtask in_progress and report "
+                    "completed steps with tool evidence. Partial progress does not waive final acceptance.\n"
                     f"Suggested starting files: {', '.join(files or []) or '(none)'}\n\n"
                     f"Task:\n{task}"
                 ),
@@ -2687,6 +2690,7 @@ class WorkerManager:
                     if review_pending:
                         readiness_review = {**readiness_review, "decision": proposed, "review_model": used}
                     worker_plan = result["plan"]
+                    progress_watch.observe("update_plan", result)
                     readiness = worker_plan["readiness"]
                     state = readiness["state"]
                     if state == "discovery" and not discovery_used:
@@ -2754,7 +2758,7 @@ class WorkerManager:
             if stalled:
                 progress_stalled = True
                 step_limited = True
-                final_text = ("Stopped before completion: three discovery checkpoints were dominated by repeated "
+                final_text = (f"Stopped before completion: {progress_watch.repeated_window_limit} discovery checkpoints were dominated by repeated "
                               "or failed observations without observed repository changes. Preserved checkout and handoff; resume the "
                               "recorded concrete next action or blocker instead of repeating discovery. "
                               "This is not completed work and does not assert a clean checkout.")
@@ -2784,7 +2788,10 @@ class WorkerManager:
                 }, ensure_ascii=False)) +
                 "\nUse these counts to identify repeated evidence. Choose a concrete next action "
                 "that resolves the remaining uncertainty or advances the requested work; "
-                "a new plan alone is not execution progress.")
+                "a new plan alone is not execution progress. Break the next action into a smaller experiment: "
+                "one edit plus its focused check, one build prerequisite plus its probe, or one specific "
+                "uncertainty plus a diagnostic. Execute that subtask before surveying again. "
+                "The longer run allowance remains available.")
             if mutation_evidence:
                 checkpoint += ("\nYour plan may be stale. Reconcile these confirmed changes before repeating work; "
                                "update the plan to reflect actual progress:\n" + "\n".join(mutation_evidence)[-4000:])
@@ -2794,7 +2801,11 @@ class WorkerManager:
             await record_worker_plan(
                 f"Record what you learned using update_plan before more project actions. Use at most {WORKER_PLAN_MAX_STEPS} steps "
                 f"and {WORKER_PLAN_EXPLANATION_CHARS} explanation characters. Put confirmed findings "
-                "and relevant file/line locations in explanation, identify any unresolved uncertainty and the "
+                "and relevant file/line locations in explanation. Split remaining work into small subtasks, each "
+                "with one concrete action and an observable check. Keep only the immediate subtask in_progress; "
+                "mark a step completed only with actual tool evidence, naming the step and check in explanation. "
+                "A failed diagnostic can resolve uncertainty without completing the feature. Preserve the "
+                "overall acceptance gates. Identify unresolved uncertainty and the "
                 "next concrete action. Reconcile previous completed work and remaining validation/publication. "
                 "Only update_plan is available; reads, commands and writes will not execute in this phase. "
                 "A read-only task may conclude from sufficient evidence; do not manufacture edits. "

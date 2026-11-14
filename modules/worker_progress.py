@@ -10,7 +10,10 @@ def fingerprint(value):
 
 
 class ProgressWatch:
-    def __init__(self, folder=None):
+    def __init__(self, folder=None, repeated_window_limit=12):
+        self.repeated_window_limit = repeated_window_limit
+        self.totals = Counter()
+        self.plan_completed_steps = 0
         self.folder = os.path.abspath(folder) if folder is not None else None
         self.seen = set()
         self.novel = 0
@@ -22,7 +25,12 @@ class ProgressWatch:
         self.last_summary = {}
 
     def observe(self, tool, result):
-        if tool in {"update_plan", "finish_task"}:
+        if tool == "update_plan":
+            if result.get("ok") and isinstance(result.get("plan"), dict):
+                self.plan_completed_steps = sum(row.get("status") == "completed"
+                    for row in result["plan"].get("plan", []) if isinstance(row, dict))
+            return
+        if tool == "finish_task":
             return
         self.observed += 1
         # Requests, elapsed times and model paraphrases are not new evidence.
@@ -34,12 +42,18 @@ class ProgressWatch:
         if self.folder and isinstance(evidence.get("path"), str):
             evidence["path"] = os.path.normcase(os.path.abspath(
                 os.path.join(self.folder, evidence["path"])))
-        digest = fingerprint(evidence)
+        if tool in {"edit_file", "write_file", "write"} and result.get("ok") and (tool == "edit_file" or result.get("changed")):
+            self.totals["confirmed_file_mutations"] += 1
+        digest = fingerprint({"tool": tool, "evidence": evidence})
         if digest not in self.seen and len(self.seen) < 4096:
             if result.get("ok", True) and result.get("exit_code", 0) in (0, None):
                 self.novel += 1
+                self.totals["new_successful_observations"] += 1
+                if tool in {"run_command", "run_python"} and result.get("exit_code") == 0:
+                    self.totals["distinct_successful_command_results"] += 1
             else:
                 self.new_diagnostics += 1
+                self.totals["new_failure_diagnostics"] += 1
             if len(self.seen) < 4096:
                 self.seen.add(digest)
         else:
@@ -52,6 +66,8 @@ class ProgressWatch:
         # evidence is labelled as such; yielding never asserts a clean checkout.
         state = fingerprint(snapshot)
         changed = state != self.snapshot
+        if self.snapshot is not None and changed:
+            self.totals["repository_change_checkpoints"] += 1
         self.snapshot = state
         # A rotating query or a fresh error must not renew a window dominated
         # by rereading known evidence. New source changes still reset it.
@@ -69,10 +85,15 @@ class ProgressWatch:
         self.novel = 0
         self.observed = 0
         self.new_diagnostics = 0
-        return self.repeated_windows >= 3, summary
+        return self.repeated_windows >= self.repeated_window_limit, summary
 
     def diagnostics(self):
-        return {"last_checkpoint": dict(self.last_summary),
+        return {"partial_progress": {key: self.totals[key] for key in (
+                    "confirmed_file_mutations", "distinct_successful_command_results",
+                    "new_successful_observations", "new_failure_diagnostics", "repository_change_checkpoints")},
+                "model_reported_completed_steps": self.plan_completed_steps,
+                "repeated_window_limit": self.repeated_window_limit,
+                "last_checkpoint": dict(self.last_summary),
                 "actions_since_checkpoint": self.observed,
                 "new_observations_since_checkpoint": self.novel,
                 "most_repeated_tools": dict(self.repeated_tools.most_common(5))}
