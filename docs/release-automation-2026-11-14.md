@@ -82,3 +82,57 @@ This follow-up commits measurement and concrete failed prerequisites. It does
 not claim a runtime repair, new release or installation. Release/install work
 remains outstanding until a demonstrated harness repair passes required checks.
 Next cohort cursor: 2026-11-14T09:58:36.385368Z; retain these unresolved failures.
+
+## Owner-directed change — longer runs, smaller subtasks, partial measurement
+
+Implemented in 14c6c2f, release v1.0.113. Repetition allowance increases from
+three to twelve consecutive repeated-observation windows; coaching remains every
+twelve actions without a direct edit. In unchanged-checkout integration scenarios,
+the old stop near 48 actions now occurs near 156. This is a repetition allowance,
+not a total action limit. Productive runs can continue longer; cancellation,
+configured explicit limits and actual blocked outcomes remain available.
+
+Startup and checkpoint planning ask for independently checkable subtasks, one
+concrete action with one observable check. A failed experiment may resolve an
+uncertainty without completing the requested feature. Overall acceptance remains
+required. Plan completion is model-reported and explicitly unverified.
+
+New run-wide activity counters survive dialogue trimming and checkpoint resets:
+confirmed file mutations, distinct successful command results, new successful
+observations, new failure diagnostics and repository change checkpoints. Outcome
+summaries aggregate them, report measured-run coverage and mutation-bearing runs,
+and keep model-completed steps separate. Repeated identical results are counted
+once per run for distinct-observation metrics; this is activity, not proof of a
+unique accepted subtask or delivery.
+
+Controlled integration: after 55 repeated probes the worker can still write a
+small result and finish, recording one confirmed mutation and one distinct
+successful command result. This case passed in 13 seconds. Focused accounting,
+progress and worker regressions passed 245 tests in 147.20 seconds before this
+additional case. Canonical lint/fresh-wheel/full tests completed with 1,618 passed,
+three skipped and two stop-control failures in 434.64 seconds. The unchanged
+control module passed all 11 tests when rerun alone in 7.78 seconds; both original
+failures remain recorded in out/checks/release-1.0.113-checks.txt. Hosted main
+checks 43626122648 passed Windows and Linux; signed tag build 43626582542 passed.
+
+Pre-install cohort since 09:58:36.385368Z, captured 18:22:22.331384Z: eight
+terminal stalled runs, zero verified deliveries, 10,379.251 worker seconds.
+All eight are unmeasured for the new partial counters. Evidence:
+out/checks/automation-20261114-pre113.json. Live improvement is not yet claimed.
+
+Deployment verified: tag checks 43626582576 passed on Windows and Linux.
+WPM verified the trusted signing key and archive SHA256
+9b6bd5c41e7121633c432166797996c71e349e6ae1070ffc54147ae195f88ff3.
+Installation exited zero. Eighteen tests against the installed modules passed in
+5.73 seconds, including the beyond-48-action subtask case. Frozen schedule
+records and owner task queue survived exactly; all four original active schedules
+were restored at 60 seconds, with 13 intentional pauses retained. Four session
+metadata records survived, and settings were checked by size only. Installed
+owned source matches the release. Preservation evidence:
+out/checks/project-task-1.0.113-install-preservation.json.
+
+Live control acknowledged v1.0.113, instance d52c086ea50645cb99a6d00682efc456,
+with Free-the_silver_searcher active at 18:33 UTC. New runs now receive the longer
+allowance and partial counters. No increase in live accepted deliveries is yet
+claimed. Continue measuring from 18:22:22.331384Z, retaining prior failures and
+identifying the maintenance interruption separately from productive execution.
