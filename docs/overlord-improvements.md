@@ -774,3 +774,17 @@ are reported cumulatively; model-completed steps remain explicitly unverified.
 Outcome summaries disclose counter coverage so legacy runs cannot be misread as
 zero partial progress. Acceptance gates and owner-file protection remain intact.
 See docs/releases/1.0.113.md; live delivery improvement requires later cohorts.
+
+
+## 1.0.114 — preserve source before the next action
+
+Investigated zero mutations after the longer-run deployment. Reproduced an
+oversized parallel source batch being discarded before the next action request:
+four reads yielded zero retained source replies. Prioritize newest source over
+duplicated action metadata and compact source pages with correct continuation
+cursors when necessary. The same reproduction now retains all four replies;
+a worker integration performs and validates an existing-file edit afterward.
+Transport truncation also preserves structured source instead of JSON tails.
+Owner instructions, task, plan, mutation evidence and review feedback stay pinned.
+See docs/releases/1.0.114.md and the dated release automation ledger. Live accepted
+delivery improvement remains unproven; model loops and toolchain failures persist.

@@ -1206,6 +1206,15 @@ def _local_agent_json_result(result: dict[str, Any], limit: int) -> str:
     text = json.dumps(result, ensure_ascii=False, sort_keys=True)
     bounded, truncated = _bounded_tail(text, limit)
     if truncated:
+        # Escaping a full source page can exceed the transport cap too. Keep
+        # source structured and resumable rather than returning a JSON tail.
+        if result.get("tool") == "read_file" and isinstance(result.get("content"), str):
+            chars = len(result["content"]) // 2
+            while chars >= 1:
+                compacted = _compact_source_exchange([{"role": "tool", "content": text}], chars)[0]["content"]
+                if len(compacted) <= limit:
+                    return compacted
+                chars //= 2
         return json.dumps(
             {
                 "ok": result.get("ok", False),
@@ -1249,6 +1258,46 @@ def _finish_task_error(arguments: Any) -> dict[str, Any] | None:
         return {"ok": False, "error": "invalid_finish_task",
                 "message": "Supply a nonempty final string and outcome equal to finished or blocked. No completion was confirmed."}
     return None
+
+
+def _compact_source_exchange(group: list[dict[str, Any]], chars: int) -> list[dict[str, Any]]:
+    """Shorten source pages structurally, retaining paired calls and exact cursors."""
+    compacted = []
+    for message in group:
+        replacement = message
+        prefix = "Tool result for read_file:\n" if (message.get("role") == "user" and
+            str(message.get("content", "")).startswith("Tool result for read_file:\n")) else ""
+        if message.get("role") == "tool" or prefix:
+            try:
+                result = json.loads(message.get("content", "")[len(prefix):])
+            except (TypeError, ValueError):
+                result = None
+            if (isinstance(result, dict) and result.get("tool") == "read_file"
+                    and result.get("ok") is True and isinstance(result.get("content"), str)
+                    and len(result["content"]) > chars):
+                result = dict(result)
+                content = result["content"][:chars]
+                # Never split CRLF: a resumed read must not see half a newline.
+                if content.endswith("\r") and result["content"][chars:chars + 1] == "\n":
+                    content = content[:-1]
+                lines = content.splitlines(keepends=True)
+                # A page can begin mid-line. Only a consumed newline advances
+                # the line; otherwise retain the original column offset.
+                line = result.get("start_line", 1)
+                column = result.get("start_column", 1)
+                for part in lines:
+                    if part.endswith(("\n", "\r")):
+                        line, column = line + 1, 1
+                    else:
+                        column += len(part)
+                result.update(content=content, truncated=True, context_compacted=True,
+                              next_line=line, next_column=column, partial_line=column != 1,
+                              message="Source page shortened to fit context. Continue with "
+                                      "start_line=next_line and start_column=next_column; "
+                                      "use this retained region for the planned action.")
+                replacement = {**message, "content": prefix + json.dumps(result, ensure_ascii=False)}
+        compacted.append(replacement)
+    return compacted
 
 
 def _bounded_worker_messages(messages: list[dict[str, Any]], evidence: list[str],
@@ -1303,7 +1352,22 @@ def _bounded_worker_messages(messages: list[dict[str, Any]], evidence: list[str]
     retained: list[dict[str, Any]] = []
     for group in reversed(groups):
         if size(base + [note] + group + retained) > limit:
-            break
+            if retained:
+                break
+            # Deliver the newest source exchange before optional action metadata.
+            # Dropping it here used to create read -> evict -> reread loops.
+            note = {"role": "user", "content": heading + mutation_text + plan_text + review_text}
+            if size(base + [note] + group) > limit:
+                for chars in (6000, 3000, 1500, 750, 375):
+                    candidate = _compact_source_exchange(group, chars)
+                    if size(base + [note] + candidate) <= limit:
+                        group = candidate
+                        break
+                else:
+                    # Non-source oversized requests (e.g. a huge write) keep
+                    # their existing whole-batch eviction behavior.
+                    note["content"] = heading + evidence_tail + mutation_text + plan_text + review_text
+                    break
         retained = group + retained
     return base + [note] + retained
 

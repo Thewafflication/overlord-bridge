@@ -175,3 +175,48 @@ completed deliveries remain unresolved. No workers stopped, schedules changed,
 acceptance weakened or quarantined projects resumed. Preserve four active and
 13 paused schedules, original owner hashes and Pydecipher quarantine. Continue
 from 2026-11-15T00:05:45.410165Z while retaining the unresolved failures.
+
+
+## Owner-requested repair — v1.0.114 source exchange retention
+
+Investigated the no-edit cohort rather than increasing its repetition allowance.
+TinyPP 6eb3cfa7 records repeated successful first-page reads of semantic_ir.py,
+its tests and ADR-0011; KerTeX d98867a9 records 69 mpd.h rereads and later
+continues proposing CMakeLists.txt rereads despite an observed missing WCRT root.
+These show model repetition and stale next actions; they do not alone establish
+that every repeated read was caused by the harness.
+
+A deterministic reproduction establishes a harness contributor: with a pinned
+12,000-character owner task and four parallel source replies, a 24,000-character
+request budget discarded all four replies. Only action metadata remained. The
+duplicate guard then allowed reacquiring the evicted source. Planning and provider
+request fitting use this same fitter, making repeated reads possible without
+advancing to the selected edit. The regression fails on the prior implementation
+with zero retained replies instead of four.
+
+The fitter now gives the newest source exchange priority over duplicated action
+metadata. If it still cannot fit, it shortens source pages structurally while
+retaining every paired call/reply, source beginnings, path, exact line/column
+continuation cursor, and explicit context_compacted/truncated markers. It keeps
+owner instructions, task, current plan, confirmed mutations and completion
+feedback pinned. Formal and fallback source results are supported. The transport
+cap also preserves structured source pages instead of wrapping a serialized JSON
+tail when escaping pushes a large source page over 24,000 characters. Ordinary
+oversized non-source exchanges retain existing behavior.
+
+Measured repair checks: the reproduction retains four of four source replies
+instead of zero; an integration worker receives all four source regions, edits an
+actual existing file and validates it with run_python. Cursor tests reconstruct
+source without gaps or duplication across mid-line starts and CRLF boundaries.
+Nine new focused cases pass in 1.42 seconds. The earlier focused worker/budget/
+progress/accounting suite passed 258 tests in 42.04 seconds before the transport
+case was added. This is controlled harness evidence, not a live product delivery
+or a guarantee that model repetition and project prerequisite failures are solved.
+
+Release validation and publication evidence follows below when complete.
+
+
+Local release validation: canonical lint, fresh wheel build and full offline suite
+passed: 1,630 tests passed, two skipped in 154.57 seconds. Final focused suite
+passed 259 tests in 47.16 seconds; pre-commit configuration and diff whitespace
+checks passed. Version consistency check confirms 1.0.114. Publication pending.

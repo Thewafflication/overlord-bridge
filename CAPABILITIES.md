@@ -780,3 +780,12 @@ file mutations, distinct successful command results, new successful observations
 new failure diagnostics and repository change checkpoints. Model-completed plan
 steps are separate unverified claims. worker_outcomes aggregates activity counters
 with measured-run coverage; these are not acceptance-verified subtasks/deliveries.
+
+
+When a newest parallel source batch cannot fit worker history, fitting first
+removes optional action-metadata duplication, then shortens read_file pages
+structurally. Paired tool calls/results, source beginnings, exact continuation
+line/column cursors and pinned owner/task/plan/feedback remain intact. This
+prevents oversized source batches from disappearing before the next action;
+shortened pages explicitly report context_compacted and require cursor-based
+continuation. This also applies to provider-specific request fitting.

@@ -2884,3 +2884,91 @@ def test_longer_run_can_finish_a_small_subtask_after_old_stall_boundary(isolated
     assert partial['distinct_successful_command_results'] == 1
     assert 'small independently checkable subtasks' in str(completer.planning[0])
     assert any('one edit plus its focused check' in str(messages) for messages, _ in seen)
+
+
+def test_parallel_source_batch_survives_pressure_with_resumable_pages():
+    base = [{'role': 'system', 'content': 'rules'},
+            {'role': 'user', 'content': 'owner task ' * 1200}]
+    calls = [call('read_file', {'path': f'source-{i}.py', 'start_line': 200}, str(i))['tool_calls'][0]
+             for i in range(4)]
+    content = 'target = "old"\n' + ('body = 123456789\n' * 500)
+    messages = base + [{'role': 'assistant', 'tool_calls': calls}] + [
+        {'role': 'tool', 'tool_call_id': str(i), 'content': json.dumps({
+            'ok': True, 'tool': 'read_file', 'path': f'source-{i}.py',
+            'content': content, 'start_line': 200, 'start_column': 1,
+            'total_lines': 900, 'truncated': True, 'next_line': 701, 'next_column': 1})}
+        for i in range(4)]
+    bounded = workers._bounded_worker_messages(messages, ['read succeeded'] * 20, limit=24000)
+    assert len(json.dumps(bounded, ensure_ascii=False)) <= 24000
+    replies = [m for m in bounded if m['role'] == 'tool']
+    assert len(replies) == 4
+    for reply in replies:
+        result = json.loads(reply['content'])
+        assert result['content'].startswith('target = "old"\n')
+        assert result['context_compacted'] and result['truncated']
+        consumed = result['content']
+        lines = content.splitlines(keepends=True)
+        remaining = ''.join(lines[result['next_line'] - 200:])
+        remaining = remaining[result['next_column'] - 1:]
+        assert consumed + remaining == content
+    assert len(workers._retained_discovery_calls(bounded)) == 4
+    assert messages[-1]['content'] != replies[-1]['content']
+
+
+@pytest.mark.parametrize('content,start_column', [('ab\r\ncd\r\nef', 7), ('abc\ndef', 1), ('a' * 30, 4)])
+@pytest.mark.parametrize('fallback', [False, True])
+def test_compacted_source_cursor_preserves_midline_and_crlf(content, start_column, fallback):
+    result = {'ok': True, 'tool': 'read_file', 'path': 'x.py', 'content': content,
+              'start_line': 20, 'start_column': start_column}
+    prefix = 'Tool result for read_file:\n' if fallback else ''
+    for chars in range(1, len(content)):
+        message = {'role': 'user' if fallback else 'tool', 'content': prefix + json.dumps(result)}
+        compacted = workers._compact_source_exchange([message], chars)[0]
+        row = json.loads(compacted['content'][len(prefix):])
+        # Reconstruct the returned slice's absolute cursor, including first-line column.
+        parts = content.splitlines(keepends=True)
+        index = row['next_line'] - 20
+        column = row['next_column'] - (start_column if index == 0 else 1)
+        assert row['content'] + ''.join(parts[index:])[column:] == content
+
+
+def test_worker_edits_after_oversized_parallel_source_batch(isolated, tmp_path, monkeypatch):
+    project = isolated / 'source-batch-edit'
+    project.mkdir()
+    for i in range(4):
+        (project / f'source-{i}.py').write_text('target = "old"\n' + '# padding\n' * 1500)
+    original = workers._bounded_worker_messages
+    def tighter(messages, evidence, limit=48000, **kwargs):
+        return original(messages, evidence, limit=min(limit, 14000), **kwargs)
+    monkeypatch.setattr(workers, '_bounded_worker_messages', tighter)
+    calls = [call('read_file', {'path': f'source-{i}.py'}, f'source-{i}')['tool_calls'][0] for i in range(4)]
+    delegate, seen = scripted_pool([
+        {'content': '', 'tool_calls': calls},
+        call('edit_file', {'path': 'source-0.py', 'old_text': 'target = "old"', 'new_text': 'target = "new"'}),
+        call('run_python', {'code': "from pathlib import Path; assert 'new' in Path('source-0.py').read_text().splitlines()[0]"}),
+        final_result('Targeted source correction validated'),
+    ])
+    async def complete(messages, tools):
+        if len(seen) == 1 and tools and len(tools) > 1:
+            results = [json.loads(m['content']) for m in messages if m.get('role') == 'tool']
+            assert len(results) == 4 and all('target = "old"' in row['content'] for row in results)
+        return await delegate(messages, tools)
+    mgr, _, _ = manager(tmp_path, complete)
+    start(mgr, project)
+    assert (project / 'source-0.py').read_text().startswith('target = "new"')
+    report = events(mgr)[-1]
+    assert report['status'] == 'finished'
+    assert report['progress_diagnostics']['partial_progress']['confirmed_file_mutations'] == 1
+
+
+
+def test_source_transport_cap_keeps_page_and_cursor_instead_of_json_tail():
+    result = {'ok': True, 'tool': 'read_file', 'path': 'quoted.py',
+              'content': ('value = "quoted"\n' * 1500), 'start_line': 25, 'start_column': 1}
+    encoded = workers._local_agent_json_result(result, 24000)
+    row = json.loads(encoded)
+    assert len(encoded) <= 24000
+    assert 'tail' not in row and row['content'].startswith('value = "quoted"\n')
+    assert row['next_line'] >= 25 and row['truncated'] and row['context_compacted']
+    index = row['next_line'] - 25
+    assert row['content'] + ''.join(result['content'].splitlines(keepends=True)[index:])[row['next_column'] - 1:] == result['content']
