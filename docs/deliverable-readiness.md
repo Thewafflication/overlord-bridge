@@ -56,3 +56,8 @@ The assessment can still be wrong: invented evidence, weak acceptance criteria
 or an unjustified ready decision require independent review. This gate limits
 work admitted as unknown; it does not guarantee meaningful commits, require
 commits for no-op verification, or replace build/runtime acceptance checks.
+
+A reviewer confirming needs_planning must provide a specific owner_question.
+Missing questions consume bounded correction attempts rather than confirming an
+unsupported stop; confirmed questions appear in the report. This requirement
+checks the review contract, not the semantic quality of the question.

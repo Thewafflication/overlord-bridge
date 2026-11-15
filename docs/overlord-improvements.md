@@ -799,3 +799,15 @@ preserved exactly, four active/13 paused restored, four session metadata records
 preserved. Live v1.0.114 acknowledged and Silver resumed. See the dated release
 automation ledger for archive digest, instance and evidence paths. Controlled
 source-retention/edit results are proven; live delivery gain remains unproven.
+
+## 1.0.115 - deploy actionable readiness review
+
+A confirmed needs_planning stop now requires the reviewer's concrete question
+for the owner. The repair prevents the observed ready-work/no-missing-decision
+contradiction from silently ending a run. Completed the previously published
+release's signed installation and preserved owner queues, all 17 schedules and
+four session metadata records. Thirteen installed-module regressions passed,
+including corrected review followed by a file write. See the November 15 release
+automation ledger for CI, checksum and preservation evidence. Pre-install cohort:
+13 terminal runs, one confirmed mutation, zero acceptance-verified deliveries;
+post-install delivery gain is not yet demonstrated.

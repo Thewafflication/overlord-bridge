@@ -100,3 +100,62 @@ No new demonstrated runtime defect was isolated, runtime release created or
 installation performed in this audit. The requested completed-delivery outcome
 is still unresolved. Existing workers, schedule states, owner hashes and
 Pydecipher quarantine were left intact.
+
+## 1.0.115 deployment completed at 18:06 UTC
+
+Completed the pending installation from the "Fix tinypp edits and release"
+repair chat, rather than creating a competing runtime patch. Code ce81424 was
+already pushed and published as a non-prerelease. It requires a specific owner
+question before a reviewer can confirm needs_planning; contradictory ready-work
+stops receive bounded correction attempts. The scripted regression progresses
+from the contradictory stop through corrected review to a file write. This is
+harness behavior, not independent project acceptance.
+
+Release: https://github.com/Thewafflication/overlord-bridge/releases/tag/v1.0.115
+Tag CI 43737882772 passed: Windows 1,631 passed / three skipped in 116.97s;
+Linux 1,599 passed / 35 skipped in 55.05s. Signed build 43737882823 succeeded.
+WPM verification accepted the existing trusted signing key
+6c21ebda96b16bfa64700d28fcdeb20dc4b19de448a723a970ac09b720f04b1d.
+Archive SHA256 matched published SHA256SUMS:
+6786d48eeae903431845284f7790ade267cd33cd28cb2b53cb8366e57acc6857.
+Installation exited zero. Thirteen tests against installed modules passed in
+2.14 seconds, including the contradictory readiness-stop regression.
+
+All 17 frozen schedules and the owner queue survived exactly. Four active
+60-second schedules and thirteen intentional pauses were restored. Four session
+metadata records survived; settings checked by size only. Owned installed source,
+including worker_readiness.py, matched the release checkout before ledger edits.
+The installer automatically restarted with all schedules paused; normal shutdown
+was requested again before restoring states and relaunching. This avoids changing
+schedule files underneath a running scheduler. Preservation proof:
+out/checks/project-task-1.0.115-install-preservation.json. Installed test evidence:
+out/checks/verify-installed-readiness-1.0.115.txt.
+
+### Pre-install measurement
+
+From 12:03:49.708300Z through capture at 18:02:21.048050Z, thirteen terminal
+runs recorded ten stalled and three incomplete outcomes, zero finished or
+acceptance-verified runs, zero preflights, and one confirmed file mutation.
+All thirteen have activity counters: 209 distinct successful command results
+(summed per run), 1,206 new observations, 132 failure diagnostics and zero
+repository-change checkpoints. Four model-completed steps remain unverified.
+Recorded worker time: 21,213.906 seconds (5.89 hours). Verified delivery rate: 0%.
+
+The mutation belongs to KerTeX run 5b17d234ff204be3bb44ce6a14fc2825,
+which stalled after 222 actions. It is partial activity, not a completed delivery.
+TinyPP's previously investigated uncommitted semantic IR edit still has no
+established worker attribution and failing acceptance; this deployment does not
+change that project or claim its completion. Silver repetition and KerTeX build
+failures also remain unresolved.
+
+Evidence: out/checks/automation-20261115-pre115.json and
+out/checks/automation-20261115-pre115-evidence.json. The latter includes one
+additional maintenance interruption, excluded from the thirteen-run measurement.
+Continue the next journal cohort from 18:02:21.048050Z, separate maintenance and
+runs started before this installation, and retain unresolved failures. Live
+accepted-delivery improvement under 1.0.115 remains unproven.
+
+Final live control acknowledged v1.0.115, instance
+1cd6148df6674bfc95e074fd10d52fa6, KerTeX active. Verified all 17 schedule
+IDs/prompts/intervals/states against the pre-pause snapshot after launch. Durable
+monitor records the deployment as installed_verified, with delivery gain unproven.

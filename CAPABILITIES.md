@@ -789,3 +789,7 @@ line/column cursors and pinned owner/task/plan/feedback remain intact. This
 prevents oversized source batches from disappearing before the next action;
 shortened pages explicitly report context_compacted and require cursor-based
 continuation. This also applies to provider-specific request fitting.
+
+Readiness reviewers must provide a specific owner_question when confirming a
+needs_planning stop. Missing questions receive bounded schema correction; a
+confirmed question is included in the report. See docs/deliverable-readiness.md.
