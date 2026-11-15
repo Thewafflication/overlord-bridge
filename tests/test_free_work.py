@@ -366,8 +366,11 @@ def ready_contract(state='ready'):
 def test_unready_deliverable_yields_before_any_project_action(isolated, tmp_path, state):
     project = isolated / 'unready'
     project.mkdir()
+    assessment = ready_contract(state)
+    if state == 'needs_planning':
+        assessment['owner_question'] = 'Which ordering should equal-priority items use?'
     plan = call('update_plan', {'plan': [{'step': 'Await requirement', 'status': 'pending'}],
-                               'readiness': ready_contract(state)})
+                               'readiness': assessment})
     completer, seen = scripted_pool([], plans=[plan, plan], raw_plans=True)
     mgr, _, _ = manager(tmp_path, completer)
     start(mgr, project)
@@ -377,6 +380,8 @@ def test_unready_deliverable_yields_before_any_project_action(isolated, tmp_path
     assert report['work_readiness']['state'] == state
     assert report['continuation']['plan']['readiness']['state'] == state
     assert report['readiness_review']['decision']['state'] == state
+    if state == 'needs_planning':
+        assert assessment['owner_question'] in report['result_tail']
     assert len(completer.planning) == 2
 
 
@@ -441,6 +446,23 @@ def test_early_stop_review_cannot_execute_actions_and_has_bounded_schema_retries
     assert len(completer.planning) == 4 and len(seen) == 1
     assert not (project / 'forbidden.txt').exists()
     assert events(mgr)[-1]['status'] == 'finished'
+
+
+def test_review_without_owner_question_replans_and_executes(isolated, tmp_path):
+    project = isolated / 'ready-repair'
+    project.mkdir()
+    assessment = ready_contract('needs_planning')
+    assessment['reason'] = 'TPP-001 is ready and bounded; no missing owner decision; read check_body next.'
+    stop = call('update_plan', {'plan': [{'step': 'Inspect check_body', 'status': 'pending'}],
+                                'readiness': assessment})
+    completer, _ = scripted_pool([
+        call('write_file', {'path': 'result.txt', 'content': 'repair'}), final_result('Done'),
+    ], plans=[stop, stop, readiness_plan('ready')], raw_plans=True)
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert 'specific readiness.owner_question' in str(completer.planning[2])
+    assert events(mgr)[-1]['readiness_review']['decision']['state'] == 'ready'
+    assert (project / 'result.txt').read_text() == 'repair'
 
 
 @pytest.mark.parametrize('initial_invalid', [0, 2])

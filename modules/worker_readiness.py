@@ -16,6 +16,10 @@ SCHEMA = {
     },
     "required": list(FIELDS), "additionalProperties": False,
 }
+REVIEW_SCHEMA = {**SCHEMA, "properties": {**SCHEMA["properties"], "owner_question": {
+    "type": "string", "maxLength": 1000,
+    "description": "The question only the owner can resolve. Required to confirm needs_planning.",
+}}}
 INSTRUCTION = (
     "Include readiness with state, requirement, deliverable, acceptance, evidence and reason. "
     "Interpret the actual owner request and current evidence, not task keywords. "
@@ -49,6 +53,8 @@ REVIEW_INSTRUCTION = (
     "prerequisite preventing useful authorized progress; already_complete only for verified prior work "
     "with no further authorized deliverable. Never invent a task, evidence, approval or successful test. "
     "Do not weaken acceptance checks, renew discovery, execute tools or claim project completion. "
+    "To confirm needs_planning, supply readiness.owner_question with the actual question for the owner. "
+    "If you can choose the next technical action yourself, return ready with that action. "
     "Return one update_plan assessment; a confirmed early stop will be honored. "
 )
 
@@ -56,9 +62,13 @@ REVIEW_INSTRUCTION = (
 def issues(value, required=False):
     if value is None and not required:
         return []
-    if not isinstance(value, dict) or set(value) != set(FIELDS):
-        return ["readiness requires exactly state, requirement, deliverable, acceptance, evidence and reason"]
+    if not isinstance(value, dict) or set(value) - {"owner_question"} != set(FIELDS):
+        return ["readiness requires state, requirement, deliverable, acceptance, evidence and reason; owner_question is optional"]
     errors = []
+    if "owner_question" in value and (
+        not isinstance(value["owner_question"], str) or len(value["owner_question"]) > 1000
+    ):
+        errors.append("readiness.owner_question must be a string of at most 1000 characters")
     if value["state"] not in STATES:
         errors.append("readiness.state is not recognized")
     for key in FIELDS[1:]:

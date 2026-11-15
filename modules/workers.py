@@ -2727,7 +2727,12 @@ class WorkerManager:
                     # concrete blocked outcome; acceptance remains authoritative.
                     result["plan"]["readiness"] = worker_readiness.owner_contract(project_task)
                 if result.get("ok"):
-                    readiness_issues = worker_readiness.issues(result["plan"].get("readiness"), required=True)
+                    assessment = result["plan"].get("readiness")
+                    readiness_issues = worker_readiness.issues(assessment, required=True)
+                    if (review_pending and not readiness_issues and assessment["state"] == "needs_planning"
+                            and not assessment.get("owner_question", "").strip()):
+                        readiness_issues.append("Confirm needs_planning only with a specific readiness.owner_question. "
+                                                "If no owner input is needed, select ready and plan the next action.")
                     if (not project_task and phase in ("Planning task", "Deliverable readiness checkpoint") and not readiness_issues
                             and result["plan"]["readiness"]["state"] == "ready"
                             and all(item["status"] == "completed" for item in result["plan"]["plan"])):
@@ -2743,6 +2748,7 @@ class WorkerManager:
                         # One model-reviewed decision, with separate bounded schema
                         # retries. No command/file action is admitted during review.
                         review_pending = True
+                        plan_tools[0]["function"]["parameters"]["properties"]["readiness"] = worker_readiness.REVIEW_SCHEMA
                         stage_attempts = 0
                         worker_plan = result["plan"]
                         readiness = proposed
@@ -2768,6 +2774,8 @@ class WorkerManager:
                         final_text = ("Stopped before implementation: deliverable readiness is " +
                             ("needs_planning" if state == "discovery" else state) + ". " + readiness["reason"] +
                             "\nEvidence (worker assessment): " + readiness["evidence"])
+                        if state == "needs_planning":
+                            final_text += "\nQuestion for the owner: " + readiness["owner_question"]
                         step_limited = True
                         transcript.append("readiness: " + json.dumps(readiness, ensure_ascii=False))
                         return False
@@ -2796,9 +2804,6 @@ class WorkerManager:
                     "validation": details,
                     "rejected_response": redact_text(json.dumps(planned, ensure_ascii=False))[:3000],
                     "example_arguments": {"explanation": "Confirmed finding and location; remaining uncertainty; next action.",
-                        "readiness": {"state": "needs_planning", "requirement": "", "deliverable": "",
-                            "acceptance": "", "evidence": "State the actual known facts, not this example.",
-                            "reason": "Name the missing requirement or acceptance decision."},
                         "plan": [{"step": "Next concrete action", "status": "in_progress"}]},
                 }, ensure_ascii=False)
                 log.info("Worker plan rejected: phase=%s attempt=%s details=%s", phase, attempt + 1, diagnostic)
