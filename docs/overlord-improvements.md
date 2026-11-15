@@ -788,3 +788,14 @@ Transport truncation also preserves structured source instead of JSON tails.
 Owner instructions, task, plan, mutation evidence and review feedback stay pinned.
 See docs/releases/1.0.114.md and the dated release automation ledger. Live accepted
 delivery improvement remains unproven; model loops and toolchain failures persist.
+
+
+1.0.114 deployment verified: a9ea2ea pushed/tagged/released and installed.
+Canonical checks: 1,630 passed, two skipped; final focused suite: 259 passed.
+Hosted main 43666498821 and tag 43666834149 checks passed Windows/Linux;
+signed build 43666834154 passed. Trusted signature/SHA256 verified; installation
+exited zero; eleven installed-module tests passed. Frozen owner queue/schedules
+preserved exactly, four active/13 paused restored, four session metadata records
+preserved. Live v1.0.114 acknowledged and Silver resumed. See the dated release
+automation ledger for archive digest, instance and evidence paths. Controlled
+source-retention/edit results are proven; live delivery gain remains unproven.

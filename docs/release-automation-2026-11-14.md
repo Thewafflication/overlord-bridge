@@ -220,3 +220,35 @@ Local release validation: canonical lint, fresh wheel build and full offline sui
 passed: 1,630 tests passed, two skipped in 154.57 seconds. Final focused suite
 passed 259 tests in 47.16 seconds; pre-commit configuration and diff whitespace
 checks passed. Version consistency check confirms 1.0.114. Publication pending.
+
+
+Deployment verified at 2026-11-15 02:19 UTC: code a9ea2ea, tag v1.0.114.
+Main checks 43666498821 and tag checks 43666834149 passed Windows and Linux;
+signed build 43666834154 passed. Published release is non-prerelease:
+https://github.com/Thewafflication/overlord-bridge/releases/tag/v1.0.114 .
+WPM verified trusted signing key
+6c21ebda96b16bfa64700d28fcdeb20dc4b19de448a723a970ac09b720f04b1d
+and SHA256 f380ebb5399fe806bc5717e5d56358f475b81e0ac6b6acc7609c552a74642e15.
+Installation exited zero. Eleven installed-module regressions passed in 10.04
+seconds, including the parallel-read-to-edit-and-validation integration.
+
+All 17 frozen schedule records and owner queue survived exactly. Four original
+active schedules at 60 seconds and 13 intentional pauses were restored, then
+verified after launch with unchanged IDs/prompts/intervals/states. Four session
+metadata records survived; settings checked by size only. Installed owned source
+matches the release. Live control acknowledged v1.0.114 instance
+d9896953d54b4c70bf51b066b45678f2, Free-the_silver_searcher active.
+Evidence: out/checks/project-task-1.0.114-install-preservation.json,
+verify-installed-source-1.0.114.txt and source-batch-1.0.114-before-after.json.
+The latter records the identical 52,912-character input changing from zero
+retained source replies to four under a 24,000-character budget (22,943 final
+characters), with owner task preserved in both revisions.
+
+Pre-install follow-up cohort from 00:05:45.410165Z captured 02:13:43.654096Z:
+seven terminal runs (six stalled, one incomplete), zero mutations or deliveries,
+7,222.234 worker seconds. All seven measured; 60 distinct successful command
+results, 211 new observations and 33 new diagnostics. This is still old-version
+activity and is not a post-fix outcome. Continue from 02:13:43.654096Z, separating
+the maintenance interruption and any pre-install work from 1.0.114 runs. No live
+accepted-delivery gain is claimed yet. Retain unresolved project prerequisites,
+original acceptance hashes and Pydecipher quarantine.
