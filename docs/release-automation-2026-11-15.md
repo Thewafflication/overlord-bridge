@@ -59,3 +59,44 @@ runtime release or reinstall was performed. The requested completed-delivery
 outcome remains unresolved. Preserve original owner hashes, Pydecipher quarantine,
 and unrelated wsp/out/tools edits. Continue the next journal cohort from the
 capture time above, retaining these unresolved failures.
+
+## Follow-up cohort captured 12:03 UTC
+
+Since 2026-11-15T05:57:00.919045Z, 18 terminal runs recorded 11 incomplete
+and seven stalled outcomes. Acceptance-verified runs, unique verified tasks,
+preflights and confirmed file mutations all remain zero. All 18 have activity
+counters: 194 distinct successful command results (summed per run), 1,391 new
+observations, 102 new failure diagnostics and zero repository change checkpoints.
+Recorded worker time was 21,027.859 seconds (5.84 hours). One model-reported
+completed plan step is unverified and does not count as a delivery. Delivery
+rate remains 0%; no measurable product improvement is demonstrated.
+
+Local control acknowledged v1.0.114, instance
+d9896953d54b4c70bf51b066b45678f2, Silver active. The existing published
+non-prerelease and tag CI 43666834149 / signed build 43666834154 remain
+successful. Seven outcome-accounting tests passed in 0.85 seconds.
+
+Specific unresolved evidence:
+
+- Silver cbba052760084c5f9e72e12b94c17aae recorded 297 CMakeLists reads
+  and 166 toolchain reads. Its predecessor 8741faa7d3484962b7f4127d715f9614
+  retained a source page with explicit next_line=61, yet its next-action
+  assessment requested later lines. Repetition alone does not establish that
+  the harness dropped the cursor; capture/replay the actual next model request.
+- TinyPP 6ecc6945f01b4cc395f7197ee98a8e86 ended needs_planning after
+  72 actions, with TPP-001 explicitly named ready by the model. Its reported
+  semantic IR baseline had 61 tests, 19 failures and seven errors. Next compare
+  readiness inputs and review decisions with that bounded repair requirement;
+  do not waive failing acceptance or overwrite pre-existing edits.
+- KerTeX 9c7fe093eadc492f87f3ded5590a2f4c claimed TinyCC absent while
+  earlier retained evidence identified an installed TinyCC path. Verify the
+  actual model-visible discovery evidence and environment before accepting the
+  missing-tool assertion or changing project prerequisites.
+
+Evidence: out/checks/automation-20261115-1200.json and
+out/checks/automation-20261115-1200-evidence.json. Capture cursor is
+2026-11-15T12:03:49.708300Z; retain these unfinished failures next run.
+No new demonstrated runtime defect was isolated, runtime release created or
+installation performed in this audit. The requested completed-delivery outcome
+is still unresolved. Existing workers, schedule states, owner hashes and
+Pydecipher quarantine were left intact.
