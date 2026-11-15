@@ -1,4 +1,4 @@
-# Release automation — 2026-11-14
+# Release automation â€” 2026-11-14
 
 ## Availability recovered; delivery target still unmet
 
@@ -39,9 +39,9 @@ Validation: 234 accounting and free-worker regressions passed in 127.40 seconds;
 git diff --check passed. These checks verify existing guards, not live delivery.
 
 
-## 09:58 UTC follow-up — stable process, repeated-action failures persist
+## 09:58 UTC follow-up â€” stable process, repeated-action failures persist
 
-Measured cohort 04:06:26.984089Z–09:58:36.385368Z: 22 terminal runs,
+Measured cohort 04:06:26.984089Zâ€“09:58:36.385368Z: 22 terminal runs,
 21 stalled and one incomplete; zero finished, acceptance-verified runs, unique
 verified tasks or preflights. Recorded worker time: 19,817.777 seconds across
 1,335 actions. Verified delivery rate remains 0%. TinyPP contributed eight runs;
@@ -83,7 +83,7 @@ not claim a runtime repair, new release or installation. Release/install work
 remains outstanding until a demonstrated harness repair passes required checks.
 Next cohort cursor: 2026-11-14T09:58:36.385368Z; retain these unresolved failures.
 
-## Owner-directed change — longer runs, smaller subtasks, partial measurement
+## Owner-directed change â€” longer runs, smaller subtasks, partial measurement
 
 Implemented in 14c6c2f, release v1.0.113. Repetition allowance increases from
 three to twelve consecutive repeated-observation windows; coaching remains every
@@ -136,3 +136,42 @@ with Free-the_silver_searcher active at 18:33 UTC. New runs now receive the long
 allowance and partial counters. No increase in live accepted deliveries is yet
 claimed. Continue measuring from 18:22:22.331384Z, retaining prior failures and
 identifying the maintenance interruption separately from productive execution.
+
+
+## 2026-11-15 00:05 UTC — longer runs have not produced deliveries
+
+Post-1.0.113 cohort from 2026-11-14T18:22:22.331384Z through
+2026-11-15T00:05:45.410165Z: 17 terminal runs (12 stalled, four incomplete,
+one maintenance interruption), zero finished or acceptance-verified deliveries,
+and 19,397.279 recorded worker seconds (5.39 hours). Sixteen runs have the new
+partial counters; the interrupted legacy run is unmeasured. Across measured runs:
+zero confirmed file mutations, 255 distinct successful command results, 706 new
+successful observations, 130 new failure diagnostics, zero repository-change
+checkpoints and zero model-reported completed steps. These are per-run activity
+counts; they do not establish useful commands, accepted subtasks or delivery.
+
+All twelve stalls report repeated_observations. Action counts now reach 156–240,
+so the longer allowance is exercised in production. More actions have not yet
+produced measurable delivery improvement. KerTeX d98867a9 read mpd.h 69 times;
+its continuation still proposes reading that header. Silver 3570ffb8 ends before
+implementation with needs_planning and zero actions: the proposed next action
+is reconciling current checkout/toolchain evidence. Neither finding independently
+proves source eviction or a parser defect. Next discriminating experiment: replay
+a stalled run's actual model-visible header result and checkpoint exchange to
+establish whether useful source is present when the model asks for it again.
+Do not increase repetition limits again without demonstrating productive work.
+
+Evidence: out/checks/automation-20261115-post113.json and
+out/checks/automation-20261115-evidence.json. Seven accounting tests passed in
+0.10 seconds. Live local control acknowledged v1.0.113, instance
+d52c086ea50645cb99a6d00682efc456, Free-tinypp active. Installed workers.py,
+worker_outcomes.py and version.py match repository hashes. Published v1.0.113
+remains non-prerelease; tag CI 43626582576 and signed build 43626582542 succeeded.
+The earlier installation/signature/preservation evidence remains recorded above;
+this run verified the existing deployment and did not perform another install.
+
+This audit commits measurement, not a runtime repair or new release. Requested
+completed deliveries remain unresolved. No workers stopped, schedules changed,
+acceptance weakened or quarantined projects resumed. Preserve four active and
+13 paused schedules, original owner hashes and Pydecipher quarantine. Continue
+from 2026-11-15T00:05:45.410165Z while retaining the unresolved failures.
