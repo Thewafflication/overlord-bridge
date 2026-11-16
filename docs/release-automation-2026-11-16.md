@@ -38,6 +38,57 @@ requires Windows symlink creation privileges; the separate linked-parent test
 passes without them. Full release validation and publication are recorded below
 after they complete.
 
+Committed and pushed 217b4076e06be573bef43caf7e5221085b63a450; published
+non-draft, non-prerelease v1.0.119. Final canonical lint, fresh-wheel build and
+offline tests passed: 1,665 passed / four skipped in 181.66 seconds. Skips were
+one unavailable local Tk test, two platform cases and symlink creation without
+Windows privilege. Main CI 43877352431 and tag CI 43877359207 passed both platforms.
+Tag Windows: 1,666 passed / three skipped in 123.118 seconds; Linux: 1,622 passed /
+47 skipped in 57.626 seconds. Signed build 43877359421 passed. WPM verification
+accepted existing trusted signing key
+6c21ebda96b16bfa64700d28fcdeb20dc4b19de448a723a970ac09b720f04b1d;
+published SHA256SUMS matched archive SHA256
+995a015bb332566444ffaf86e3caef8d2bed333d1a98b9219294d1efa8f791ce.
+
+The final controlled restart proof retrieved exactly 339 characters, using one
+search and one page, with zero second-run read_file requests, one actual mutation,
+three distinct successful command results and a new local Git commit. Artifact:
+out/checks/project-memory-1.0.119-proof.json. The result is a scripted offline
+workflow, not a claimed increase in live accepted deliveries. Pre-install capture
+2026-11-16T13:37:34.041328Z contains no terminal runs since the 1.0.118 launch;
+there is no new delivery-rate denominator. Evidence:
+out/checks/automation-20261116-pre119.json.
+
+Installation exited zero. Paused only the four active schedules, froze all
+seventeen, confirmed local-control worker cleanup idle, requested normal shutdown
+and verified old PID 4532 exited before installer launch. Frozen schedules and
+owner task queue survived exactly. Restored four active 60-second schedules and
+thirteen intentional pauses while stopped; verified all IDs/prompts/intervals/
+states and the task queue again after launch. Four session metadata records
+survived; settings checked by size only. Owned installed source, including
+worker_memory.py and its documentation, matched the release checkout before
+the final ledger edits.
+
+Eleven tests against installed memory/worker/provider modules passed, one skipped,
+in 5.16 seconds, including restart/edit/validation/commit and protected-budget
+recovery. Live control acknowledged v1.0.119, instance
+8a1b9b7a6c4140f69ded73dce37ed291, with Silver active. A scoped live SQLite store
+initialized; the first metadata check had no entries yet while planning was
+pending. Do not claim actual live retrieval or delivery improvement from that
+initialization. Evidence: out/checks/project-task-1.0.119-install-preservation.json,
+out/checks/verify-installed-memory-1.0.119.txt and
+out/checks/project-memory-1.0.119-live.json. Durable monitor records
+persistent_project_memory as installed_verified.
+
+Final capture 2026-11-16T13:44:53.549389Z adds one maintenance interruption from
+the pre-install KerTeX run: two recorded mutations, 114 command results, 397
+observations, 44 diagnostics and three repository-change checkpoints. Its zero
+duration is unavailable accounting, not an instantaneous run. No accepted
+delivery is attributed to the interruption or this memory release. Continue
+from 2026-11-16T13:44:53.549389Z, preserving unfinished work and separating
+maintenance/pre-install starts from post-install outcomes. Original owner hashes,
+Pydecipher quarantine, exclusions and four-active/thirteen-paused policy remain.
+
 ## Measured baseline
 
 Capture: 2026-11-16T00:05:36.013416Z. Since the previous cursor

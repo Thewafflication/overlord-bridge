@@ -883,3 +883,11 @@ below protected context now try a smaller valid request within the existing
 retry bound, and compact checkpoint coaching preserves task/plan evidence.
 These are functional regressions, not a live model-quality or delivery-rate
 claim. See docs/project-memory.md and the November 16 release ledger.
+
+1.0.119 is committed, pushed, signed, released and installed. Canonical checks:
+1,665 passed / four skipped; hosted Windows/Linux checks passed. Eleven
+installed-module tests passed with one skip. Exact schedule/task-queue and four
+session metadata preservation passed, with four active schedules and thirteen
+pauses restored and verified after launch. The controlled restart retrieved
+339 characters before an actual edit/assertion/commit; no live delivery-rate
+improvement is claimed. See the dated ledger for CI, SHA256 and preservation.
