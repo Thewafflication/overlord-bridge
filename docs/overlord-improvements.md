@@ -856,3 +856,12 @@ event identifies that exact command line. Passing original source directly as
 one -Command argument runs both tools successfully, preserving readable errors
 and quoting without changing Defender configuration. Live delivery gain remains
 unproven; the structured diagnostic still handles other OS launch failures.
+
+1.0.118 is pushed, signed, released and installed. Canonical checks passed
+1,656 tests with two platform skips; hosted Windows/Linux checks passed.
+Thirty-five installed-module regressions passed, and the actual installed
+CMake/Ninja version probe now succeeds. All seventeen schedules and the owner
+queue survived exactly; four active schedules/thirteen pauses and four session
+metadata records were preserved. The nineteen-run pre-install cohort still
+has zero accepted deliveries. See the November 16 release ledger for checksum,
+CI, preservation evidence and the next measurement cursor.

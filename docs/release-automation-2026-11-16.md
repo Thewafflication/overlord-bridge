@@ -226,7 +226,7 @@ out/checks/launch-1.0.118-transport-before.txt and subsequent after-probe eviden
 
 These controlled results demonstrate launch-error recovery and repair of the
 identified transport incompatibility, not a live accepted project delivery.
-Publication, hosted checks and installation will be recorded after verification.
+Verified publication and installation evidence follows below.
 
 Final canonical lint, fresh-wheel build and offline tests passed: 1,656 passed,
 two platform skips in 160.73 seconds. Final focused launch/PowerShell coverage:
@@ -235,3 +235,46 @@ two platform skips in 160.73 seconds. Final focused launch/PowerShell coverage:
 out/checks/launch-1.0.118-focused.txt,
 out/checks/launch-1.0.118-semantics.json and
 out/checks/launch-1.0.118-before-after.json. Version consistency passed.
+
+## Verified 1.0.118 release and installation
+
+Committed/pushed afb7a6d524a98bce1c9bde6eb365a7d6327adc3a and published
+https://github.com/Thewafflication/overlord-bridge/releases/tag/v1.0.118
+as non-draft/non-prerelease. Main CI 43864664460 and tag CI 43864669059
+passed Windows/Linux; signed build 43864668993 succeeded. Tag Windows:
+1,656 passed / two skipped in 100.078 seconds; Linux: 1,611 passed / 47 skipped
+in 57.259 seconds. Hosted artifacts are under out/checks/ci-1.0.118-windows
+and out/checks/ci-1.0.118-linux.
+
+WPM accepted existing trusted signing key
+6c21ebda96b16bfa64700d28fcdeb20dc4b19de448a723a970ac09b720f04b1d.
+Archive SHA256 matches published SHA256SUMS:
+e06ecc1706b5b14b2319aee94ce674ef9df41890bb20dde0d7a2dd52d11976fa.
+Installation exited zero. Thirty-five regressions against installed modules
+passed in 25.35 seconds. The installed interpreter/modules independently run
+the formerly denied `cmake --version; ninja --version` with exit zero, reporting
+CMake 4.4.2 and Ninja 1.13.2. Defender configuration remains unchanged.
+Evidence: out/checks/release-1.0.118/verification.json,
+out/checks/install-1.0.118.txt,
+out/checks/verify-installed-launch-1.0.118.txt and
+out/checks/launch-1.0.118-installed-probe.json.
+
+Paused only the four active schedules, froze all seventeen and acknowledged
+local-control cleanup idle. Normal shutdown removed discovery and old PID 29640
+exited before installation; no forced process termination was required here.
+All frozen schedules and the owner queue survived exactly. Restored four active
+60-second schedules and thirteen intentional pauses while stopped, then verified
+all schedule IDs, prompts, intervals and states after launch. Four session metadata
+records survived unchanged; settings were checked by size only. Owned installed
+runtime/document bytes matched the release checkout before these ledger edits.
+No unrelated wsp/out/tools changes were committed.
+
+Live control acknowledged v1.0.118 at 2026-11-16T12:20:55.761905Z, instance
+b21cd09aeedc40d58eb1ca80328dc12a, KerTeX active. Preservation proof:
+out/checks/project-task-1.0.118-install-preservation.json. Durable monitor records
+command_launch_repair as installed_verified. Final capture since the baseline
+adds one maintenance interruption with 139 observations and no mutations or
+successful commands; this is separate from the nineteen-run product cohort.
+Next cohort cursor: 2026-11-16T12:20:55.761905Z. Retain unfinished loops/build
+failures, original owner hashes and Pydecipher quarantine. Controlled launch
+repair is demonstrated; live accepted-delivery improvement remains unproven.
