@@ -61,3 +61,9 @@ A reviewer confirming needs_planning must provide a specific owner_question.
 Missing questions consume bounded correction attempts rather than confirming an
 unsupported stop; confirmed questions appear in the report. This requirement
 checks the review contract, not the semantic quality of the question.
+
+An attempted return to discovery after its allowance was used is also a proposed
+early stop and receives review. The reviewer is told the allowance was used;
+another discovery decision consumes the existing three correction attempts.
+The harness never converts that decision into needs_planning itself. Review can
+admit bounded technical work or confirm a concrete stop with the usual contract.

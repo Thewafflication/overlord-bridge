@@ -2691,6 +2691,9 @@ class WorkerManager:
                         "This selects models only inside the free pool; it grants no new permissions. "
                         + worker_readiness.INSTRUCTION +
                         (worker_readiness.REVIEW_INSTRUCTION if review_pending else "") +
+                        ("The run's discovery allowance was already used and cannot be renewed. "
+                         "Select ready for defined technical work, or explain a concrete early stop; "
+                         "needs_planning requires the actual missing owner decision. " if discovery_used else "") +
                         "No other tool is available. "
                         "Do not claim unperformed tests, commits or completion.")},
                     {"role": "user", "content": "Read-only worker context:\n" +
@@ -2733,6 +2736,11 @@ class WorkerManager:
                             and not assessment.get("owner_question", "").strip()):
                         readiness_issues.append("Confirm needs_planning only with a specific readiness.owner_question. "
                                                 "If no owner input is needed, select ready and plan the next action.")
+                    if (review_pending and not readiness_issues and assessment["state"] == "discovery"
+                            and discovery_used):
+                        readiness_issues.append("Discovery allowance was already used and cannot be renewed. "
+                                                "Select ready for bounded technical work or a concrete early stop; "
+                                                "needs_planning requires a specific readiness.owner_question.")
                     if (not project_task and phase in ("Planning task", "Deliverable readiness checkpoint") and not readiness_issues
                             and result["plan"]["readiness"]["state"] == "ready"
                             and all(item["status"] == "completed" for item in result["plan"]["plan"])):
@@ -2744,7 +2752,8 @@ class WorkerManager:
                               "remaining uncertainty and the next concrete action. Do not just repeat the initial plan."}
                 if result.get("ok"):
                     proposed = result["plan"]["readiness"]
-                    if not review_pending and proposed["state"] in {"needs_planning", "blocked", "already_complete"}:
+                    if not review_pending and (proposed["state"] in {"needs_planning", "blocked", "already_complete"}
+                                               or (proposed["state"] == "discovery" and discovery_used)):
                         # One model-reviewed decision, with separate bounded schema
                         # retries. No command/file action is admitted during review.
                         review_pending = True
@@ -2767,12 +2776,8 @@ class WorkerManager:
                         discovery_used = True
                         discovery_actions = 0
                     elif state != "ready":
-                        if state == "discovery":
-                            readiness = {**readiness, "state": "needs_planning",
-                                "reason": "Read-only discovery allowance cannot be renewed. " + readiness["reason"]}
-                            worker_plan["readiness"] = readiness
                         final_text = ("Stopped before implementation: deliverable readiness is " +
-                            ("needs_planning" if state == "discovery" else state) + ". " + readiness["reason"] +
+                            state + ". " + readiness["reason"] +
                             "\nEvidence (worker assessment): " + readiness["evidence"])
                         if state == "needs_planning":
                             final_text += "\nQuestion for the owner: " + readiness["owner_question"]

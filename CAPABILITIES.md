@@ -6,6 +6,10 @@ workflow lands.
 
 ## Current Capabilities
 
+- Repeated discovery after its allowance was used receives independent readiness
+  review instead of an automatic needs_planning conversion. Review cannot renew
+  discovery; invalid decisions use the existing bounded correction attempts.
+
 - Planning-context fitting reduces its budget by at least 1 KiB per retry until
   it fits or encounters protected task evidence, rather than stopping after
   eight small adjustments. Nested JSON escaping remains included in the bound.

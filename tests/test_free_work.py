@@ -501,12 +501,57 @@ def test_early_stop_review_cannot_renew_exhausted_discovery(isolated, tmp_path):
     project.mkdir()
     completer, seen = scripted_pool([
         call('list_files', {'path': '.'}, f'r{i}') for i in range(6)
-    ], plans=[readiness_plan('discovery'), readiness_plan('needs_planning'), readiness_plan('discovery')], raw_plans=True)
+    ], plans=[readiness_plan('discovery'), readiness_plan('needs_planning'),
+              *[readiness_plan('discovery')] * 3], raw_plans=True)
     mgr, _, _ = manager(tmp_path, completer)
     start(mgr, project)
-    assert len(seen) == 6 and len(completer.planning) == 3
+    assert len(seen) == 6 and len(completer.planning) == 5
     assert events(mgr)[-1]['status'] == 'incomplete'
     assert events(mgr)[-1]['work_readiness']['state'] == 'needs_planning'
+    assert events(mgr)[-1]['readiness_review']['decision'] is None
+    assert 'cannot be renewed' in events(mgr)[-1]['result_tail']
+
+
+@pytest.mark.parametrize('invalid_reviews', [0, 2])
+def test_repeated_discovery_is_reviewed_before_stopping_defined_work(isolated, tmp_path, invalid_reviews):
+    project = isolated / 'review-repeated-discovery'
+    project.mkdir()
+    (project / 'target.txt').write_text('old', encoding='utf-8')
+    completer, seen = scripted_pool([
+        *[call('list_files', {'path': '.'}, f'r{i}') for i in range(6)],
+        call('edit_file', {'path': 'target.txt', 'old_text': 'old', 'new_text': 'repaired'}),
+        call('run_python', {'code': "from pathlib import Path; assert Path('target.txt').read_text() == 'repaired'"}),
+        final_result('Validated repair'),
+    ], plans=[readiness_plan('discovery'), readiness_plan('discovery'),
+              *[readiness_plan('discovery')] * invalid_reviews,
+              readiness_plan('ready')], raw_plans=True)
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    report = events(mgr)[-1]
+    assert report['readiness_review']['proposed']['state'] == 'discovery'
+    assert report['readiness_review']['decision']['state'] == 'ready'
+    assert 'already used' in str(completer.planning[2])
+    assert (project / 'target.txt').read_text() == 'repaired'
+    assert report['status'] == 'finished' and completer.reviews
+    assert len(seen) == 9
+
+
+def test_repeated_discovery_review_exhaustion_does_not_invent_owner_decision(isolated, tmp_path):
+    project = isolated / 'invalid-discovery-review'
+    project.mkdir()
+    completer, seen = scripted_pool([
+        call('list_files', {'path': '.'}, f'r{i}') for i in range(6)
+    ], plans=[readiness_plan('discovery')] * 5, raw_plans=True)
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    report = events(mgr)[-1]
+    assert len(seen) == 6 and len(completer.planning) == 5
+    assert report['status'] == 'incomplete'
+    assert report['readiness_review']['decision'] is None
+    assert report['work_readiness']['state'] == 'discovery'
+    assert 'owner_question' not in report['work_readiness']
+    assert 'cannot be renewed' in report['result_tail']
+    assert not list(project.iterdir())
 
 
 def test_discovery_cannot_execute_commands_or_renew_its_budget(isolated, tmp_path):
@@ -520,7 +565,7 @@ def test_discovery_cannot_execute_commands_or_renew_its_budget(isolated, tmp_pat
         call('update_plan', {'plan': [{'step': 'Bypass admission', 'status': 'pending'}],
                              'readiness': ready_contract()}),
         *[call('list_files', {'path': '.'}, f'r{i}') for i in range(3)],
-    ], plans=[plan, plan], raw_plans=True)
+    ], plans=[plan, plan, readiness_plan('blocked')], raw_plans=True)
     mgr, _, _ = manager(tmp_path, completer)
     original = mgr._execute_checked
     async def execute(brain, folder, tool, args):
@@ -528,10 +573,10 @@ def test_discovery_cannot_execute_commands_or_renew_its_budget(isolated, tmp_pat
         return await original(brain, folder, tool, args)
     mgr._execute_checked = execute
     start(mgr, project)
-    assert len(seen) == 6 and len(completer.planning) == 2
+    assert len(seen) == 6 and len(completer.planning) == 3
     assert not (project / 'bad.txt').exists()
     assert events(mgr)[-1]['status'] == 'incomplete'
-    assert 'needs_planning' in events(mgr)[-1]['result_tail']
+    assert events(mgr)[-1]['readiness_review']['decision']['state'] == 'blocked'
 
 
 def test_discovery_can_admit_work_after_observing_requirement(isolated, tmp_path):
@@ -567,7 +612,7 @@ def test_discovery_batch_cannot_exceed_six_read_actions(isolated, tmp_path):
                                'readiness': ready_contract('discovery')})
     batch = {'content': '', 'tool_calls': [call('list_files', {'path': f'fixture{i}'}, f'r{i}')['tool_calls'][0]
                                           for i in range(8)]}
-    completer, _ = scripted_pool([batch], plans=[plan, plan], raw_plans=True)
+    completer, _ = scripted_pool([batch], plans=[plan, plan, readiness_plan('blocked')], raw_plans=True)
     mgr, _, _ = manager(tmp_path, completer)
     original = mgr._execute_checked
     reads = []

@@ -811,3 +811,13 @@ including corrected review followed by a file write. See the November 15 release
 automation ledger for CI, checksum and preservation evidence. Pre-install cohort:
 13 terminal runs, one confirmed mutation, zero acceptance-verified deliveries;
 post-install delivery gain is not yet demonstrated.
+
+## 1.0.116 - review exhausted discovery stops
+
+TinyPP run 40d953bc0d9e41a88ecf63c97e99624b exposed an early-stop review bypass:
+another discovery assessment became needs_planning with no review or owner
+question. Reproduced with a failing worker regression. Route that proposal
+through review and reject reviewer attempts to renew discovery within the
+existing bounded retries. The regression now reaches an edit and assertion
+command after six discovery actions. This proves control flow, not project
+acceptance; live delivery rates remain separately measured in the dated ledger.
