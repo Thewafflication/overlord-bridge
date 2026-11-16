@@ -178,3 +178,60 @@ diagnostics (recorded duration unavailable/zero). Next cohort cursor:
 TinyPP IR failures; preserve original owner hashes, Pydecipher quarantine and
 four-active/thirteen-paused scheduling. Diagnostic preservation is demonstrated;
 post-install project-delivery improvement remains unproven.
+
+## Post-1.0.117 cohort and command-launch repair
+
+Capture: 2026-11-16T12:03:13.174622Z, since 06:16:27.310161Z.
+Nineteen terminal runs: six crashed, five incomplete and eight stalled. Zero
+finished runs, acceptance-verified deliveries, unique accepted tasks, mutations
+or preflights. Recorded worker time: 19,625.578 seconds (5.45 hours). Thirteen
+runs have activity counters: 135 distinct successful command results summed
+per run, 1,357 observations, 80 failure diagnostics and zero repository-change
+checkpoints. One model-completed plan step is unverified. Evidence:
+out/checks/automation-20261116-post117.json and
+out/checks/automation-20261116-post117-evidence.json. Live v1.0.117 remained
+online, instance 4cf762252f52413b996ac9754e087fbe, TinyPP active.
+
+All six crashed runs report Windows access denied: Silver
+4e8b5d14106d406895de9c9b17fd20f2 and 84adf872e1234fa3b60b79e702a398a0;
+KerTeX 28476004dfdd4a85bee897f6d42351cb,
+5c84a70cec5d44c4995f32e63ebb8407, 424e86b837eb40289f96876cf9acba17
+and e08aca1030ef4f13b8609307a2782aa1. Prior monitor investigation traced the
+first to process creation during a command tool call. No permissions are changed
+or bypassed. Subsequent independent reproduction below identifies a concrete
+Defender detection for the version-probe command.
+
+Eleven new regressions failed on 1.0.117: process-creation OSError escaped the
+command tool, including a real attempt to execute a directory. A scripted
+worker crashed before its second action. With the repair, the tool returns
+command_launch_failed, bounded/redacted OS diagnostics and null exit status;
+the worker receives the failure, executes a subsequent Python probe and
+retains both results in its continuation. That worker correctly remains
+incomplete/blocked with no acceptance claim. Cancellation still propagates,
+and no automatic retry or alternate shell is attempted. The focused final
+suite passes twelve cases in 1.59 seconds, including cancellation and retained
+continuation diagnostics. Evidence: out/checks/launch-1.0.118-focused.txt.
+
+An actual command probe in this checkout reproduced WinError 5 for
+`cmake --version; ninja --version`. Defender Operational event 1116 at
+2026-11-16 06:08:17 local identifies Trojan:Win32/Commando.B!ml and the exact
+1.0.117 PowerShell base64 decode/execute command line. This is a benign version
+probe; the new wrapper introduced a concrete endpoint-protection compatibility
+failure. Passing the original source directly as one -Command argument starts
+both tools with exit zero. No Defender settings, exclusions or access rights
+are changed. Quoted/multiline source and native exit behavior are tested.
+The transport regression failed on the wrapper implementation. Evidence:
+out/checks/launch-1.0.118-current-probe.json (failure),
+out/checks/launch-1.0.118-transport-before.txt and subsequent after-probe evidence.
+
+These controlled results demonstrate launch-error recovery and repair of the
+identified transport incompatibility, not a live accepted project delivery.
+Publication, hosted checks and installation will be recorded after verification.
+
+Final canonical lint, fresh-wheel build and offline tests passed: 1,656 passed,
+two platform skips in 160.73 seconds. Final focused launch/PowerShell coverage:
+35 passed in 31.13 seconds. Six independent stdout/exit-status probes match
+1.0.117. Evidence: out/checks/check-1.0.118-final.txt,
+out/checks/launch-1.0.118-focused.txt,
+out/checks/launch-1.0.118-semantics.json and
+out/checks/launch-1.0.118-before-after.json. Version consistency passed.

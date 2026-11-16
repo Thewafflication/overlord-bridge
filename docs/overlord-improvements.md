@@ -840,3 +840,19 @@ owner task queue and four session metadata records survived; the four active
 schedules and thirteen pauses were restored and verified after launch. See the
 November 16 automation ledger for checksums, CI and the observed old-process
 shutdown delay. Live delivery gain remains unproven.
+
+## 1.0.118 - preserve OS launch failures and worker continuation
+
+The post-1.0.117 cohort has 19 terminal runs: six crashed with Windows access
+denied, five incomplete and eight stalled, with zero accepted deliveries. A
+command launch OSError escaped the tool boundary. New regressions reproduce
+the crash, including a real OS launch failure. The command now returns bounded,
+redacted diagnostics and no exit status, allowing authorized investigation or
+an explicit blocker while retaining the normal evidence and continuation.
+No retry, fallback, permission change or acceptance weakening is introduced.
+A subsequent live probe reproduced Defender denying the 1.0.117 base64
+decode/execute wrapper for `cmake --version; ninja --version`. Its detection
+event identifies that exact command line. Passing original source directly as
+one -Command argument runs both tools successfully, preserving readable errors
+and quoting without changing Defender configuration. Live delivery gain remains
+unproven; the structured diagnostic still handles other OS launch failures.

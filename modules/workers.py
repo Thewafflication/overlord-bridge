@@ -42,7 +42,6 @@ etc.; aliases live in _NVIDIA_MODEL_ALIASES.
 from __future__ import annotations
 
 import asyncio
-import base64
 import fnmatch
 import sys
 from modules.free_services import OPENROUTER_BASE, validate_free_model, free_provider_policy
@@ -1887,25 +1886,46 @@ class WorkerManager:
                            stderr=asyncio.subprocess.PIPE, env=environment)
             if os.name != "nt":
                 options["start_new_session"] = True
-            if tool_name == "run_python":
-                proc = await asyncio.create_subprocess_exec(str(interpreter), "-c", command, **options)
-            elif shell == "powershell":
-                # Invoking a script block can reset $? after it returns. Exit
-                # inside that scope with the host's normal 0/1 mapping, while
-                # explicit exit statements retain their original code.
-                script = command + "\nexit ([int](-not $?))"
-                encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
-                # -EncodedCommand serializes redirected errors/progress as
-                # CLIXML even with -OutputFormat Text. Keep lossless transport
-                # without that host mode: only a fixed base64 alphabet crosses
-                # Windows command-line quoting, and errors stay readable before
-                # the bounded output capture can discard their XML prefix.
-                invocation = ("& ([ScriptBlock]::Create([Text.Encoding]::Unicode.GetString("
-                              "[Convert]::FromBase64String('" + encoded + "'))))")
-                proc = await asyncio.create_subprocess_exec(
-                    "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", invocation, **options)
-            else:
-                proc = await asyncio.create_subprocess_shell(command, **options)
+            try:
+                if tool_name == "run_python":
+                    proc = await asyncio.create_subprocess_exec(str(interpreter), "-c", command, **options)
+                elif shell == "powershell":
+                    # Pass source directly as one argv value. Python's Windows
+                    # argument quoting preserves it; an encoded decode/execute
+                    # wrapper can trigger endpoint protection for benign tools.
+                    # Command host mode also retains readable error streams and
+                    # its native exit-status semantics, without extra script.
+                    proc = await asyncio.create_subprocess_exec(
+                        "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", command, **options)
+                else:
+                    proc = await asyncio.create_subprocess_shell(command, **options)
+            except OSError as exc:
+                # Creation failed before there was an owned process or exit
+                # status. Keep this evidence in the tool dialogue/continuation
+                # so the agent can investigate, rather than losing the run.
+                log_command("worker", "launch failed", command, folder)
+                result = {
+                    "ok": False, "error": "command_launch_failed", "tool": tool_name,
+                    "command": command, "exit_code": None, "timed_out": False,
+                    "timeout_seconds": timeout_i, "stdout": "", "stderr": "",
+                    "stdout_truncated": False, "stderr_truncated": False,
+                    "message": redact_text(str(exc))[:2000],
+                    "errno": exc.errno, "winerror": getattr(exc, "winerror", None),
+                    "shell": ("direct Python" if tool_name == "run_python" else
+                              "powershell" if shell == "powershell" else
+                              "cmd.exe" if os.name == "nt" else "/bin/sh"),
+                    "python_interpreter": str(interpreter),
+                    "recovery_hint": (
+                        "No process started; there is no command exit status or output. "
+                        "Inspect the selected shell/interpreter, project working directory and "
+                        "OS diagnostic to distinguish missing executables from access denial. "
+                        "Do not bypass denied access or change permissions automatically. "
+                        "Use an authorized diagnostic tool or report the concrete blocker."
+                    ),
+                }
+                if command != original_command:
+                    result["original_command"] = original_command
+                return result
             stdout_capture = _CommandTail(DEFAULT_LOCAL_AGENT_TOOL_OUTPUT_CHARS)
             stderr_capture = _CommandTail(DEFAULT_LOCAL_AGENT_TOOL_OUTPUT_CHARS)
             communication = asyncio.create_task(_capture_command_output(proc, stdout_capture, stderr_capture))
@@ -2616,7 +2636,8 @@ class WorkerManager:
                                           if k in {"command", "cmd", "code", "shell"}},
                             "result": {k: str(v)[-800:] if isinstance(v, str) else v
                                        for k, v in result.items() if k in {
-                                           "ok", "error", "exit_code", "timed_out", "stdout", "stderr"}}}
+                                           "ok", "error", "exit_code", "timed_out", "stdout", "stderr",
+                                           "message", "errno", "winerror", "shell", "python_interpreter"}}}
             else:
                 evidence = {"tool": tool_name, "path": arguments.get("path"),
                             "ok": result.get("ok"), "error": result.get("error")}

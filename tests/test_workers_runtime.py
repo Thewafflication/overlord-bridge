@@ -739,6 +739,55 @@ def test_failed_command_reports_shell_and_recovery_context(isolated):
     assert result['python_interpreter'] == str(workers._worker_python(folder))
 
 
+@pytest.mark.parametrize('tool,shell', [
+    ('run_python', None), ('run_command', 'default'),
+    pytest.param('run_command', 'powershell', marks=pytest.mark.skipif(
+        sys.platform != 'win32', reason='Windows PowerShell'))])
+@pytest.mark.parametrize('error_type', [PermissionError, FileNotFoundError, OSError])
+def test_command_launch_failure_returns_diagnostic_without_retry(isolated, monkeypatch, tool, shell, error_type):
+    attempts = []
+    monkeypatch.setenv('TEST_LAUNCH_SECRET_TOKEN', 'launch-secret-value')
+    async def fail(*args, **kwargs):
+        attempts.append(args)
+        error = error_type(13, 'launch-secret-value ' + 'denied ' * 1000)
+        error.winerror = 5
+        raise error
+    monkeypatch.setattr(asyncio, 'create_subprocess_exec', fail)
+    monkeypatch.setattr(asyncio, 'create_subprocess_shell', fail)
+    args = {'code': 'print(42)'} if tool == 'run_python' else {'command': 'echo 42', 'shell': shell}
+    result = execute(tool, args, isolated)
+    assert len(attempts) == 1
+    assert result['ok'] is False and result['error'] == 'command_launch_failed'
+    assert result['exit_code'] is None and result['timed_out'] is False
+    assert result['errno'] == 13 and result['winerror'] == 5
+    assert result['stdout'] == '' and result['stderr'] == ''
+    assert len(result['message']) <= 2000 and 'launch-secret-value' not in str(result)
+    assert '[redacted]' in result['message']
+    assert result['python_interpreter'] == str(workers._worker_python(isolated))
+    assert 'No process started' in result['recovery_hint']
+
+
+def test_actual_python_launch_failure_can_be_followed_by_success(isolated, monkeypatch):
+    manager, _, _ = make_manager(isolated)
+    # A directory cannot be executed: exercise the real OS boundary, without
+    # depending on machine ACLs or modifying permissions.
+    with monkeypatch.context() as patch:
+        patch.setattr(workers, '_worker_python', lambda folder: isolated)
+        failed = run(manager._execute_checked('free', isolated, 'run_python', {'code': 'print(42)'}))
+    assert failed['ok'] is False and failed['error'] == 'command_launch_failed'
+    assert failed['exit_code'] is None
+    recovered = run(manager._execute_checked('free', isolated, 'run_python', {'code': 'print(42)'}))
+    assert recovered['ok'] and recovered['stdout'] == '42'
+
+
+def test_command_launch_cancellation_is_not_a_recoverable_error(isolated, monkeypatch):
+    async def cancelled(*args, **kwargs):
+        raise asyncio.CancelledError()
+    monkeypatch.setattr(asyncio, 'create_subprocess_exec', cancelled)
+    with pytest.raises(asyncio.CancelledError):
+        execute('run_python', {'code': 'print(42)'}, isolated)
+
+
 @pytest.mark.parametrize('tool', ['run_python', 'run_command'])
 @pytest.mark.parametrize('exit_code', [0, 7])
 def test_python_commands_preserve_unicode_stdout_and_stderr(isolated, monkeypatch, tool, exit_code):
@@ -831,6 +880,20 @@ def test_powershell_errors_are_text_before_output_bounding(isolated, progress_re
     assert 'Preparing modules for first use' not in result['stderr']
     assert not result['stderr_truncated']
     assert result['stdout'].strip() == 'finished'
+
+
+@pytest.mark.skipif(sys.platform != 'win32', reason='Windows PowerShell')
+def test_powershell_launch_uses_transparent_source_without_decode_wrapper(isolated, monkeypatch):
+    captured = []
+    original = asyncio.create_subprocess_exec
+    async def capture(*args, **kwargs):
+        captured.append(args)
+        return await original(*args, **kwargs)
+    monkeypatch.setattr(asyncio, 'create_subprocess_exec', capture)
+    command = "Write-Output 'transparent transport'"
+    result = execute('run_command', {'shell': 'powershell', 'command': command}, isolated)
+    assert result['ok'] and result['stdout'] == 'transparent transport'
+    assert captured == [('powershell.exe', '-NoProfile', '-NonInteractive', '-Command', command)]
 
 
 @pytest.mark.skipif(sys.platform != 'win32', reason='Windows PowerShell')

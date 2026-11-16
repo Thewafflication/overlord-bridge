@@ -1183,6 +1183,35 @@ def test_commands_are_approved_then_run_inside_the_project(isolated, tmp_path):
     assert "42" in json.dumps(seen[1][0])
 
 
+def test_launch_denial_reaches_model_and_preserves_later_tool_evidence(isolated, tmp_path, monkeypatch):
+    project = isolated / 'launch-recovery'
+    project.mkdir()
+    attempts = []
+    async def denied(*args, **kwargs):
+        attempts.append(args)
+        raise PermissionError(13, 'access denied')
+    monkeypatch.setattr(asyncio, 'create_subprocess_shell', denied)
+    completer, seen = scripted_pool([
+        call('run_command', {'command': 'echo unavailable'}),
+        call('run_python', {'code': "print('recovery evidence')"}),
+        call('finish_task', {'final': 'Original shell access remains denied; direct Python probe succeeded.',
+                             'outcome': 'blocked'}),
+    ])
+    mgr, *_ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert len(attempts) == 1
+    assert 'command_launch_failed' in json.dumps(seen[1][0])
+    assert 'recovery evidence' in json.dumps(seen[2][0])
+    report = events(mgr)[-1]
+    assert report['status'] == 'incomplete'
+    progress = report['progress_diagnostics']['partial_progress']
+    assert progress['new_failure_diagnostics'] >= 1
+    assert progress['distinct_successful_command_results'] == 1
+    assert report['acceptance'] is None
+    assert 'access denied' in report['continuation']['recent_evidence']
+    assert 'command_launch_failed' in report['continuation']['recent_evidence']
+
+
 def test_the_free_brain_can_be_named_a_few_ways_and_needs_a_pool(isolated, tmp_path):
     project = isolated / "app"
     project.mkdir()

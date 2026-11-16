@@ -803,3 +803,16 @@ Windows worker shell=powershell uses a base64 script-block invocation through
 no longer evict earlier errors from the bounded output tail. Script quoting,
 multiline source, stdout/stderr separation and exit codes remain covered by
 Windows regressions. See docs/releases/1.0.117.md.
+
+Worker command process-creation failures return `command_launch_failed` with
+bounded/redacted OS diagnostics, errno/winerror, shell/interpreter and null exit
+status. No process output or success is invented. This keeps evidence in the
+worker dialogue and continuation instead of crashing the run. There is no
+automatic retry, access bypass or permission change; cancellation propagates.
+See docs/releases/1.0.118.md.
+
+PowerShell source is passed directly as a single `-Command` argument, preserving
+Windows argv quoting and native host exit behavior. This replaces the 1.0.117
+decode/execute wrapper, which Defender denied on this machine for benign build
+tool probes. Defender settings/permissions are unchanged; readable errors and
+multiline/quoted source remain covered by regression tests.
