@@ -832,3 +832,11 @@ progress records, stderr drops from 86,062 bytes to 543 and retains the original
 diagnostic; exit code 7 is preserved. Quoting and multiline behavior are tested.
 The twelve-run live baseline still has zero accepted deliveries and zero edits;
 this repair improves observable diagnostics, not a claimed delivery rate.
+
+1.0.117 was committed, pushed, signed, released and installed. Final canonical
+checks passed (1,642 tests, three skips); hosted Windows/Linux checks passed.
+All 22 installed-module PowerShell regressions passed. Exact frozen schedules,
+owner task queue and four session metadata records survived; the four active
+schedules and thirteen pauses were restored and verified after launch. See the
+November 16 automation ledger for checksums, CI and the observed old-process
+shutdown delay. Live delivery gain remains unproven.

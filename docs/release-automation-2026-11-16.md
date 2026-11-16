@@ -125,3 +125,56 @@ out/checks/powershell-1.0.117-before-after.json and
 out/checks/powershell-1.0.117-focused.txt. This fixes observability of failures;
 it does not establish that PowerShell serialization caused the source-read
 loops or demonstrate improved project delivery.
+
+## 1.0.117 publication and validation
+
+Committed and pushed 55f95a202e931623253f71f2e3e96938da765954;
+published non-draft, non-prerelease
+https://github.com/Thewafflication/overlord-bridge/releases/tag/v1.0.117.
+Final canonical lint, fresh-wheel build and tests passed: 1,642 passed,
+three skipped in 161.60 seconds. One local Tk test lacked a usable graphical
+installation; the other skips are platform-specific. Nine focused worker tests
+passed in 18.68 seconds. Six additional before/after subprocess probes matched
+exit status and stdout (out/checks/powershell-1.0.117-semantics.json).
+
+Main CI 43814763481 and tag CI 43814778092 succeeded on Windows/Linux.
+Tag Windows: 1,643 passed / two skipped in 115.804 seconds; Linux: 1,602 passed /
+43 skipped in 59.014 seconds. Signed build 43814778038 succeeded. WPM accepted
+the existing trusted signing key
+6c21ebda96b16bfa64700d28fcdeb20dc4b19de448a723a970ac09b720f04b1d.
+Archive SHA256 matched published SHA256SUMS:
+6a39d74358b17e2fbff9bb0aafa10b864dd9f55bdb03ced7068f7aa111897129.
+Evidence: out/checks/release-1.0.117/verification.json and hosted test artifacts
+under out/checks/ci-1.0.117-windows and out/checks/ci-1.0.117-linux.
+
+Maintenance paused only the four active schedules, froze all seventeen and
+confirmed local-control worker cleanup idle. Normal shutdown removed control
+discovery, but Python PID 28116 remained alive after repeated checks. No normal
+process-exit claim is made: the existing package lifecycle stopped its owned
+processes before replacing the installation. The shutdown hang's cause remains
+unproven and warrants a separate bounded investigation.
+
+Installation exited zero. While stopped, verified exact preservation of all
+seventeen frozen schedules and the owner task queue, restored four active
+60-second schedules and thirteen intentional pauses, and compared owned
+installed runtime/document bytes with the release checkout. Four session
+metadata records survived; settings were compared by size only. Launched the
+managed install hidden and independently verified every schedule ID, prompt,
+interval and state again, together with the unchanged task queue.
+
+All 22 PowerShell regressions against installed modules passed in 29.39 seconds.
+Live control acknowledged v1.0.117, instance
+4cf762252f52413b996ac9754e087fbe, with Silver active. Proof:
+out/checks/project-task-1.0.117-install-preservation.json,
+out/checks/verify-installed-powershell-1.0.117.txt and
+out/checks/install-1.0.117.txt. Durable monitor records powershell_diagnostics_repair
+as installed_verified. Unrelated wsp/out/tools changes were left untouched.
+
+Capture 2026-11-16T06:16:27.310161Z adds only one maintenance interruption since
+the twelve-run baseline; it is separate from the product cohort. Its counters
+are zero mutations, sixteen command results, 95 observations and eleven
+diagnostics (recorded duration unavailable/zero). Next cohort cursor:
+2026-11-16T06:16:27.310161Z. Retain unfinished source-read loops, KerTeX build and
+TinyPP IR failures; preserve original owner hashes, Pydecipher quarantine and
+four-active/thirteen-paused scheduling. Diagnostic preservation is demonstrated;
+post-install project-delivery improvement remains unproven.
