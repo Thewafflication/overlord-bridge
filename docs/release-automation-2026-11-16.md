@@ -88,3 +88,40 @@ the eleven-run product cohort. Continue from this final capture, retaining
 unfinished blockers. The release fixes a demonstrated harness defect; accepted
 project-delivery improvement remains unproven. Preserve original owner hashes,
 Pydecipher quarantine, and the four-active/thirteen-paused schedule policy.
+
+## Post-1.0.116 cohort and diagnostic repair
+
+Capture: 2026-11-16T05:59:00.044383Z, since 00:17:06.792054Z.
+Twelve terminal runs, all stalled on repeated observations: four each for
+KerTeX, Silver and TinyPP. Zero finished runs, acceptance-verified deliveries,
+unique accepted tasks, confirmed file mutations or preflights. Recorded worker
+time: 20,487.265 seconds (5.69 hours). Activity totals: 120 distinct successful
+command results summed per run, 1,347 new observations, 57 failure diagnostics
+and one repository-change checkpoint. All twelve have activity counters; these
+are not accepted subtasks. Live control acknowledged the same 1.0.116 instance
+6e0e15354b1f480a96fdd7c2f774334e with KerTeX active. Evidence:
+out/checks/automation-20261116-post116.json and
+out/checks/automation-20261116-post116-evidence.json.
+
+Silver 2faab2dde4344919b9983bdf0ff2afa7 records PowerShell errors and startup
+progress as CLIXML. Reproduced the underlying host-mode defect independently:
+-OutputFormat Text does not fix -EncodedCommand's redirected stderr. A new
+worker regression fails on 1.0.116 because the diagnostic is serialized.
+The repair executes the identical base64 source in a fixed -Command script-block
+invocation, avoiding command quoting damage and encoded-host serialization.
+An additional compatibility experiment caught implicit failures becoming zero
+when returning from the first script-block implementation. The final repair
+maps the last success status to the host's 0/1 result inside the script block;
+explicit exit statements keep their codes. Five additional worker regressions
+cover native failure, nonterminating error, exception, success and recovery.
+
+Controlled 400-progress-record experiment: before, 86,062 stderr bytes and the
+original error absent from the retained 24,000-character tail; after, 543 bytes,
+the original diagnostic present and readable, same stdout and exit code 7.
+The new Windows worker regression checks this before output bounding, plus
+multiline scripts, quotes, dollar signs, pipes and native stderr. Evidence:
+out/checks/powershell-1.0.117-before.txt,
+out/checks/powershell-1.0.117-before-after.json and
+out/checks/powershell-1.0.117-focused.txt. This fixes observability of failures;
+it does not establish that PowerShell serialization caused the source-read
+loops or demonstrate improved project delivery.

@@ -1890,9 +1890,20 @@ class WorkerManager:
             if tool_name == "run_python":
                 proc = await asyncio.create_subprocess_exec(str(interpreter), "-c", command, **options)
             elif shell == "powershell":
-                encoded = base64.b64encode(command.encode("utf-16-le")).decode("ascii")
+                # Invoking a script block can reset $? after it returns. Exit
+                # inside that scope with the host's normal 0/1 mapping, while
+                # explicit exit statements retain their original code.
+                script = command + "\nexit ([int](-not $?))"
+                encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
+                # -EncodedCommand serializes redirected errors/progress as
+                # CLIXML even with -OutputFormat Text. Keep lossless transport
+                # without that host mode: only a fixed base64 alphabet crosses
+                # Windows command-line quoting, and errors stay readable before
+                # the bounded output capture can discard their XML prefix.
+                invocation = ("& ([ScriptBlock]::Create([Text.Encoding]::Unicode.GetString("
+                              "[Convert]::FromBase64String('" + encoded + "'))))")
                 proc = await asyncio.create_subprocess_exec(
-                    "powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded, **options)
+                    "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", invocation, **options)
             else:
                 proc = await asyncio.create_subprocess_shell(command, **options)
             stdout_capture = _CommandTail(DEFAULT_LOCAL_AGENT_TOOL_OUTPUT_CHARS)

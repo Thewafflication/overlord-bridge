@@ -814,6 +814,52 @@ def test_powershell_preserves_variables_and_newlines(isolated):
 
 
 @pytest.mark.skipif(sys.platform != 'win32', reason='Windows PowerShell')
+@pytest.mark.parametrize('progress_records', [1, 400])
+def test_powershell_errors_are_text_before_output_bounding(isolated, progress_records):
+    folder = isolated / 'powershell diagnostics'
+    folder.mkdir()
+    result = execute('run_command', {'shell': 'powershell', 'command':
+        "Write-Error 'OVL diagnostic sentinel' -ErrorAction Continue\n"
+        f"1..{progress_records} | ForEach-Object {{ Write-Progress -Activity 'worker probe' -Status 'running' }}\n"
+        "Write-Output 'finished'\nexit 7"}, folder)
+    assert result['exit_code'] == 7 and not result['ok']
+    assert 'OVL diagnostic sentinel' in result['stderr']
+    assert 'WriteErrorException' in result['stderr']
+    assert '#< CLIXML' not in result['stderr']
+    assert '<Objs' not in result['stderr']
+    assert '_x000D_' not in result['stderr']
+    assert 'Preparing modules for first use' not in result['stderr']
+    assert not result['stderr_truncated']
+    assert result['stdout'].strip() == 'finished'
+
+
+@pytest.mark.skipif(sys.platform != 'win32', reason='Windows PowerShell')
+def test_powershell_command_transport_preserves_literal_script(isolated):
+    folder = isolated / 'powershell quoting'
+    folder.mkdir()
+    command = ("$value = 'literal \"quotes\" and $dollars & pipes |'\n"
+               "[Console]::Out.WriteLine($value)\n"
+               "[Console]::Error.WriteLine('native stderr')\nexit 3")
+    result = execute('run_command', {'shell': 'powershell', 'command': command}, folder)
+    assert result['command'] == command
+    assert result['exit_code'] == 3 and not result['timed_out']
+    assert result['stdout'].strip() == 'literal "quotes" and $dollars & pipes |'
+    assert result['stderr'].strip() == 'native stderr'
+
+
+@pytest.mark.skipif(sys.platform != 'win32', reason='Windows PowerShell')
+@pytest.mark.parametrize('command,exit_code', [
+    ('cmd /c exit 9', 1), ("Write-Error 'failure'", 1),
+    ("throw 'failure'", 1), ('Write-Output success', 0),
+    ('cmd /c exit 9\nWrite-Output recovered', 0),
+])
+def test_powershell_preserves_implicit_host_exit_status(isolated, command, exit_code):
+    result = execute('run_command', {'shell': 'powershell', 'command': command}, isolated)
+    assert result['exit_code'] == exit_code
+    assert result['ok'] == (exit_code == 0)
+
+
+@pytest.mark.skipif(sys.platform != 'win32', reason='Windows PowerShell')
 @pytest.mark.parametrize('prefix', ['', 'cd . && ', 'echo before && ', 'call ', '( '])
 @pytest.mark.parametrize('exit_code', [0, 7])
 def test_bare_powershell_script_never_reaches_windows_file_association(isolated, prefix, exit_code):

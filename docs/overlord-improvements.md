@@ -821,3 +821,14 @@ through review and reject reviewer attempts to renew discovery within the
 existing bounded retries. The regression now reaches an edit and assertion
 command after six discovery actions. This proves control flow, not project
 acceptance; live delivery rates remain separately measured in the dated ledger.
+
+## 1.0.117 - retain readable PowerShell failures
+
+Post-1.0.116 Silver reports exposed CLIXML errors mixed with serialized progress.
+A controlled worker regression proves that progress could evict the real error
+from bounded command output. Replace the -EncodedCommand host mode with a fixed
+-Command script-block invocation carrying the same base64 source. With 400
+progress records, stderr drops from 86,062 bytes to 543 and retains the original
+diagnostic; exit code 7 is preserved. Quoting and multiline behavior are tested.
+The twelve-run live baseline still has zero accepted deliveries and zero edits;
+this repair improves observable diagnostics, not a claimed delivery rate.

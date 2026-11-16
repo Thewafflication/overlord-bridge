@@ -797,3 +797,9 @@ continuation. This also applies to provider-specific request fitting.
 Readiness reviewers must provide a specific owner_question when confirming a
 needs_planning stop. Missing questions receive bounded schema correction; a
 confirmed question is included in the report. See docs/deliverable-readiness.md.
+
+Windows worker shell=powershell uses a base64 script-block invocation through
+-Command so redirected errors remain text rather than CLIXML. Progress records
+no longer evict earlier errors from the bounded output tail. Script quoting,
+multiline source, stdout/stderr separation and exit codes remain covered by
+Windows regressions. See docs/releases/1.0.117.md.
