@@ -1,5 +1,50 @@
 # Release automation: 2026-11-16
 
+## Independent post-1.0.119 check at 18:06 UTC
+
+Capture: 2026-11-16T18:06:37.304895Z, since the prior cursor
+13:44:53.549389Z. One recorded terminal run: TinyPP
+a2365e31a35c4213982abbd872f7d79a stalled on repeated observations after
+240 actions and 1,511.969 seconds. Zero finished runs, acceptance-verified
+deliveries, confirmed mutations, preflights or repository-change checkpoints.
+Its activity counters contain one distinct successful command result and 93
+new observations. Verified delivery rate among recorded terminal runs: 0/1.
+This remains unfinished work; longer runs and persistent memory have not yet
+demonstrated a live delivery improvement.
+
+The persistent stores now contain 327 records across two populated project
+scopes: 241 source observations, 33 model assessments, 23 command results,
+29 searches and one listing. Two other initialized scopes remain empty.
+This independently demonstrates live archival activity beyond the initial
+zero-entry installation check. It does not establish effective live recall,
+unique accepted subtasks or current validation of historical command results.
+
+The separate `Fix Overlord command execution` monitor found the process exited
+and restarted the existing installation at approximately 17:20 UTC. Its cause
+remains unproven. The new live acknowledgement is v1.0.119, instance
+c6aaa84ee726499ba503de89334ee0c4, with KerTeX active. Unreported process exits
+are absent from terminal-run accounting: the cohort's zero crashed events is
+not evidence of uninterrupted service or complete run accounting.
+
+Independently confirmed all seventeen schedule IDs and their policy states:
+four active at 60 seconds, thirteen intentionally paused. Original Pydecipher
+protected hashes remain configured. Installed workers, outcome accounting and
+version files match checkout bytes; worker_memory.py matches after newline
+normalization only (checkout LF, installed CRLF). No runtime drift was found.
+Published v1.0.119 remains non-draft/non-prerelease; main checks 43877352431,
+tag checks 43877359207 and signed build 43877359421 remain successful.
+
+Memory and outcome regressions: fifteen passed, one skipped in 0.70 seconds;
+the skip requires Windows symlink creation privileges. Evidence:
+out/checks/automation-20261116-post119.json and
+out/checks/automation-20261116-post119-evidence.json. The prior signed install
+and its preservation proof remain the deployed release; this audit makes no
+new runtime change, release or installation claim. No newly reproduced harness
+mechanism justifies another deployment in this check. Follow up the repeated
+source-reading and unexplained service exit without counting archival activity
+as delivery. Next cohort cursor: 2026-11-16T18:06:37.304895Z; retain unfinished
+failures and distinguish future maintenance/pre-install starts.
+
 ## Owner-directed persistent project memory: 1.0.119
 
 Implemented local source/command evidence and model-plan persistence under the
