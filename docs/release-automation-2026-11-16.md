@@ -47,3 +47,44 @@ two skipped in 139.71 seconds. Final focused readiness coverage: 31 passed in
 Version consistency check passed for 1.0.116. Controlled before/after evidence:
 out/checks/discovery-review-1.0.116-before-after.json. Release and installation
 evidence will be recorded after verification.
+
+## Verified 1.0.116 release and installation
+
+Committed and pushed 44c6f5e; published non-draft, non-prerelease
+https://github.com/Thewafflication/overlord-bridge/releases/tag/v1.0.116.
+Main checks 43778771987 and tag checks 43778783555 succeeded on both platforms.
+Tag Windows: 1,634 passed / three skipped in 109.399 seconds; Linux: 1,602
+passed / 35 skipped in 55.692 seconds. Signed build 43778783579 succeeded.
+The final added bounded-review retry cases are included in these hosted totals
+and the focused suite above.
+
+WPM verification accepted existing trusted signing key
+6c21ebda96b16bfa64700d28fcdeb20dc4b19de448a723a970ac09b720f04b1d.
+Archive SHA256 matched published SHA256SUMS:
+a35f73f22ddc15c50183ba2780cd5d35268ebd78173f45ec830adfdc7748c669.
+Installation exited zero. Sixteen tests against installed modules passed in
+3.76 seconds, including reviewed discovery, bounded correction and real-edit
+regressions. No project acceptance definition or permission was changed.
+
+Before installation, paused only the four active schedules, froze all seventeen,
+confirmed worker cleanup idle through local control, requested normal shutdown
+and verified the old process exited. Frozen schedules and owner task queue
+survived exactly. Restored four active 60-second schedules and thirteen existing
+pauses while the bridge was stopped; verified all IDs/prompts/intervals/states
+again after launch. Four session metadata records survived; settings checked
+by size only. Owned installed runtime/document bytes matched the release checkout
+before this final ledger update. No unrelated wsp/out/tools edits were committed.
+
+Live local control acknowledged v1.0.116, instance
+6e0e15354b1f480a96fdd7c2f774334e, KerTeX active. Proof:
+out/checks/project-task-1.0.116-install-preservation.json;
+out/checks/verify-installed-readiness-1.0.116.txt;
+out/checks/install-1.0.116.txt. Durable monitor records installed_verified.
+
+A final journal capture at 2026-11-16T00:17:06.792054Z contains only one
+additional maintenance interruption since the baseline, with zero mutations,
+six command results, 219 observations and five diagnostics. It is excluded from
+the eleven-run product cohort. Continue from this final capture, retaining
+unfinished blockers. The release fixes a demonstrated harness defect; accepted
+project-delivery improvement remains unproven. Preserve original owner hashes,
+Pydecipher quarantine, and the four-active/thirteen-paused schedule policy.
