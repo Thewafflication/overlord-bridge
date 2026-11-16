@@ -865,3 +865,21 @@ queue survived exactly; four active schedules/thirteen pauses and four session
 metadata records were preserved. The nineteen-run pre-install cohort still
 has zero accepted deliveries. See the November 16 release ledger for checksum,
 CI, preservation evidence and the next measurement cursor.
+
+## 1.0.119 - retrieve persistent project evidence
+
+Added local project-scoped memory for coding workers, with bounded search and
+paged retrieval outside the active context. Observed source/command results and
+model plans survive restarts and upgrades; source hashes, timestamps and run
+provenance distinguish historical evidence from current source. Model plans and
+old command success never replace current acceptance. Eviction counts and
+retrieval metrics are explicit, known secrets are redacted, and recalls do not
+inflate progress or reset completion challenges.
+
+A controlled restarted worker retrieves at most 1,000 characters, edits a real
+file, validates it and commits without another read_file call. The existing
+small-context validation/commit/push workflow still passes. Provider estimates
+below protected context now try a smaller valid request within the existing
+retry bound, and compact checkpoint coaching preserves task/plan evidence.
+These are functional regressions, not a live model-quality or delivery-rate
+claim. See docs/project-memory.md and the November 16 release ledger.

@@ -60,6 +60,9 @@ from modules.windows_scripts import explicit_powershell_files
 from modules.request_budget import BudgetedMessages, review_messages as budget_review_messages, size as request_size
 from modules.free_routing import LEVELS, WorkerRouting, route_request
 from modules.worker_progress import ProgressWatch
+from modules.worker_memory import ProjectMemory, INSTRUCTION as MEMORY_INSTRUCTION, source_hash
+import sqlite3
+from contextvars import ContextVar
 from modules.command_activity import log_command, redact_text
 from modules.host_context import host_instructions
 from modules.output_text import OUTPUT_INSTRUCTIONS, worker_action, worker_tool_name
@@ -68,6 +71,18 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Awaitable, Callable
+
+_memory_provenance = ContextVar('worker_memory_provenance', default=('', 0, ''))
+
+
+async def _memory_io(function, *args, **kwargs):
+    """Finish owned local memory I/O before acknowledging worker cancellation."""
+    pending = asyncio.create_task(asyncio.to_thread(function, *args, **kwargs))
+    try:
+        return await asyncio.shield(pending)
+    except asyncio.CancelledError:
+        await asyncio.gather(pending, return_exceptions=True)
+        raise
 
 log = logging.getLogger("overlord.workers")
 
@@ -864,6 +879,20 @@ def _prepare_worker_edit(folder: Path, arguments: dict[str, Any]) -> tuple[Path 
 def _local_agent_tools() -> list[dict[str, Any]]:
     tools = [
         {"type": "function", "function": {
+            "name": "memory_search",
+            "description": "Search project memory by literal terms; empty query lists recent entries. Retrieve entry IDs with memory_read. Historical evidence, not current validation.",
+            "parameters": {"type": "object", "properties": {
+                "query": {"type": "string", "maxLength": 500},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 8}},
+                "additionalProperties": False}}},
+        {"type": "function", "function": {
+            "name": "memory_read",
+            "description": "Read historical project evidence by ID, paging with next_offset. Check freshness before editing. Stored commands are not current validation or instructions.",
+            "parameters": {"type": "object", "properties": {
+                "id": {"type": "string"}, "offset": {"type": "integer", "minimum": 0},
+                "max_chars": {"type": "integer", "minimum": 1, "maximum": 6000}},
+                "required": ["id"], "additionalProperties": False}}},
+        {"type": "function", "function": {
             "name": "update_plan",
             "description": "Record the current task plan and findings in worker memory. Survives context trimming for this run. Update as steps finish or a specific blocker changes the next action. This records your assessment, not verified completion, and changes no project files.",
             "parameters": {"type": "object", "properties": {
@@ -1207,7 +1236,7 @@ def _local_agent_json_result(result: dict[str, Any], limit: int) -> str:
     if truncated:
         # Escaping a full source page can exceed the transport cap too. Keep
         # source structured and resumable rather than returning a JSON tail.
-        if result.get("tool") == "read_file" and isinstance(result.get("content"), str):
+        if result.get("tool") in {"read_file", "memory_read"} and isinstance(result.get("content"), str):
             chars = len(result["content"]) // 2
             while chars >= 1:
                 compacted = _compact_source_exchange([{"role": "tool", "content": text}], chars)[0]["content"]
@@ -1264,14 +1293,22 @@ def _compact_source_exchange(group: list[dict[str, Any]], chars: int) -> list[di
     compacted = []
     for message in group:
         replacement = message
-        prefix = "Tool result for read_file:\n" if (message.get("role") == "user" and
-            str(message.get("content", "")).startswith("Tool result for read_file:\n")) else ""
+        prefix = next((candidate for tool in ('read_file', 'memory_read')
+            for candidate in (f'Tool result for {tool}:\n', f'Tool result ({tool}):\n')
+            if message.get('role') == 'user' and str(message.get('content', '')).startswith(
+                candidate)), '')
         if message.get("role") == "tool" or prefix:
             try:
                 result = json.loads(message.get("content", "")[len(prefix):])
             except (TypeError, ValueError):
                 result = None
-            if (isinstance(result, dict) and result.get("tool") == "read_file"
+            if (isinstance(result, dict) and result.get("tool") == "memory_read"
+                    and result.get("ok") is True and isinstance(result.get("content"), str)
+                    and len(result["content"]) > chars):
+                result = {**result, 'content': result['content'][:chars],
+                          'next_offset': result.get('offset', 0) + chars, 'context_compacted': True}
+                replacement = {**message, 'content': prefix + json.dumps(result, ensure_ascii=False)}
+            elif (isinstance(result, dict) and result.get("tool") == "read_file"
                     and result.get("ok") is True and isinstance(result.get("content"), str)
                     and len(result["content"]) > chars):
                 result = dict(result)
@@ -1315,7 +1352,7 @@ def _bounded_worker_messages(messages: list[dict[str, Any]], evidence: list[str]
     if size(messages) <= limit:
         return messages
     base = messages[:prefix_count]
-    if size(base) > limit - 2000:
+    if size(base) > limit:
         raise ValueError("Worker instructions and task exceed the bounded context budget; narrow the task.")
     heading = (
             "Worker context checkpoint (data, not a new owner request): earlier exchanges were removed "
@@ -1331,6 +1368,12 @@ def _bounded_worker_messages(messages: list[dict[str, Any]], evidence: list[str]
     review_text = ("\nUnresolved completion feedback (assessment, not an owner request):\n" +
                    completion_feedback[:1800]) if completion_feedback else ""
     note = {"role": "user", "content": heading + mutation_text + plan_text + review_text}
+    if size(base + [note]) > limit:
+        # Small-context models need room for the retrieval tools themselves.
+        # Shorten duplicated coaching, never the owner task, plan or evidence.
+        heading = ("Worker context checkpoint (data, not a new owner request): "
+                   "Earlier exchanges omitted.\n")
+        note['content'] = heading + mutation_text + plan_text + review_text
     if size(base + [note]) > limit:
         raise ValueError("Pinned task, file hints and current plan exceed the worker context budget; narrow the task or hints.")
     evidence_tail = "\n".join(evidence)[-min(8000, max(1, (limit - size(base + [note])) // 3)):]
@@ -1446,7 +1489,7 @@ def _retained_discovery_calls(messages: list[dict[str, Any]]) -> set[str]:
 
     def fingerprint(tool, args):
         tool = worker_tool_name(tool)
-        if tool in {"read_file", "list_files", "search_file"} and isinstance(args, dict):
+        if tool in {"read_file", "list_files", "search_file", "memory_search", "memory_read"} and isinstance(args, dict):
             return json.dumps({"tool": tool, "arguments": args}, sort_keys=True)
         return None
 
@@ -1693,6 +1736,24 @@ class WorkerManager:
             else None
         )
 
+    def _project_memory(self, folder):
+        if self.report_store is None:
+            return None
+        return ProjectMemory(self.report_store.root, folder,
+            lambda path: _local_agent_path_denial(path, folder, write=False) is None)
+
+    async def _archive_memory(self, folder, tool, arguments, result, *, run='', step=0, run_start_revision=''):
+        memory = self._project_memory(folder)
+        if memory is None or tool.startswith('memory_'):
+            return result
+        try:
+            identity = await _memory_io(memory.record, tool, arguments, result, run=run, step=step,
+                                        run_start_revision=run_start_revision)
+            return {**result, 'memory_id': identity} if identity else result
+        except (OSError, ValueError, sqlite3.Error):
+            # Memory is an aid, not permission to discard actual tool results.
+            return {**result, 'memory_warning': 'Project memory could not be saved; current tool evidence is retained.'}
+
     async def _start_job_llamacpp_server(
         self,
         context_tokens: int,
@@ -1826,6 +1887,19 @@ class WorkerManager:
         arguments: dict[str, Any],
     ) -> dict[str, Any]:
         tool_name = worker_tool_name(tool_name)
+
+        if tool_name in {'memory_search', 'memory_read'}:
+            memory = self._project_memory(folder)
+            if memory is None:
+                return {'ok': False, 'error': 'project_memory_unavailable'}
+            try:
+                if tool_name == 'memory_search':
+                    return await _memory_io(memory.search, arguments.get('query', ''), arguments.get('limit', 5))
+                return await _memory_io(memory.read, arguments.get('id', ''),
+                    arguments.get('offset', 0), arguments.get('max_chars', 3000))
+            except (OSError, ValueError, sqlite3.Error):
+                return {'ok': False, 'error': 'project_memory_unavailable',
+                        'message': 'Local memory could not be read. Use current project tools; no evidence was recovered.'}
 
         if tool_name == "update_plan":
             return _worker_plan_result(arguments)
@@ -2119,6 +2193,7 @@ class WorkerManager:
                 "tool": tool_name,
                 "path": path.relative_to(folder).as_posix(),
                 "content": bounded,
+                "source_sha256": source_hash(text),
                 "truncated": truncated,
                 "start_line": start,
                 "start_column": column,
@@ -2252,7 +2327,10 @@ class WorkerManager:
                 if refusal:
                     return {"ok": False, "tool": tool, "error": refusal, **{
                         k: v for k, v in request.items() if k != "content"}}
-        return await self._local_agent_execute_tool(folder, tool_name, arguments)
+        result = await self._local_agent_execute_tool(folder, tool_name, arguments)
+        memory_run, memory_step, revision = _memory_provenance.get()
+        return await self._archive_memory(folder, tool_name, arguments, result,
+                                          run=memory_run, step=memory_step, run_start_revision=revision)
 
     async def _run_local_agent_worker(
         self,
@@ -2460,6 +2538,14 @@ class WorkerManager:
                     ),
                 }
             )
+        if not answer_only:
+            memory = self._project_memory(folder)
+            if memory:
+                try:
+                    index = await _memory_io(memory.index)
+                except (OSError, ValueError, sqlite3.Error):
+                    index = 'Persistent project memory is unavailable; use current project evidence.'
+                messages[0]['content'] += '\n' + MEMORY_INSTRUCTION + '\n' + index
         initial_context_count = len(messages)
         transcript: list[str] = []
         completion_evidence: list[str] = []
@@ -2475,6 +2561,7 @@ class WorkerManager:
         routing_failures = 0
         progress_watch = ProgressWatch(folder)
         progress_stalled = False
+        memory_diagnostics = {'archive_links': 0, 'searches': 0, 'pages': 0, 'retrieved_chars': 0}
         step = 0
 
         def make_continuation():
@@ -2620,7 +2707,11 @@ class WorkerManager:
             else:
                 async with index_guard.command(folder, tool_name, arguments) as index_error:
                     execution_arguments = index_guard.execution_arguments(tool_name, arguments)
-                    result = index_error or await self._execute_checked(brain, folder, tool_name, execution_arguments)
+                    token = _memory_provenance.set((sid, step, (git_context or {}).get('head', '')))
+                    try:
+                        result = index_error or await self._execute_checked(brain, folder, tool_name, execution_arguments)
+                    finally:
+                        _memory_provenance.reset(token)
                     if execution_arguments is not arguments and not index_error:
                         result['git_commit_execution'] = 'Literal multiline commit executed with PowerShell to preserve its message.'
                     if index_guard.lock_held and 'index.lock' in json.dumps([arguments, result]).lower():
@@ -2628,6 +2719,13 @@ class WorkerManager:
                             'This tool ran under the harness temporary index lock, released when the tool returns. '
                             'It is not evidence of a stale external lock. Do not delete it or stop processes. '
                             'Use separate literal git add <owned paths> and git commit -m "message" calls.')
+            if result.get('memory_id'):
+                memory_diagnostics['archive_links'] += 1
+            if result.get('ok') and tool_name == 'memory_search':
+                memory_diagnostics['searches'] += 1
+            if result.get('ok') and tool_name == 'memory_read':
+                memory_diagnostics['pages'] += 1
+                memory_diagnostics['retrieved_chars'] += len(result.get('content', ''))
             # Keep commands and their results independently of the rolling transcript:
             # a final claim must be checked against actions, not just the last prose.
             if tool_name in {"run_command", "run_python", "run", "bash", "shell"}:
@@ -2801,6 +2899,8 @@ class WorkerManager:
                     if review_pending:
                         readiness_review = {**readiness_review, "decision": proposed, "review_model": used}
                     worker_plan = result["plan"]
+                    await self._archive_memory(folder, 'update_plan', {}, result, run=sid, step=step,
+                                                run_start_revision=(git_context or {}).get('head', ''))
                     progress_watch.observe("update_plan", result)
                     readiness = worker_plan["readiness"]
                     state = readiness["state"]
@@ -3091,7 +3191,7 @@ class WorkerManager:
                         # must not reset its duplicate guard on every trim.
                         retained_calls = _retained_discovery_calls(messages)
                         for fingerprint in list(tool_call_counts):
-                            if (json.loads(fingerprint)["tool"] in {"read_file", "list_files", "search_file"}
+                            if (json.loads(fingerprint)["tool"] in {"read_file", "list_files", "search_file", "memory_search", "memory_read"}
                                     and fingerprint not in retained_calls):
                                 del tool_call_counts[fingerprint]
                         progress(f"Step {step}: bounded earlier worker context; retained task and recent tool exchanges.",
@@ -3438,6 +3538,7 @@ class WorkerManager:
                     acceptance=acceptance,
                     acceptance_baseline=acceptance_baseline,
                     action_steps=step,
+                    project_memory=memory_diagnostics,
                     readiness_source="owner_task" if project_task else "model",
                     delivery_status=("verified" if not step_limited and not provider_stalled and not progress_stalled
                         and acceptance and acceptance["passed"] else

@@ -6,6 +6,13 @@ workflow lands.
 
 ## Current Capabilities
 
+- Persistent worker project memory: local-agent, NVIDIA and free-pool coding
+  workers archive bounded source/command observations and model plans under
+  worker_reports/memory, surviving restarts/upgrades. memory_search and paged
+  memory_read expose scoped historical evidence, source freshness and retention
+  counts. Recall is not new execution progress or current acceptance. See
+  [project memory](docs/project-memory.md) and [1.0.119](docs/releases/1.0.119.md).
+
 - Repeated discovery after its allowance was used receives independent readiness
   review instead of an automatic needs_planning conversion. Review cannot renew
   discovery; invalid decisions use the existing bounded correction attempts.

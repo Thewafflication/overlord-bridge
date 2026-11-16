@@ -854,6 +854,55 @@ def start(mgr, folder, **extra):
     run(scenario())
 
 
+def test_restarted_worker_recalls_source_then_edits_validates_and_commits(isolated, tmp_path):
+    import subprocess
+    project = isolated / 'memory-restart'
+    project.mkdir()
+    def git(*args):
+        return subprocess.check_output(['git', '-C', str(project), *args], text=True).strip()
+    git('init')
+    git('config', 'user.name', 'Memory fixture')
+    git('config', 'user.email', 'fixture@example.invalid')
+    (project / 'value.py').write_text('def answer():\n    return 0\n')
+    git('add', 'value.py')
+    git('commit', '-m', 'Seed memory fixture')
+    first_pool, _ = scripted_pool([
+        call('read_file', {'path': 'value.py'}),
+        {'content': json.dumps({'final': 'Source retained; implementation unfinished', 'outcome': 'blocked'})},
+    ])
+    first, _, _ = manager(tmp_path, first_pool)
+    start(first, project)
+    source = first._project_memory(project).search('value.py')['entries'][0]
+    second_pool, seen = scripted_pool([
+        call('memory_search', {'query': 'value.py'}, 'recall-search'),
+        call('memory_read', {'id': source['id'], 'max_chars': 1000}, 'recall-page'),
+        call('edit_file', {'path': 'value.py', 'old_text': 'return 0', 'new_text': 'return 42'}),
+        call('run_python', {'code': 'from value import answer; assert answer()==42; print("validated")'}),
+        call('run_command', {'command': 'git add value.py'}),
+        call('run_command', {'command': 'git commit -m "Repair answer using recalled evidence"'}),
+        final_result('Actual edit, validation and local commit completed'),
+    ])
+    second, _, _ = manager(tmp_path, second_pool)
+    original = second._local_agent_execute_tool
+    async def no_source_rediscovery(folder, tool, args):
+        assert tool != 'read_file', 'The restarted worker must retrieve the stored observation'
+        return await original(folder, tool, args)
+    second._local_agent_execute_tool = no_source_rediscovery
+    start(second, project)
+    page = final_tool_result(seen, 'recall-page')
+    assert page['freshness'] == 'unchanged' and 'return 0' in page['content']
+    assert len(page['content']) <= 1000
+    assert 'Persistent project memory index' in str(seen[0][0])
+    assert (project / 'value.py').read_text() == 'def answer():\n    return 42\n'
+    assert git('rev-list', '--count', 'HEAD') == '2'
+    assert git('show', '--format=', '--name-only', 'HEAD') == 'value.py'
+    report = events(second)[-1]
+    assert report['status'] == 'finished'
+    assert report['project_memory']['searches'] == 1 and report['project_memory']['pages'] == 1
+    assert report['project_memory']['retrieved_chars'] <= 1000
+    assert report['progress_diagnostics']['partial_progress']['confirmed_file_mutations'] == 1
+
+
 def events(mgr):
     return [json.loads(l) for l in mgr.report_store.events_path.read_text(encoding="utf-8").splitlines()]
 

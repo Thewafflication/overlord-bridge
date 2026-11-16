@@ -7,7 +7,7 @@ state and read-only discovery budget, not a vocabulary of task keywords.
 STATES = ("ready", "discovery", "needs_planning", "blocked", "already_complete")
 FIELDS = ("state", "requirement", "deliverable", "acceptance", "evidence", "reason")
 DISCOVERY_ACTIONS = 6
-READ_TOOLS = frozenset({"read_file", "list_files", "search_file", "update_plan"})
+READ_TOOLS = frozenset({"read_file", "list_files", "search_file", "update_plan", "memory_search", "memory_read"})
 SCHEMA = {
     "type": "object",
     "properties": {

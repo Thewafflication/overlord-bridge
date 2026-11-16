@@ -1,5 +1,43 @@
 # Release automation: 2026-11-16
 
+## Owner-directed persistent project memory: 1.0.119
+
+Implemented local source/command evidence and model-plan persistence under the
+existing worker report tree, shared by canonical project path. memory_search
+and paged memory_read retrieve bounded historical data, with freshness checks,
+timestamps, run/action IDs and run-start Git revision provenance. The startup
+index includes recent IDs and the latest model-assessed next action. No extra
+provider calls or embedding service are required. Current owner instructions,
+permissions, acceptance and completion challenges remain authoritative.
+
+Retention is 512 distinct records per project, at most 32,000 body characters
+plus a truncation marker; long command streams retain 6,000 characters per tail.
+Source freshness reads are capped at two megabytes. Retrieval defaults to 3,000
+characters and is capped at 6,000; counts/evictions are explicit. Source policy
+is rechecked, known environment secrets are redacted, linked storage is rejected
+and memory failures preserve actual current tool results. Cancellation waits for
+owned local memory I/O before idle acknowledgement.
+
+Controlled restarted-worker regression: source observed in run one, retrieved in
+a new manager with no prior dialogue, then an actual edit, assertion and local
+Git commit. Run two uses one search and one page of at most 1,000 characters,
+with zero read_file calls. Tests separately cover stale/missing source, paging
+through compaction, scope isolation, bounded eviction, redaction, corrupt storage
+and cancellation. This is a scripted model integration, not a live delivery gain.
+
+Added tool schemas exposed a small-provider-context regression: an estimated
+Groq character limit fell below protected instructions/plan, preventing further
+work. Compact duplicate checkpoint coaching and find a smaller valid request
+when that estimate cannot preserve protected context. The existing provider
+retry bound remains unchanged; no owner evidence is dropped. The unchanged
+integration again reaches actual validation, commit and push.
+
+Focused checks: 256 passed / one skipped in 92.47 seconds before final provenance
+metadata; final memory-specific coverage: eight passed / one skipped. The skip
+requires Windows symlink creation privileges; the separate linked-parent test
+passes without them. Full release validation and publication are recorded below
+after they complete.
+
 ## Measured baseline
 
 Capture: 2026-11-16T00:05:36.013416Z. Since the previous cursor

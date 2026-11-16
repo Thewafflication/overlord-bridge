@@ -25,6 +25,9 @@ class ProgressWatch:
         self.last_summary = {}
 
     def observe(self, tool, result):
+        if tool in {'memory_search', 'memory_read'}:
+            # Recalling stored evidence is not a new observation or mutation.
+            return
         if tool == "update_plan":
             if result.get("ok") and isinstance(result.get("plan"), dict):
                 self.plan_completed_steps = sum(row.get("status") == "completed"

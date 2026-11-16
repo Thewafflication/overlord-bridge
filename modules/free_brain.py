@@ -840,6 +840,21 @@ class FreeBrain(Brain):
                     fitted = messages.fit(budget - tools_size - 128)
                 except ValueError:
                     fitted = None
+                    # The token-to-character estimate can fall below protected
+                    # task/plan evidence, especially with retrieval tool schemas.
+                    # Find a smaller valid request rather than treating the
+                    # estimate as permission to drop that evidence. Provider
+                    # retries remain bounded; every candidate is below the
+                    # already rejected request, never a larger speculative call.
+                    ceiling = request_size(request_messages)
+                    for room in range(max(2000, budget - tools_size - 128) + 1024,
+                                      ceiling, 1024):
+                        try:
+                            fitted = messages.fit(room)
+                        except ValueError:
+                            continue
+                        budget = request_size([fitted, tools]) + 128
+                        break
                 if fitted is not None and request_size(fitted) < request_size(request_messages):
                     self._request_budgets[spec.key] = budget
                     self._note_rate_headers(spec, headers)

@@ -23,6 +23,24 @@ OR = ModelSpec("openrouter", "vendor/model:free")
 GROQ = ModelSpec("groq", "openai/gpt-oss-120b")
 
 
+def test_groq_estimated_budget_below_protected_context_retries_a_smaller_valid_request(tmp_path, monkeypatch):
+    from modules.request_budget import BudgetedMessages, size
+    from modules.workers import _bounded_worker_messages
+    protected = [{'role': 'system', 'content': 'Owner requirements remain pinned. ' * 150},
+                 {'role': 'user', 'content': 'Repair and validate the assigned task.'}]
+    original = protected + [{'role': 'assistant', 'content': 'Old source observation. ' * 900}]
+    request = BudgetedMessages(original, lambda limit: _bounded_worker_messages(
+        original, [], prefix_count=2, limit=limit))
+    brain = make(tmp_path, monkeypatch, [(413, {}, {'error': {'message':
+        'Request too large on tokens per minute (TPM): Limit 8000, Requested 100000, reduce message size.'}}),
+        reply('ready')], models=(GROQ,), keys={'groq': 'synthetic'}, groq_enabled=True)
+    message, _, _ = run(brain.complete(request, [{'type': 'function', 'function': {'name': 'memory_read'}}]))
+    assert message['content'] == 'ready' and len(brain.calls) == 2
+    before, after = [call[1]['messages'] for call in brain.calls]
+    assert size(after) < size(before) and after[:2] == protected
+    assert before == original
+
+
 def test_worker_routing_prefers_reasoning_but_keeps_capacity_fallback(tmp_path, monkeypatch):
     from modules.free_routing import WorkerRouting
     strong = ModelSpec('nvidia', 'openai/gpt-oss-120b')
