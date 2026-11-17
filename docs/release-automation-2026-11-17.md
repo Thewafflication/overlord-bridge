@@ -270,4 +270,42 @@ cause or that live delivery improved. Release/install verification follows.
 Canonical lint, fresh wheel and full tests pass: 1,688 passed / five skipped
 in 271.76 seconds. Focused worker/provider/budget tests: 343 passed in 119.99s;
 final request-budget/outcome checks: 22 passed in 0.86s. Release version guard
-passes for 1.0.123. Hosted release and installation are pending verification.
+passes for 1.0.123. Hosted release and installation verification follows.
+
+Code 2b80d32 is pushed and tagged v1.0.123. Main CI 44144955985 and tag
+CI 44144980711 passed. Tagged Windows: 1,691 passed / two skipped in 128.75s;
+Linux: 1,646 passed / 47 skipped in 67.37s. Signed package build 44144980686
+passed. Published non-draft/non-prerelease release:
+[v1.0.123](https://github.com/Thewafflication/overlord-bridge/releases/tag/v1.0.123).
+Existing WPM trusted key verified the signature; archive SHA-256
+1c8c8c28aa34ac75da27ac9da4835c73fecc59e13e98e18d0ff66002525c7572
+matches the published checksum. WPM install exited zero.
+
+Paused four schedules, froze all seventeen, and received idle/stop acknowledgement.
+Normal shutdown removed the control endpoint but PID 24512 remained alive;
+WPM's existing owned-process lifecycle stopped it. No shutdown-cause repair is
+claimed. WPM auto-restarted with all schedules paused; a second normal shutdown
+exited completely before state restoration. All seventeen frozen schedules and
+exact owner queue survived; 37 report/memory/capture files retained their hashes;
+four session metadata records were unchanged. Settings size only was checked.
+Owned installed source matched before these final ledger edits. Restored four
+active 60-second schedules and thirteen pauses while stopped; reverified after
+launch, including completed WSH and original Pydecipher protected hashes.
+
+Twenty-two installed-module budget/outcome tests passed in 1.74s. The original
+reconstructed checkpoint imported from installed modules fits in exactly 47,918
+characters with unchanged prefix. Proof: planning-1.0.123-installed.json,
+verify-installed-planning-1.0.123.txt, release-1.0.123/verification.json and
+project-task-1.0.123-install-preservation.json, under out/checks/.
+
+Live v1.0.123 instance 341f90daf6d84eeca8c7518abaadd8af acknowledges KerTeX
+active at 18:18:35Z. Final snapshot generated 2026-11-17T18:18:34.536319Z has
+one new start (6c2085efd2454c03a90737d013961b56) and zero terminal results.
+This is activation, not an accepted delivery. The separately captured pre-123
+follow-up has one incomplete, one skipped queue and one maintenance interruption,
+zero mutations/verified deliveries and 155.844 recorded seconds. Do not combine
+maintenance with a clean post-install cohort. Next cursor:
+2026-11-17T18:18:34.536319Z; retain unfinished failures and the earlier Silver/
+KerTeX coverage gaps even where journals no longer retain them. Unrelated wsp,
+out and tools/_dev_show.ps1 remain outside commits. No project implementation,
+owner acceptance or protected owner file was changed.

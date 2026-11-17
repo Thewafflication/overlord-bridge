@@ -12,6 +12,13 @@ fail. See the November 17 ledger and release notes for measured verification.
 The five-outcome live baseline remains zero accepted deliveries; the replay
 does not establish model-quality or delivery-rate improvement.
 
+1.0.123 is committed, pushed, signed, released and installed. Canonical checks
+passed 1,688 tests with five skips; tagged Windows/Linux CI passed. Twenty-two
+installed-module tests and the 47,918-character replay pass. All seventeen
+schedules, owner queue, 37 evidence files and four session metadata records
+survived; four active schedules/thirteen pauses were restored and verified.
+The dated ledger records release checksums, CI and the next live cohort cursor.
+
 ## Prior source pages lost to duplicated checkpoint metadata (1.0.122)
 
 The live 1.0.121 captures exposed alternating CMake source reads. A replay
