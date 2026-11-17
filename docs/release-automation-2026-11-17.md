@@ -42,8 +42,54 @@ Pre-change local evidence (untracked):
 
 Canonical local validation passed: lint, fresh wheel and 1,684 tests with
 four skips in 201.43 seconds. The controlled execution-loop capture test and
-provider-fitting, failure and cancellation tests pass. Release/install
-validation is recorded below when complete.
+provider-fitting, failure and cancellation tests pass. Code 2fca74f was pushed,
+tagged v1.0.121, published and installed. Main CI 44081228148 and tag CI
+44081250528 passed; tagged Windows had 1,685 passed / three skipped in 152s,
+Linux 1,641 passed / 47 skipped in 67.47s. Signed build 44081250418 passed.
+Existing WPM trust verified signature key
+6c21ebda96b16bfa64700d28fcdeb20dc4b19de448a723a970ac09b720f04b1d;
+archive SHA-256 f01a4c95bee2fa2f974a78b33c40b7fe5c8eb20c93571c95b2d4801a52c609d6
+matches publication. Installer exited zero. Ten installed checks passed with
+one symlink-privilege skip in 0.84s.
+
+Preservation passed for all seventeen frozen schedules, exact owner queue,
+31 report/memory files and four session metadata records. Original four active
+60-second / thirteen paused states were restored while stopped and reverified
+after launch. Settings size only was compared. Normal shutdown acknowledged
+idle and removed discovery, but old PID 26244 persisted; the existing installer
+lifecycle terminated owned processes. Its paused automatic restart exited
+normally before state restoration. The underlying shutdown cause is unproven.
+Live v1.0.121 instance 157a3ccfbfda4d1da6c86b9f9fa721ac resumed Silver.
+
+Two actual live captures at steps 11/12 returned HTTP 200, at 56,685/56,593 bytes,
+with no omitted request/response sections. Both hold source and the subsequent
+read decision. Samples are preserved locally in
+out/checks/request-1.0.121-live-samples, with bounded metadata in
+out/checks/worker-request-1.0.121-live.json. Other proof:
+out/checks/release-1.0.121/verification.json,
+out/checks/project-task-1.0.121-install-preservation.json and
+out/checks/automation-20261117-post121-verification.json.
+
+## Follow-up repair from captured source eviction (1.0.122)
+
+Silver's actual captures alternate CMakeLists.txt pages 167 and 1. A replay
+assembled from those two captured exchanges and their recorded checkpoint
+metadata reproduces loss of the older page: 53,087 input characters become
+47,905 characters with only one source result. The fitter previously prioritized
+the newest exchange over optional metadata but stopped before doing the same
+for its immediately preceding exchange.
+
+The fix prioritizes that earlier pair too, using existing structural source
+compaction when needed. The identical replay now retains two results in 46,834
+characters; newest content and all three pinned prefix messages are unchanged.
+Older content has an explicit continuation at line 211, column 71. This is
+honest shortened evidence, not a claim that the full older page still fits.
+Regression tests failed before the fix and pass for intact/shortened earlier
+pages with protected plan, mutation and feedback. Existing parallel-batch
+regressions also pass. Proof: out/checks/request-retention-1.0.122-before-after.json.
+Live accepted-delivery improvement is still unproven. Canonical lint, fresh
+wheel and full tests passed: 1,686 passed / four skipped in 171.35 seconds.
+Release and installation verification follows below.
 
 ## Independent post-1.0.120 measurement at 06:00 UTC
 

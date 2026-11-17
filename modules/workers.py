@@ -1395,7 +1395,20 @@ def _bounded_worker_messages(messages: list[dict[str, Any]], evidence: list[str]
     for group in reversed(groups):
         if size(base + [note] + group + retained) > limit:
             if retained:
-                break
+                # Actual paired exchanges outrank optional action-metadata
+                # duplication for older groups too. Keeping the newest page
+                # but evicting its immediately preceding page can create a
+                # paged read -> evict -> reread cycle under a large prefix.
+                lean_note = {"role": "user", "content": heading + mutation_text + plan_text + review_text}
+                if size(base + [lean_note] + group + retained) > limit:
+                    for chars in (6000, 3000, 1500, 750, 375):
+                        candidate = _compact_source_exchange(group, chars)
+                        if size(base + [lean_note] + candidate + retained) <= limit:
+                            group = candidate
+                            break
+                    else:
+                        break
+                note = lean_note
             # Deliver the newest source exchange before optional action metadata.
             # Dropping it here used to create read -> evict -> reread loops.
             note = {"role": "user", "content": heading + mutation_text + plan_text + review_text}

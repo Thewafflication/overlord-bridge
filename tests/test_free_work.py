@@ -3149,3 +3149,36 @@ def test_execution_capture_keeps_source_and_following_decision_without_planning(
     assert 'distinct_source_marker' in json.dumps(last['request']['messages'])
     assert 'Work remains blocked' in last['response']['message']['content']
     assert events(mgr)[-1]['status'] == 'incomplete'
+
+
+@pytest.mark.parametrize('extra_prefix', [0, 1400])
+def test_recent_source_pages_outrank_optional_checkpoint_metadata(extra_prefix):
+    base = [{'role': 'system', 'content': 'I' * 11677},
+            {'role': 'user', 'content': 'T' * 4641},
+            {'role': 'user', 'content': 'P' * (19030 + extra_prefix)}]
+    def exchange(identity, start, content):
+        return [{'role': 'assistant', 'tool_calls': [{'id': identity, 'type': 'function',
+            'function': {'name': 'read_file', 'arguments': json.dumps({'path': 'source.c', 'start_line': start})}}]},
+            {'role': 'tool', 'tool_call_id': identity, 'content': json.dumps({
+                'ok': True, 'tool': 'read_file', 'path': 'source.c', 'start_line': start,
+                'content': content, 'truncated': False})}]
+    pages = exchange('first', 1, 'A' * 4300) + exchange('second', 167, 'B' * 6000)
+    messages = base + [{'role': 'user', 'content':
+        'Worker context checkpoint (data, not a new owner request):' + 'old audit ' * 450}] + pages
+    plan = {'plan': [{'step': 'Use both source pages for the bounded repair', 'status': 'in_progress'}]}
+    fitted = workers._bounded_worker_messages(messages, ['optional action metadata ' * 300],
+        prefix_count=3, plan=plan, mutations=['confirmed mutation'], completion_feedback='Unresolved owner check')
+    assert len(json.dumps(fitted, ensure_ascii=False)) <= 48000
+    assert fitted[:3] == base
+    tools = [m for m in fitted if m.get('role') == 'tool']
+    assert len(tools) == 2 and tools[1] == pages[3]
+    older = json.loads(tools[0]['content'])
+    if extra_prefix:
+        assert older['context_compacted'] and older['content'] == 'A' * 3000
+        assert (older['next_line'], older['next_column']) == (1, 3001)
+    else:
+        assert tools[0] == pages[1]
+    assert [c['id'] for m in fitted for c in m.get('tool_calls', [])] == ['first', 'second']
+    checkpoint = fitted[3]['content']
+    assert 'bounded repair' in checkpoint and 'confirmed mutation' in checkpoint
+    assert 'Unresolved owner check' in checkpoint

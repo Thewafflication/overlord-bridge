@@ -6,6 +6,11 @@ workflow lands.
 
 ## Current Capabilities
 
+- Context fitting prioritizes older paired exchanges over optional duplicated
+  action metadata too. Older source pages can be structurally shortened with
+  exact continuation cursors while keeping the latest page intact and all
+  pinned task/plan/feedback. See [1.0.122](docs/releases/1.0.122.md).
+
 - Free coding workers retain the last two redacted execution exchanges per
   worker/project under worker_reports/requests, after provider-specific input
   fitting. Includes run/step, effective tools, assistant decision and HTTP

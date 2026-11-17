@@ -1,5 +1,17 @@
 # Overlord improvement record
 
+## Prior source pages lost to duplicated checkpoint metadata (1.0.122)
+
+The live 1.0.121 captures exposed alternating CMake source reads. A replay
+using those actual exchanges retained only the newest page because optional
+action metadata outranked older paired evidence. Fitting now drops that
+duplication before evicting the preceding exchange, structurally shortening
+older source with an exact continuation cursor when needed. The identical
+53,087-character replay improves from one retained source result to two in
+46,834 characters, with the pinned prefix unchanged. This fixes one reproduced
+eviction mechanism; live accepted deliveries remain unproven. See the November
+17 ledger and docs/releases/1.0.122.md.
+
 ## Execution evidence for repeated-read diagnosis (1.0.121)
 
 The November 17 12:03 UTC cohort recorded 27 outcomes: 17 stalled, three
