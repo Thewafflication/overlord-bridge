@@ -23,6 +23,77 @@ OR = ModelSpec("openrouter", "vendor/model:free")
 GROQ = ModelSpec("groq", "openai/gpt-oss-120b")
 
 
+def test_worker_capture_observes_actual_fitted_payload_and_unmodified_response(tmp_path, monkeypatch):
+    from modules.request_budget import BudgetedMessages
+    from modules.worker_trace import WorkerRequestTrace
+    trace = WorkerRequestTrace(tmp_path / 'reports', tmp_path / 'project', 'worker')
+    request = BudgetedMessages([{'role': 'user', 'content': 'old context ' * 2000}],
+                               lambda limit: [{'role': 'user', 'content': 'fitted source'}])
+    async def observer(*, stage, **event):
+        if stage == 'request':
+            return trace.begin(**event, run='run', step=12)
+        trace.finish(event.pop('capture_id'), **event)
+    request.worker_request_observer = observer
+    brain = make(tmp_path, monkeypatch, [reply('next decision')], models=(NV,))
+    brain._request_budgets[NV.key] = 4000
+    message, why = asyncio.run(brain._attempt(NV, request))
+    row = json.loads(next(trace.directory.glob('*.json')).read_text(encoding='utf-8'))
+    assert not why and message['content'] == 'next decision'
+    assert row['request']['messages'] == [{'role': 'user', 'content': 'fitted source'}]
+    assert row['response']['message']['content'] == 'next decision'
+    assert row['step'] == 12 and row['run'] == 'run'
+
+
+def test_capture_failure_does_not_change_provider_result(tmp_path, monkeypatch):
+    from modules.request_budget import BudgetedMessages
+    request = BudgetedMessages([{'role': 'user', 'content': 'task'}], lambda limit: [])
+    async def broken(**event):
+        raise OSError('storage unavailable')
+    request.worker_request_observer = broken
+    brain = make(tmp_path, monkeypatch, [reply('unchanged')], models=(NV,))
+    message, why = asyncio.run(brain._attempt(NV, request))
+    assert not why and message['content'] == 'unchanged'
+
+
+@pytest.mark.parametrize('failure', [TimeoutError('provider timeout'), OSError('offline')])
+def test_capture_records_transport_error_without_exception_message(tmp_path, monkeypatch, failure):
+    from modules.request_budget import BudgetedMessages
+    from modules.worker_trace import WorkerRequestTrace
+    trace = WorkerRequestTrace(tmp_path / 'reports', tmp_path / 'project', 'worker')
+    request = BudgetedMessages([{'role': 'user', 'content': 'task'}], lambda limit: [])
+    async def observer(*, stage, **event):
+        if stage == 'request':
+            return trace.begin(**event, run='run', step=1)
+        trace.finish(event.pop('capture_id'), **event)
+    request.worker_request_observer = observer
+    brain = make(tmp_path, monkeypatch, [failure], models=(NV,))
+    message, why = asyncio.run(brain._attempt(NV, request))
+    row = json.loads(next(trace.directory.glob('*.json')).read_text(encoding='utf-8'))
+    assert message is None and why.startswith('unreachable')
+    assert row['state'] == 'transport_error' and row['http_status'] is None
+    assert row['error_type'] == type(failure).__name__ and 'response' not in row
+
+
+def test_capture_cancellation_keeps_pending_attempt_and_propagates(tmp_path, monkeypatch):
+    from modules.request_budget import BudgetedMessages
+    from modules.worker_trace import WorkerRequestTrace
+    trace = WorkerRequestTrace(tmp_path / 'reports', tmp_path / 'project', 'worker')
+    request = BudgetedMessages([{'role': 'user', 'content': 'task'}], lambda limit: [])
+    async def observer(*, stage, **event):
+        if stage == 'request':
+            return trace.begin(**event, run='run', step=1)
+        trace.finish(event.pop('capture_id'), **event)
+    request.worker_request_observer = observer
+    brain = make(tmp_path, monkeypatch, [], models=(NV,))
+    async def cancelled(*args):
+        raise asyncio.CancelledError()
+    monkeypatch.setattr(free_brain, '_post', cancelled)
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(brain._attempt(NV, request))
+    row = json.loads(next(trace.directory.glob('*.json')).read_text(encoding='utf-8'))
+    assert row['state'] == 'pending' and 'http_status' not in row
+
+
 def test_groq_estimated_budget_below_protected_context_retries_a_smaller_valid_request(tmp_path, monkeypatch):
     from modules.request_budget import BudgetedMessages, size
     from modules.workers import _bounded_worker_messages

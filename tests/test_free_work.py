@@ -3117,3 +3117,35 @@ def test_source_transport_cap_keeps_page_and_cursor_instead_of_json_tail():
     assert row['next_line'] >= 25 and row['truncated'] and row['context_compacted']
     index = row['next_line'] - 25
     assert row['content'] + ''.join(result['content'].splitlines(keepends=True)[index:])[row['next_column'] - 1:] == result['content']
+
+def test_execution_capture_keeps_source_and_following_decision_without_planning(isolated, tmp_path):
+    project = isolated / 'request-capture'
+    project.mkdir()
+    (project / 'source.c').write_text('int distinct_source_marker = 7;\n', encoding='utf-8')
+    delegate, _ = scripted_pool([
+        call('read_file', {'path': 'source.c'}),
+        {'content': json.dumps({'final': 'Work remains blocked', 'outcome': 'blocked'})},
+    ])
+    phases = []
+    async def complete(messages, tools):
+        observer = getattr(messages, 'worker_request_observer', None)
+        phase = messages.worker_routing.phase
+        phases.append(phase)
+        assert bool(observer) == (phase == 'execute')
+        identity = await observer(stage='request', model='fixture', payload={
+            'messages': list(messages), 'tools': tools}) if observer else None
+        response = await delegate(messages, tools)
+        if observer:
+            await observer(stage='response', capture_id=identity, status=200,
+                           body={'choices': [{'message': response}]})
+        return response
+    mgr, _, _ = manager(tmp_path, complete)
+    start(mgr, project)
+    rows = [json.loads(path.read_text(encoding='utf-8'))
+            for path in (mgr.report_store.root / 'requests').glob('*.json')]
+    assert 'plan' in phases and len(rows) == 2
+    last = max(rows, key=lambda row: row['step'])
+    assert last['step'] == 2 and last['run']
+    assert 'distinct_source_marker' in json.dumps(last['request']['messages'])
+    assert 'Work remains blocked' in last['response']['message']['content']
+    assert events(mgr)[-1]['status'] == 'incomplete'

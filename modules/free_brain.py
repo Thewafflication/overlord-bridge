@@ -821,15 +821,28 @@ class FreeBrain(Brain):
         started = time.monotonic()
         log.info("Free model request started: %s (tools=%s, input_chars=%s)",
                  spec.key, bool(tools), len(json.dumps(request_messages, ensure_ascii=False)))
+        payload = self._payload(spec, request_messages, tools, max_tokens=max_tokens)
+        observer = getattr(messages, 'worker_request_observer', None)
+        async def observe(**event):
+            if observer is None:
+                return None
+            try:
+                return await observer(**event)
+            except Exception as exc:  # diagnostic IO must not change provider outcomes
+                log.warning('Worker request capture failed (%s)', type(exc).__name__)
+                return None
+        capture_id = await observe(stage='request', model=spec.key, payload=payload)
         try:
             status, headers, body = await _post(
-                url, self._payload(spec, request_messages, tools, max_tokens=max_tokens), self.keys[spec.provider], self.timeout
+                url, payload, self.keys[spec.provider], self.timeout
             )
         except (OSError, TimeoutError, urllib.error.URLError) as exc:
+            await observe(stage='response', capture_id=capture_id, error=type(exc).__name__)
             log.info("Free model request failed: %s (%s, %.2fs)",
                      spec.key, type(exc).__name__, time.monotonic() - started)
             self.limiter.cool_down(spec.key, 30)
             return None, f"unreachable ({exc})"
+        await observe(stage='response', capture_id=capture_id, status=status, body=body)
         log.info("Free model request completed: %s (HTTP %s, %.2fs)",
                  spec.key, status, time.monotonic() - started)
         if status == 413 and spec.provider == "groq" and isinstance(messages, BudgetedMessages) and _budget_retries < 2:

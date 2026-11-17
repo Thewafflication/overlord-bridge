@@ -1,5 +1,50 @@
 # Release automation: 2026-11-17
 
+## 12:03 UTC cohort and 1.0.121 execution evidence
+
+The cohort since 06:00:06.396097Z, captured at 12:03:44.318657Z, contains
+27 terminal outcomes: 17 stalled, three incomplete and seven skipped queues.
+Acceptance-verified deliveries, finished runs, confirmed file mutations,
+repository-change checkpoints and preflights are all zero. Twenty measured
+runs record 138 distinct successful command results, 1,882 observations,
+74 failure diagnostics and one unverified model-completed plan step.
+Recorded worker time is 22,042.859 seconds (6.12 hours), not accepted work.
+Start-time coverage is 27 started / 26 resolved / one unresolved, zero verified.
+
+Workers recorded 6,347 archive links but zero memory searches, pages or
+retrieved characters. The installed source matches the checkout at the start
+of this run. Live control at 12:05:14Z acknowledges v1.0.120 instance
+ad6c4a6438364f53b570490f55c11f98 with KerTeX active. All seventeen schedule
+IDs, four active 60-second schedules, thirteen intentional pauses, completed
+WSH queue and original Pydecipher protected hashes remain intact.
+
+Older unresolved KerTeX start 1a21f81bcb564cc1923d1e9c163c195b remains in
+retained coverage. The current unresolved start is dd6ebbc813ee469e852ed54152b59fd4
+at 11:58:56.317007Z. Older Silver start 04a908cc104e4ce19cba7219a2553008
+is no longer present in the retained journals; its absence does not prove
+resolution. Keep that previously recorded evidence gap open across cursors.
+
+The new improvement is bounded execution-request evidence, documented in
+[1.0.121](releases/1.0.121.md). Prior reports could not establish the actual
+source visible before a repeated-read decision. The provider boundary now
+retains two redacted requests/responses per worker/project after context
+fitting, with run/action provenance. Tests demonstrate actual fitted payload
+capture and source-to-following-decision pairing. No project implementation,
+acceptance contract or schedule prompt was changed. This is diagnosis support;
+no live delivery gain is claimed.
+
+Pre-change local evidence (untracked):
+
+- out/checks/automation-20261117-1200.json
+- out/checks/automation-20261117-1200-evidence.json
+- out/checks/automation-20261117-1200-verification.json
+- out/checks/audit-20261117-1200.py
+
+Canonical local validation passed: lint, fresh wheel and 1,684 tests with
+four skips in 201.43 seconds. The controlled execution-loop capture test and
+provider-fitting, failure and cancellation tests pass. Release/install
+validation is recorded below when complete.
+
 ## Independent post-1.0.120 measurement at 06:00 UTC
 
 The installed release remains operational, but accepted project delivery has

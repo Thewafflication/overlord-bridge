@@ -1,5 +1,17 @@
 # Overlord improvement record
 
+## Execution evidence for repeated-read diagnosis (1.0.121)
+
+The November 17 12:03 UTC cohort recorded 27 outcomes: 17 stalled, three
+incomplete and seven skipped, with zero accepted deliveries or confirmed edits.
+Workers archived 6,347 evidence links but made no memory retrieval calls.
+Reports alone could not establish the exact source context behind a decision.
+The last two execution requests/responses are now captured at the fitted HTTP
+boundary, with run/action provenance, bounded local storage and existing secret
+redaction. Controlled tests pair source evidence with the following decision.
+This is diagnostic progress; live accepted-work improvement remains unproven.
+See docs/releases/1.0.121.md for retention and privacy limits.
+
 ## Skipped and unreported runs were invisible (1.0.120)
 
 Terminal-only accounting omitted explicit skipped queues and every execution

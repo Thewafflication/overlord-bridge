@@ -2564,6 +2564,18 @@ class WorkerManager:
         memory_diagnostics = {'archive_links': 0, 'searches': 0, 'pages': 0, 'retrieved_chars': 0}
         step = 0
 
+        request_trace = None
+        if is_free and not answer_only and self.report_store is not None:
+            from modules.worker_trace import WorkerRequestTrace
+            request_trace = WorkerRequestTrace(self.report_store.root, folder, name)
+
+        async def observe_request(*, stage, **event):
+            if stage == 'request':
+                return await _memory_io(request_trace.begin, **event, run=sid, step=step)
+            capture_id = event.pop('capture_id', None)
+            if capture_id:
+                await _memory_io(request_trace.finish, capture_id, **event)
+
         def make_continuation():
             return {"task": redact_text(task), "plan": worker_plan,
                     "last_action_step": step, "progress": progress_watch.diagnostics(),
@@ -2572,6 +2584,8 @@ class WorkerManager:
                     "note": "Reconcile preserved checkout, commits and this evidence before continuing; not completed."}
 
         async def complete_free(request, tools, phase="execute"):
+            if request_trace is not None and phase == 'execute':
+                request.worker_request_observer = observe_request
             difficulty = (worker_plan or {}).get("difficulty", {}).get("level", "unknown")
             routing = WorkerRouting(difficulty, phase, routing_escalated or bool(completion_feedback),
                                     free_models[-1] if free_models else "")

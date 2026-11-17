@@ -6,6 +6,12 @@ workflow lands.
 
 ## Current Capabilities
 
+- Free coding workers retain the last two redacted execution exchanges per
+  worker/project under worker_reports/requests, after provider-specific input
+  fitting. Includes run/step, effective tools, assistant decision and HTTP
+  status, with explicit omission bounds. Planning/review/chat are excluded.
+  These are local diagnostics, not verified work. See [1.0.121](docs/releases/1.0.121.md).
+
 - Worker outcomes include skipped owner queues and start-to-terminal coverage.
   `run_coverage` keeps unresolved retained starts visible across cohort cursors,
   without inferring a crash, active process or delivery. Start-time verification
