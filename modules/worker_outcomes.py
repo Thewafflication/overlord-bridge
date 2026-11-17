@@ -4,7 +4,7 @@ from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
-TERMINAL = frozenset({'finished', 'incomplete', 'stalled', 'crashed', 'failed', 'interrupted', 'cancelled', 'rejected'})
+TERMINAL = frozenset({'finished', 'incomplete', 'stalled', 'crashed', 'failed', 'interrupted', 'cancelled', 'rejected', 'skipped'})
 
 
 def _utc_timestamp(value):
@@ -18,8 +18,78 @@ def _utc_timestamp(value):
     return parsed.astimezone(timezone.utc)
 
 
+def _verified(event):
+    return (event.get('status') == 'finished' and bool(event.get('project_task_id'))
+            and (event.get('acceptance') or {}).get('passed') is True)
+
+
+def _run_coverage(events, cutoff):
+    """Join retained starts to outcomes; an unmatched start is not a crash claim."""
+    starts = {}
+    for event in events:
+        if event.get('status') != 'started':
+            continue
+        if not event.get('event_id'):
+            raise ValueError('Started report lacks event_id; cannot deduplicate honestly')
+        at = _utc_timestamp(event.get('started_at') or event.get('timestamp') or event.get('recorded_at'))
+        # A session may be resumed: the start instant identifies the attempt.
+        key = (event.get('name'), event.get('folder'), event.get('session'), at)
+        starts[key] = event
+    by_session = {}
+    for key in starts:
+        # Missing session provenance must never resolve an unrelated attempt.
+        if key[2]:
+            by_session.setdefault(key[:3], []).append(key)
+    for keys in by_session.values():
+        keys.sort(key=lambda key: key[3])
+    resolved = {}
+    for event in events:
+        if event.get('status') not in TERMINAL:
+            continue
+        group = (event.get('name'), event.get('folder'), event.get('session'))
+        candidates = by_session.get(group, [])
+        if not candidates:
+            continue
+        ended = event.get('finished_at') or event.get('timestamp') or event.get('recorded_at')
+        if not ended:
+            continue  # Legacy terminal-only data cannot establish a lifecycle join.
+        ended = _utc_timestamp(ended)
+        if event.get('started_at'):
+            key = (*group, _utc_timestamp(event['started_at']))
+            if key not in starts or key[3] > ended:
+                continue
+        else:
+            preceding = [key for key in candidates if key[3] <= ended]
+            if not preceding:
+                continue
+            key = preceding[-1]
+        if key not in resolved or ended >= resolved[key][0]:
+            resolved[key] = (ended, event)
+    cohort = {key for key in starts if cutoff is None or key[3] >= cutoff}
+    verified = sum(_verified(resolved[key][1]) for key in cohort if key in resolved)
+    unresolved = [dict(event_id=event['event_id'], worker=event.get('name'),
+                       folder=event.get('folder'), session=event.get('session'),
+                       started_at=key[3].isoformat())
+                  for key, event in sorted(starts.items(), key=lambda item: item[0][3])
+                  if key not in resolved]
+    return {
+        'started_runs': len(cohort),
+        'resolved_started_runs': sum(key in resolved for key in cohort),
+        'unresolved_started_runs': sum(key not in resolved for key in cohort),
+        'verified_started_runs': verified,
+        'started_cohort_verified_rate': round(verified / len(cohort), 4) if cohort else None,
+        'unresolved_retained_starts': unresolved,
+        'limitation': ('Start-time cohort, separate from terminal-time outcomes. Unresolved means no matching '
+                      'terminal report in retained journals; it may be active, lost or outside journal retention. '
+                      'Older unresolved starts are listed even before since. Accepted dispatches are not starts. '
+                      'This does not infer process liveness, crash cause, missing duration or a delivery.'),
+    }
+
+
 def summarize(events, since=None):
     cutoff = _utc_timestamp(since) if since is not None else None
+    events = [event for event in events if event.get('brain') == 'free']
+    coverage = _run_coverage(events, cutoff)
     rows = {}
     for event in events:
         if event.get('brain') != 'free' or event.get('status') not in TERMINAL:
@@ -32,8 +102,7 @@ def summarize(events, since=None):
             raise ValueError('Terminal report lacks event_id; cannot deduplicate honestly')
         rows[identity] = event
     counts = Counter(e['status'] for e in rows.values())
-    verified = [e for e in rows.values() if e['status'] == 'finished'
-                and e.get('project_task_id') and (e.get('acceptance') or {}).get('passed') is True]
+    verified = [e for e in rows.values() if _verified(e)]
     progress_fields = ("confirmed_file_mutations", "distinct_successful_command_results",
                        "new_successful_observations", "new_failure_diagnostics", "repository_change_checkpoints")
     partial = Counter()
@@ -56,6 +125,7 @@ def summarize(events, since=None):
     finished = counts.get('finished', 0)
     durations = sum(float(e.get('duration_seconds') or 0) for e in rows.values())
     return {'since': since, 'terminal_runs': len(rows), 'status_counts': dict(sorted(counts.items())),
+            'run_coverage': coverage,
             'partial_progress': {key: partial[key] for key in progress_fields},
             'partial_progress_measured_runs': measured_runs,
             'runs_with_confirmed_mutations': runs_with_mutations,

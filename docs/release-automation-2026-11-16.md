@@ -1,5 +1,47 @@
 # Release automation: 2026-11-16
 
+## Start-to-outcome coverage repair: 1.0.120
+
+Replayed the same retained journals using installed 1.0.119 and the repaired
+accounting code, with cutoff 2026-11-16T18:06:37.304895Z. The previous summary
+reported eight terminal runs, all stalled. The new summary reports eleven:
+eight stalled and three explicit skipped WSH queues. Zero finished runs,
+acceptance-verified deliveries, mutations, preflights or repository-change
+checkpoints. Measured activity remains 149 distinct successful command results,
+992 new observations and 64 failure diagnostics across eight measured runs;
+recorded worker time is 21,322.250 seconds. Activity is not accepted delivery.
+
+The start-time cohort contains eleven starts, ten with matching terminal
+evidence and one still unresolved. An additional earlier unresolved Silver start
+remains visible across the cursor: event 04a908cc104e4ce19cba7219a2553008,
+session 60540189-f8f2-4735-842c-98d222ba5ab9, started at 13:44:41.949106Z.
+The in-cohort unresolved TinyPP start is 5de1ee7ee0bd4328a9b07c28b8e839f0,
+session 96a40cb0-7f2b-4c39-8d63-ec4cf4b21d66, started at 23:41:55.420047Z.
+Acknowledged local control identifies TinyPP as active on v1.0.119, instance
+c6aaa84ee726499ba503de89334ee0c4. Silver's absent terminal event is not proof
+of its exit cause. No synthetic report or missing duration is created.
+
+Evidence: out/checks/outcome-coverage-1.0.120-before-after.json and
+out/checks/automation-20261117-coverage-baseline.json. The three previously
+omitted skips show the denominator change; comparisons with older terminal
+rates must account for this. The separate start-time verification rate is
+0/11, with accepted dispatches excluded. Resolved includes skipped/unfinished
+outcomes, not successful work.
+
+Regressions cover unmatched/duplicate starts, skipped outcomes, UTC offset
+normalization, start/terminal cohort boundaries, retained older gaps, resumed
+sessions, project isolation, absent session/start provenance and actual CLI
+reading across journal rotation. Six initial new tests failed on the prior
+implementation (one also exposed a test-fixture override error, corrected
+before implementation). All fifteen outcome tests pass in 0.34 seconds after
+repair, and release version consistency passes. Full checks and verified
+publication/installation are recorded below when complete.
+
+Canonical lint, fresh-wheel build and offline suite completed successfully:
+1,672 passed, five skipped in 276.99 seconds. Evidence:
+out/checks/check-1.0.120.txt. Skips retain their original platform/environment
+conditions; no acceptance requirement or test assertion was weakened.
+
 ## Independent post-1.0.119 check at 18:06 UTC
 
 Capture: 2026-11-16T18:06:37.304895Z, since the prior cursor

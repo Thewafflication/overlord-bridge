@@ -6,6 +6,11 @@ workflow lands.
 
 ## Current Capabilities
 
+- Worker outcomes include skipped owner queues and start-to-terminal coverage.
+  `run_coverage` keeps unresolved retained starts visible across cohort cursors,
+  without inferring a crash, active process or delivery. Start-time verification
+  rates are separate from terminal-time rates. See [1.0.120](docs/releases/1.0.120.md).
+
 - Persistent worker project memory: local-agent, NVIDIA and free-pool coding
   workers archive bounded source/command observations and model plans under
   worker_reports/memory, surviving restarts/upgrades. memory_search and paged

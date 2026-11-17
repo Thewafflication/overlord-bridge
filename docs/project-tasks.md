@@ -64,6 +64,13 @@ Reports distinguish `delivery_status=verified` (finished with passing owner acce
 for deduplicated terminal totals, verified rate and unique accepted task IDs.
 A passing configured check is not independent proof of overall test quality or a new product feature.
 
+Since 1.0.120, terminal totals include explicit skipped queues. The separate
+`run_coverage` section joins retained starts to outcomes, using a start-time
+cohort for its verification rate. Unresolved starts from before the cutoff
+remain listed. They indicate absent terminal evidence, not necessarily a crash;
+compare with acknowledged live control. Journal rotation limits historical
+coverage. Accepted dispatches alone never count as execution starts.
+
 Before the first owner-task model plan, the harness runs an acceptance preflight
 through the same approval and safety path and pins the bounded observed results.
 Stale model-generated continuation plans are omitted for a fresh executable

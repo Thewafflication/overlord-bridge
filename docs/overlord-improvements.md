@@ -1,5 +1,23 @@
 # Overlord improvement record
 
+## Skipped and unreported runs were invisible (1.0.120)
+
+Terminal-only accounting omitted explicit skipped queues and every execution
+start lacking a terminal event. The 2026-11-16 23:58 UTC retained-journal replay
+adds three skipped WSH outcomes to eight stalls after the prior automation cursor.
+Start reconciliation additionally exposes an older Silver attempt and the
+currently active TinyPP attempt without terminal evidence. No acceptance-verified
+delivery is present. The older attempt must not disappear merely because the
+reporting cursor advances.
+
+The outcome CLI now reports start-time coverage separately from terminal-time
+rates, retains unresolved starts across cutoffs, and includes explicit skips.
+Session/start-time joins distinguish resumed attempts; missing provenance cannot
+close unrelated work. No synthetic crash, duration or acceptance is recorded.
+See [release details](releases/1.0.120.md) and the dated release automation ledger
+for checks, publication and installation evidence. This repairs measurement;
+actual project execution remains unfinished.
+
 ## First live follow-up after1.0.109 — no delivery improvement yet
 
 Eight runs completed after installation verification: all stopped for repeated

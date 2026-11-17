@@ -83,3 +83,107 @@ def test_partial_progress_is_measured_without_claiming_acceptance():
     assert summary['model_reported_completed_steps'] == 2
     assert summary['verified_acceptance_runs'] == 0
     assert summary['unique_verified_tasks'] == []
+
+
+def lifecycle_event(identity, status, session='session', at='2026-11-16T10:00:00Z', **extra):
+    return dict(dict(event_id=identity, brain='free', name='worker', folder='/project',
+                     session=session, status=status, timestamp=at), **extra)
+
+
+def test_unreported_starts_are_visible_without_inventing_crashes():
+    start = lifecycle_event('start', 'started')
+    result = summarize([start, start])
+    assert result['terminal_runs'] == 0
+    coverage = result['run_coverage']
+    assert coverage['started_runs'] == 1
+    assert coverage['resolved_started_runs'] == 0
+    assert coverage['unresolved_started_runs'] == 1
+    assert coverage['started_cohort_verified_rate'] == 0
+    assert coverage['unresolved_retained_starts'][0]['event_id'] == 'start'
+    assert result['status_counts'] == {}
+
+
+def test_skipped_run_resolves_start_without_claiming_delivery():
+    result = summarize([lifecycle_event('start', 'started'),
+                        lifecycle_event('skip', 'skipped', at='2026-11-16T10:01:00Z')])
+    assert result['status_counts'] == {'skipped': 1}
+    assert result['run_coverage']['resolved_started_runs'] == 1
+    assert result['run_coverage']['unresolved_started_runs'] == 0
+    assert result['verified_acceptance_runs'] == 0
+
+
+def test_start_cohort_and_terminal_cohort_are_separate_and_rotation_order_independent():
+    start = lifecycle_event('start', 'started', started_at='2026-11-16T05:00:00-05:00')
+    end = lifecycle_event('end', 'finished', at='2026-11-16T11:00:00Z',
+                          started_at='2026-11-16T10:00:00Z',
+                          project_task_id='task', acceptance={'passed': True})
+    old = lifecycle_event('old', 'started', session='old', at='2026-11-15T10:00:00Z')
+    result = summarize(iter([end, old, start, end]), since='2026-11-16T10:00:00Z')
+    coverage = result['run_coverage']
+    assert coverage['started_runs'] == coverage['resolved_started_runs'] == 1
+    assert coverage['verified_started_runs'] == 1
+    assert coverage['started_cohort_verified_rate'] == 1
+    assert [e['event_id'] for e in coverage['unresolved_retained_starts']] == ['old']
+    later = summarize([end, start], since='2026-11-16T10:30:00Z')
+    assert later['terminal_runs'] == 1
+    assert later['run_coverage']['started_runs'] == 0
+    assert later['run_coverage']['started_cohort_verified_rate'] is None
+
+
+def test_reused_session_and_cross_project_runs_do_not_resolve_each_other():
+    first = lifecycle_event('first', 'started')
+    second = lifecycle_event('second', 'started', at='2026-11-16T12:00:00Z')
+    # An interruption without started_at resolves the preceding attempt only.
+    end = lifecycle_event('end', 'interrupted', at='2026-11-16T12:01:00Z')
+    unrelated = lifecycle_event('other', 'finished', folder='/other',
+                                 at='2026-11-16T10:01:00Z')
+    coverage = summarize([end, unrelated, second, first])['run_coverage']
+    assert coverage['started_runs'] == 2
+    assert coverage['resolved_started_runs'] == 1
+    assert [e['event_id'] for e in coverage['unresolved_retained_starts']] == ['first']
+
+
+def test_terminal_without_retained_start_and_accepted_only_are_not_started_runs():
+    coverage = summarize([lifecycle_event('accepted', 'accepted'),
+                          lifecycle_event('end', 'finished')])['run_coverage']
+    assert coverage['started_runs'] == 0
+    assert coverage['unresolved_retained_starts'] == []
+
+
+def test_incomplete_with_passed_acceptance_is_not_verified_in_started_cohort():
+    coverage = summarize([lifecycle_event('start', 'started'),
+        lifecycle_event('end', 'incomplete', at='2026-11-16T10:01:00Z',
+                        project_task_id='task', acceptance={'passed': True})])['run_coverage']
+    assert coverage['resolved_started_runs'] == 1
+    assert coverage['verified_started_runs'] == 0
+
+
+def test_explicit_start_time_resolves_older_attempt_and_missing_session_stays_unresolved():
+    first = lifecycle_event('first', 'started')
+    second = lifecycle_event('second', 'started', at='2026-11-16T12:00:00Z')
+    end = lifecycle_event('end', 'finished', at='2026-11-16T12:01:00Z',
+                          started_at='2026-11-16T10:00:00Z')
+    unknown = lifecycle_event('unknown', 'started', session=None)
+    unknown_end = lifecycle_event('unknown-end', 'finished', session=None)
+    coverage = summarize([first, second, end, unknown, unknown_end])['run_coverage']
+    assert coverage['resolved_started_runs'] == 1
+    assert {e['event_id'] for e in coverage['unresolved_retained_starts']} == {'second', 'unknown'}
+
+
+def test_outcome_cli_reads_rotated_start_and_current_skipped_result(tmp_path):
+    import json
+    import subprocess
+    import sys
+    start = lifecycle_event('start', 'started')
+    end = lifecycle_event('end', 'skipped', at='2026-11-16T10:01:00Z')
+    (tmp_path / 'events.1.jsonl').write_text(json.dumps(start) + '\n', encoding='utf-8')
+    (tmp_path / 'events.jsonl').write_text(json.dumps(end) + '\n', encoding='utf-8')
+    output = tmp_path / 'summary.json'
+    completed = subprocess.run([sys.executable, '-m', 'modules.worker_outcomes',
+        '--reports', str(tmp_path), '--since', '2026-11-16T10:00:00Z',
+        '--output', str(output)], capture_output=True, text=True, check=True)
+    result = json.loads(output.read_text(encoding='utf-8'))
+    assert json.loads(completed.stdout) == result
+    assert result['status_counts'] == {'skipped': 1}
+    assert result['run_coverage']['resolved_started_runs'] == 1
+    assert result['run_coverage']['unresolved_retained_starts'] == []
