@@ -54,3 +54,52 @@ def test_review_fit_keeps_task_report_and_marks_partial_evidence():
 def test_fit_refuses_to_discard_protected_instructions():
     request=worker_request([{'role':'system','content':'Protected instruction '*2000},{'role':'user','content':'Actual task'}])
     with pytest.raises(ValueError):request.fit(5000)
+
+
+@pytest.mark.parametrize('escaped', ['"', '\\'])
+def test_planning_fit_refines_last_budget_interval_before_rejecting(escaped):
+    # A coarse reduction can jump below the protected floor even though a
+    # request between the two attempted budgets fits. Model the large pinned
+    # prefix and optional action evidence seen in the live KerTeX checkpoint.
+    prefix = [{'role': 'system', 'content': 'I' * 8000},
+              {'role': 'user', 'content': 'T' * 7500},
+              {'role': 'user', 'content': 'P' * 21000}]
+    original = prefix + [{'role': 'assistant', 'content': 'older exchange ' * 1000}]
+    plan = {'explanation': escaped * 1200,
+            'plan': [{'step': 'Use recorded evidence for the next concrete check', 'status': 'in_progress'}]}
+    request = [{'role': 'system', 'content': 'O' * 1075},
+               {'role': 'user', 'content': 'Read-only worker context:\n' + json.dumps(original)},
+               {'role': 'user', 'content': 'Record findings.'}]
+    # Search the narrow boundary independently: establish that protected
+    # content fits, then require the public fitter to find it with metadata.
+    evidence = ['optional recorded action ' * 400]
+    feasible = None
+    for budget in range(43000, 36500, -25):
+        try:
+            bounded = _bounded_worker_messages(original, evidence, limit=budget,
+                prefix_count=3, plan=plan, mutations=['source.c changed'], completion_feedback='Keep required validation')
+        except ValueError:
+            continue
+        candidate = [dict(m) for m in request]
+        candidate[1]['content'] = 'Read-only worker context:\n' + json.dumps(bounded, ensure_ascii=False)
+        if size(candidate) <= 48000:
+            feasible = candidate
+            break
+    assert feasible is not None
+    fitted = _budgeted_planning_request(request, original, evidence, prefix_count=3,
+        plan=plan, mutations=['source.c changed'], completion_feedback='Keep required validation')
+    assert size(fitted) <= 48000
+    assert fitted[0] == request[0] and fitted[2:] == request[2:]
+    inner = json.loads(fitted[1]['content'].split('\n', 1)[1])
+    assert inner[:3] == prefix
+    assert json.dumps(plan, ensure_ascii=False) in inner[3]['content']
+    assert 'source.c changed' in inner[3]['content'] and 'Keep required validation' in inner[3]['content']
+
+
+def test_planning_fit_rejects_genuinely_oversized_outer_instructions():
+    original = [{'role': 'system', 'content': 'Protected worker task'}]
+    request = [{'role': 'system', 'content': 'Protected planning rules' * 3000},
+               {'role': 'user', 'content': 'Read-only worker context:\n' + json.dumps(original)}]
+    with pytest.raises(ValueError):
+        _budgeted_planning_request(request, original, [], prefix_count=1,
+            plan=None, mutations=[], completion_feedback='')

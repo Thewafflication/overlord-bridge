@@ -230,3 +230,44 @@ Raw local evidence (untracked):
 Next cohort cursor: 2026-11-17T06:00:06.396097Z. Retain all unresolved starts
 and unfinished failures across that cursor. The measurable result remains
 zero accepted deliveries; no delivery-rate improvement is claimed.
+
+## Planning-budget repair at 18:00 UTC (1.0.123)
+
+Snapshot generated 2026-11-17T18:00:25.583543Z, since
+2026-11-17T12:37:13.194083Z, contains five terminal outcomes: two stalled,
+two incomplete and one skipped queue. Zero finished/acceptance-verified/unique
+accepted tasks, zero confirmed mutations/preflights/repository changes, and
+19,323.735 recorded worker seconds. Four measured runs report 103 distinct
+successful command results, 522 observations and 96 failure diagnostics.
+Three model-completed plan steps are unverified. Start cohort: five starts,
+four resolved, one unresolved Silver start ea59668614504c26b8796cec1fa9e2f8.
+Retain previously recorded Silver/KerTeX gaps that have fallen outside journal
+retention; absence from this snapshot does not prove resolution.
+
+Live control at 18:04:49Z acknowledges v1.0.122 instance
+dfc28695875a4871947a75d35408f01c, TinyPP active. All seventeen schedule IDs,
+four active 60-second schedules, thirteen pauses, completed WSH queue and
+original Pydecipher protected hashes remain intact. Project memory records
+1,277 archive links and zero searches/pages/retrieved characters in the cohort.
+Persistence still does not demonstrate useful recall or accepted delivery.
+
+Both incomplete runs cite planning-context overflow. The KerTeX reconstruction
+uses its actual final execution capture, terminal continuation plan/evidence,
+recorded checkpoint and planning prompt assembled from source. It is explicitly
+not a captured planning HTTP request. Prior code rejects it; repaired code fits
+47,918 characters under 48,000 with identical pinned prefix, current plan and
+outer instructions. Coarse reductions had skipped a feasible interval before
+crossing the protected floor. Bounded binary refinement now checks that interval.
+Two escaped-plan regressions failed before the fix, and truly oversized outer
+instructions still fail. No model/permission/acceptance changes are involved.
+
+Local evidence: out/checks/automation-20261117-1800{,-evidence,-verification}.json,
+request-1.0.122-postinstall-samples/, planning-1.0.122-replay-input.json and
+planning-1.0.123-before-after.json. These are local diagnostic artifacts.
+Source-read loops remain; this repair does not claim that every loop has this
+cause or that live delivery improved. Release/install verification follows.
+
+Canonical lint, fresh wheel and full tests pass: 1,688 passed / five skipped
+in 271.76 seconds. Focused worker/provider/budget tests: 343 passed in 119.99s;
+final request-budget/outcome checks: 22 passed in 0.86s. Release version guard
+passes for 1.0.123. Hosted release and installation are pending verification.

@@ -1,5 +1,17 @@
 # Overlord improvement record
 
+## Planning fitter skipped a feasible budget (1.0.123)
+
+Two post-1.0.122 runs stopped at planning-context overflow. Reconstructing the
+KerTeX checkpoint with recorded continuation evidence reproduces a false
+rejection: the coarse reduction jumped below the protected-content floor.
+Refining the skipped interval fits the request in 47,918/48,000 characters,
+preserving the pinned prefix, current plan and outer instructions. Escaped-plan
+regressions failed before the repair; genuinely oversized instructions still
+fail. See the November 17 ledger and release notes for measured verification.
+The five-outcome live baseline remains zero accepted deliveries; the replay
+does not establish model-quality or delivery-rate improvement.
+
 ## Prior source pages lost to duplicated checkpoint metadata (1.0.122)
 
 The live 1.0.121 captures exposed alternating CMake source reads. A replay

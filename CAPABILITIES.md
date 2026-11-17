@@ -6,6 +6,11 @@ workflow lands.
 
 ## Current Capabilities
 
+- Planning-context fitting refines the interval skipped by a coarse budget
+  reduction before reporting protected-content overflow. Task, preloads, plan
+  and feedback remain protected; genuinely oversized requests still fail.
+  See [1.0.123](docs/releases/1.0.123.md).
+
 - Context fitting prioritizes older paired exchanges over optional duplicated
   action metadata too. Older source pages can be structurally shortened with
   exact continuation cursors while keeping the latest page intact and all

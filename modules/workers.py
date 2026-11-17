@@ -1607,21 +1607,43 @@ class WorkerReportStore:
 
 def _budgeted_planning_request(request, context, evidence, *, prefix_count, plan,
                               mutations, completion_feedback):
-    def fit(limit):
-        context_limit = min(43000, limit)
-        # Nested JSON escaping can need more than eight small adjustments.
-        # Always shrink by at least 1 KiB, so fitting terminates without an
-        # arbitrary retry cutoff rejecting history that can still be trimmed.
-        while context_limit > 0:
-            bounded = _bounded_worker_messages(context, evidence, limit=context_limit,
+    def candidate(context_limit):
+        bounded = _bounded_worker_messages(context, evidence, limit=context_limit,
                 prefix_count=prefix_count, plan=plan, mutations=mutations,
                 completion_feedback=completion_feedback)
-            fitted = [dict(message) for message in request]
-            fitted[1]["content"] = "Read-only worker context:\n" + json.dumps(bounded, ensure_ascii=False)
+        fitted = [dict(message) for message in request]
+        fitted[1]["content"] = "Read-only worker context:\n" + json.dumps(bounded, ensure_ascii=False)
+        return fitted
+
+    def fit(limit):
+        context_limit = min(43000, limit)
+        previous_limit = None
+        # Coarse reductions handle large escaped histories quickly. If one
+        # jumps below the protected floor, refine the skipped interval before
+        # concluding that the owner task and current plan cannot fit.
+        while context_limit > 0:
+            try:
+                fitted = candidate(context_limit)
+            except ValueError:
+                low, high = context_limit + 1, (previous_limit or context_limit) - 1
+                while low <= high:
+                    middle = (low + high) // 2
+                    try:
+                        refined = candidate(middle)
+                    except ValueError:
+                        low = middle + 1
+                        continue
+                    if request_size(refined) <= limit:
+                        return refined
+                    high = middle - 1
+                raise
             excess = request_size(fitted) - limit
             if excess <= 0:
                 return fitted
-            context_limit -= max(1024, excess + 128)
+            if context_limit == 1:
+                break
+            previous_limit = context_limit
+            context_limit = max(1, context_limit - max(1024, excess + 128))
         raise ValueError("Protected planning context cannot fit")
     return BudgetedMessages(fit(48000), fit)
 
