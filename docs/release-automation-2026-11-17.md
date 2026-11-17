@@ -91,6 +91,48 @@ Live accepted-delivery improvement is still unproven. Canonical lint, fresh
 wheel and full tests passed: 1,686 passed / four skipped in 171.35 seconds.
 Release and installation verification follows below.
 
+Code 6485234 was committed/pushed and tagged v1.0.122. Main CI 44083697727
+and tag CI 44083704459 passed. Tagged Windows: 1,688 passed / two skipped in
+137.10s; Linux: 1,643 passed / 47 skipped in 69.49s. Signed build 44083704387
+passed and the non-prerelease publication is available at
+[v1.0.122](https://github.com/Thewafflication/overlord-bridge/releases/tag/v1.0.122).
+Existing WPM trust verified the same signing key; archive SHA-256
+a5c908f3c24d0dae68c02e90ca376fea51d1dc445216cde7f2f204b25cd988aa
+matches the published checksum. Installer exited zero.
+
+All seventeen frozen schedules and the exact owner queue survived installation.
+Thirty-five report/memory/capture files retained their hashes; four session
+metadata records were unchanged. Settings size only was compared. Original
+four active 60-second / thirteen paused states were restored while stopped and
+verified after startup. The old PID initially remained during shutdown but
+the subsequent process lookup returned no process before installation; this
+installation did not auto-restart. No shutdown-root-cause fix is claimed.
+
+Installed-module tests: twelve passed / one symlink-privilege skip in 1.02s.
+The original captured-source replay, imported from the installed modules,
+retains both exchanges in exactly 46,834 characters with unchanged prefix.
+Proof: out/checks/request-retention-1.0.122-installed.json,
+out/checks/verify-installed-trace-1.0.122.txt,
+out/checks/release-1.0.122/verification.json and
+out/checks/project-task-1.0.122-install-preservation.json.
+
+Live v1.0.122 instance dfc28695875a4871947a75d35408f01c acknowledges KerTeX
+active. The final 12:37:13.194083Z snapshot has one post-install start and no
+terminal result yet. This is activation, not a successful project delivery.
+The pre-122 follow-up separately recorded one incomplete Silver run, one skipped
+queue and one maintenance interruption, with zero confirmed mutations/verified
+deliveries and 422.485 recorded seconds. Do not combine maintenance with a clean
+post-install cohort or count shortened evidence as completed work.
+
+Next cohort cursor: 2026-11-17T12:37:13.194083Z. Retain older KerTeX gap
+1a21f81bcb564cc1923d1e9c163c195b, the previously recorded Silver gap now outside
+journal retention, and new active KerTeX ef19c0675a2a4959aa9f3ef2e4f50dbf.
+Next assess actual post-122 request retention, repeated reads and owner
+acceptance outcomes. The demonstrated improvement is one-to-two source results
+in the replay; the measured baseline is still zero accepted deliveries out of
+27 terminal outcomes. Unrelated wsp, out and tools/_dev_show.ps1 remain outside
+the commits, and acceptance/protected owner files remain unchanged.
+
 ## Independent post-1.0.120 measurement at 06:00 UTC
 
 The installed release remains operational, but accepted project delivery has
