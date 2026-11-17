@@ -42,6 +42,51 @@ Canonical lint, fresh-wheel build and offline suite completed successfully:
 out/checks/check-1.0.120.txt. Skips retain their original platform/environment
 conditions; no acceptance requirement or test assertion was weakened.
 
+### Verified publication and installation (2026-11-17 UTC)
+
+Committed/pushed 07c414c755abcd1f17cd5b4aa867d265088fd61f and published
+[v1.0.120](https://github.com/Thewafflication/overlord-bridge/releases/tag/v1.0.120)
+as non-draft/non-prerelease. Main CI 43984588517 and tag CI 43984609711
+passed Windows/Linux; signed build 43984609800 succeeded. Tag Windows:
+1,674 passed / three skipped in 162.864 seconds. Linux: 1,630 passed /
+47 skipped in 57.033 seconds. Retained artifacts: out/checks/ci-1.0.120-windows
+and out/checks/ci-1.0.120-linux. Local skips were two unavailable Tk cases,
+two platform cases and unavailable symlink creation privileges.
+
+WPM read-only verification accepted the existing trusted signing key
+6c21ebda96b16bfa64700d28fcdeb20dc4b19de448a723a970ac09b720f04b1d.
+The archive matches published SHA256SUMS:
+79353c74011ac13840a986b39f87fbf37a0396f6ededd930a29703f7b7c10390.
+The public key text matches the checkout after newline normalization; no trust
+change was needed. Installation exited zero. Evidence:
+out/checks/release-1.0.120/verification.json and out/checks/install-1.0.120.txt.
+
+Paused only four active schedules, froze all seventeen, obtained acknowledged
+idle cleanup, then requested normal console shutdown. Old PID 32136 exited and
+discovery disappeared before installation. No forced termination was required.
+The installer preserved frozen schedules and owner queue exactly, all 31 captured
+report/memory files by SHA-256, and four session records by metadata. Settings
+were checked by size only. Installed owned source/document text matched checkout
+before this ledger addition. Restored four active 60-second schedules and thirteen
+intentional pauses while stopped; verified all IDs, prompts, intervals and states
+again after launch. Existing owner acceptance contracts remain unchanged.
+
+Fifteen installed-module regressions passed in 0.27 seconds. A separate actual
+CLI invocation from the installed directory confirms the new coverage fields.
+Evidence: out/checks/verify-installed-outcomes-1.0.120.txt,
+out/checks/outcome-coverage-1.0.120-installed.json and
+out/checks/project-task-1.0.120-install-preservation.json.
+
+Live v1.0.120 acknowledged instance c94fef9bc4424ee6809129fafe6e6d1f with
+KerTeX active. The post-install capture at 2026-11-17T00:12:40.596959Z adds one
+maintenance interruption, separately from the eleven-outcome product cohort.
+TinyPP's stopped start now resolves to its real interruption event. The older
+Silver gap remains visible alongside the new active KerTeX start. This verifies
+the measurement repair in the actual installed workflow. It does not demonstrate
+an increase in accepted project deliveries: the baseline remains zero.
+Next cohort cursor: 2026-11-17T00:12:40.596959Z, retaining unfinished gaps and
+stalls. Preserve four active/thirteen paused policy and Pydecipher quarantine.
+
 ## Independent post-1.0.119 check at 18:06 UTC
 
 Capture: 2026-11-16T18:06:37.304895Z, since the prior cursor
