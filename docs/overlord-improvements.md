@@ -1011,3 +1011,14 @@ and four session records survived; four active schedules/thirteen pauses were
 restored and live-verified. The controlled fitter retains two paired results
 instead of zero; escaped transport shrinks from 41,160 to 22,310 characters
 under 24,000. No accepted-delivery gain is claimed; see the dated ledger.
+
+
+## 1.0.127 - preserve unfinished evidence through startup failure
+
+A failed initial plan could erase the preceding handoff before any project
+action. The worker now retains that handoff flat until a valid plan or action
+supersedes it. Two regressions failed before repair;12focused handoff checks
+pass, including repeated failures and visibility on the next attempt. Current
+owner instructions still win and current status/counters remain separate.
+The latest30-outcome cohort has zero verified deliveries; continuity repair
+is not proof of accepted work. See the November18ledger for deployment results.

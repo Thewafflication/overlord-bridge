@@ -743,6 +743,40 @@ def test_repeated_discovery_yields_and_next_run_receives_handoff(isolated, tmp_p
     assert 'Reconcile preserved checkout' in str(next_seen[0][0])
 
 
+@pytest.mark.parametrize('failure', ['unavailable', 'invalid_plan'])
+def test_startup_failure_retains_prior_handoff_for_next_attempt(isolated, tmp_path, failure):
+    project = isolated / 'startup-handoff'
+    project.mkdir()
+    (project / 'owner.txt').write_text('owner bytes')
+    previous = {'task': 'previous request', 'plan': {'plan': [
+        {'step': 'Validate the existing correction', 'status': 'in_progress'}]},
+        'last_action_step': 37, 'recent_evidence': 'INITIAL_COMPILER_ERROR',
+        'completion_feedback': 'Run acceptance before claiming completion.',
+        'note': 'Reconcile preserved checkout; not completed.'}
+
+    async def failing_pool(messages, tools):
+        if failure == 'unavailable':
+            raise FreeUnavailable(['provider unavailable'], 1)
+        return {'content': 'invalid plan'}
+
+    mgr, _, _ = manager(tmp_path, failing_pool)
+    mgr.report_store.record({'name': 'Free-app', 'folder': str(project), 'brain': 'free',
+                            'status': 'incomplete', 'continuation': previous})
+    for _ in range(2):
+        start(mgr, project)
+        report = events(mgr)[-1]
+        assert report['status'] == 'incomplete'
+        assert report['action_steps'] == 0
+        assert report['continuation'] == previous
+        assert (project / 'owner.txt').read_text() == 'owner bytes'
+    pool, seen = scripted_pool([call('finish_task', {'final': 'Still blocked', 'outcome': 'blocked'})])
+    mgr.free_completer = pool
+    start(mgr, project)
+    assert 'INITIAL_COMPILER_ERROR' in str(pool.planning[0])
+    assert 'Run acceptance before claiming completion.' in str(seen[0][0])
+    assert 'implement the feature' in str(pool.planning[0])
+
+
 def test_large_handoff_preserves_diagnostics_and_current_action(isolated, tmp_path):
     project = isolated / 'large-handoff'
     project.mkdir()

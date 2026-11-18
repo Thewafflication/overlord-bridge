@@ -2515,6 +2515,7 @@ class WorkerManager:
         )
 
         preload_blocks: list[str] = []
+        previous = None
         if is_free and self.report_store:
             previous = self.report_store.previous_continuation(name, str(folder))
             if previous:
@@ -2668,6 +2669,11 @@ class WorkerManager:
                 await _memory_io(request_trace.finish, capture_id, **event)
 
         def make_continuation():
+            # A failed startup has no new plan or actions to supersede the
+            # loaded handoff. Keep that evidence flat across repeated outages;
+            # this attempt's status/diagnostics remain on its own report.
+            if previous and worker_plan is None and step == 0:
+                return dict(previous)
             return {"task": redact_text(task), "plan": worker_plan,
                     "last_action_step": step, "progress": progress_watch.diagnostics(),
                     "recent_evidence": redact_text("\n".join(completion_evidence + completion_commands)[-12000:]),

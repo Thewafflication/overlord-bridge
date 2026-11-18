@@ -319,3 +319,47 @@ execution and owner acceptance; retain unfinished read loops, false SDK
 assessments, TinyPP validator failures and historical retention gaps. Other
 project implementation was not taken over. Unrelated wsp,out and
 tools/_dev_show.ps1 were not committed.
+
+
+## 18:00 UTC cohort and 1.0.127 startup handoff preservation
+
+Snapshot 2026-11-18T17:57:23.899096Z, since12:23:36.735738Z:
+30 terminal outcomes,13incomplete,7skipped,10stalled; zero model finishes,
+independent acceptances or unique verified tasks. Recorded13,692.471worker
+seconds.23measured runs recorded7direct mutations across4runs,313distinct
+successful command results,1,055observations,313failure diagnostics and
+6repository checkpoints. Three model-completed steps remain unverified.
+30new starts,29resolved,one unresolved Silver startc0c343971ad64af3a77d9ba5797c9dd0
+at17:43:41.732092Z. Historical Silver04a908cc104e4ce19cba7219a2553008 and
+KerTeX1a21f81bcb564cc1923d1e9c163c195b remain unproven resolved outside retention.
+Evidence:out/checks/automation-20261118-1800-{cohort,evidence}.json.
+
+Several recent attempts stalled with zero actions during pool unavailability.
+Inspection exposed a concrete continuity bug: startup failures overwrite a
+previous handoff with a null plan and empty diagnostics/feedback. Two worker
+regressions failed before repair.1.0.127 retains the existing handoff flat
+when neither a valid plan nor an action supersedes it; report counters/status
+still describe the latest attempt. Both unavailable-pool and invalid-plan
+cases retain evidence through two failures and into a subsequent worker.
+Twelve focused checks passed4.81s. No model-quality or accepted-delivery gain
+is claimed. Full checks, publication and installation evidence follow.
+
+
+Retained live journals independently confirm three losses at17:15,17:22 and
+17:29UTC: TinyPP36-action handoff8,400chars, KerTeX6-action805chars, and
+Silver7-action3,053chars became null plans/zero evidence. Exact prior handoff
+objects replayed through two controlled outages now remain identical,
+retaining all12,258evidence characters and all three plans/feedback records.
+Proof:startup-handoff-1.0.127-{observed,before-after}.json. This isolates the
+replacement mechanism; it does not prove all subsequent discovery was caused
+by handoff loss. Already lost latest handoffs are not automatically restored.
+Live126acknowledged18:00:13Zsameinstance,TinyPPactive; installedsource matches
+126tag.17schedules4active60s13paused/completedWSH/originalPydecipherhashes
+retained.2,480memoryarchive links/zero retrievals are not effective recall.
+Read-only proof:automation-20261118-1800-verification.json.
+
+
+Canonical lint/freshwheel/full offline suite passed:1,709tests/five skips in
+294.03s. Release version guard and pre-commit configuration validation passed.
+Full output:out/checks/check-1.0.127.txt. Two added worker regressions; focused
+handoff checks passed12cases. Skips retain existing Tk/platform/symlink limits.

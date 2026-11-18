@@ -6,6 +6,11 @@ workflow lands.
 
 ## Current Capabilities
 
+- Free-worker failures before a valid startup plan or any action retain the
+  previous unfinished handoff instead of replacing it with empty evidence.
+  Current attempt status/counters remain separate; the current owner task
+  still wins. See [1.0.127](docs/releases/1.0.127.md).
+
 - Worker process capture retains bounded beginning/end stdout and stderr
   excerpts before context fitting, with explicit middle omission markers.
   Partial boundary lines are discarded before redaction; the existing raw-byte
