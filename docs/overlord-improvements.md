@@ -982,3 +982,11 @@ and transport. Three new cases failed before; a scripted worker now retains a
 large real command result before editing and validation. Actual Silver captures
 show omitted exchanges; no exact preceding-output replay or live delivery gain
 is claimed. See docs/releases/1.0.125.md and the November 18 release ledger.
+
+1.0.125 is committed, pushed, signed, released and installed. Local canonical
+checks: 1,701 passed / four skips; Windows/Linux tag CI passed. Twenty-two
+installed checks passed. All seventeen schedules/owner queue, 37 evidence files
+and four session records survived; four active schedules/thirteen pauses were
+restored and live-verified. The controlled fitter retains two paired results
+instead of zero; escaped transport shrinks from 41,160 to 22,310 characters
+under 24,000. No accepted-delivery gain is claimed; see the dated ledger.

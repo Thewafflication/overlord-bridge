@@ -160,3 +160,49 @@ are not delivery proof. Existing124release verified published non-prerelease.
 Canonical lint/fresh wheel/full offline suite:1,701passed/four skips in246.98s.
 Release version guard passes1.0.125. Four new tests,including the real subprocess
 worker edit/assertion case. Full output:out/checks/check-1.0.125.txt.
+
+Code 83f2f53c77a8f5e81a4917c0f789c06051c630ca is committed, pushed and tagged
+v1.0.125. Main CI 44250325760 and tag CI 44250327641 passed. Tag Windows:
+1,702 passed / three skips in 122.168s; Linux: 1,658 passed / 47 skips in
+69.369s. Signed build 44250327568 passed. Published release:
+https://github.com/Thewafflication/overlord-bridge/releases/tag/v1.0.125.
+The release is non-draft/non-prerelease. Existing WPM trust verifies read-only;
+public key matches the repository after newline normalization. Archive SHA256
+matches the published checksum:
+658dd8282877629c89c54834736a425eec2673ff02bf84c604b9495f473d8a98.
+Evidence: out/checks/release-1.0.125/verification.json and ci-test-results.json.
+
+WPM installation exited zero. Four schedules paused/seventeen frozen; local
+stop acknowledged idle. Normal shutdown exited old PID 6028 and removed
+discovery before installation, with no force or automatic restart this time.
+Exact frozen schedules and owner queue, 37 report/memory/capture hashes, four
+session metadata records and owned installed source passed preservation checks.
+Settings size only was checked. Restored four active 60-second schedules and
+thirteen pauses while stopped, then launched and verified policy, completed WSH
+and original Pydecipher protected hashes. Proof:
+out/checks/project-task-1.0.125-install-preservation.json.
+
+Twenty-two installed-module tests passed in 19.82s, including the real subprocess
+result, edit and assertion workflow. Installed controlled transport retains
+status/both streams at 22,310 characters, matching checkout. Evidence:
+out/checks/verify-installed-command-context-1.0.125.txt and
+out/checks/command-context-1.0.125-installed.json. Live acknowledgement at
+06:38:47.130089Z: v1.0.125 instance 50d8313c0eca4b79a6ef08f1984ca3ba,
+KerTeX active.
+
+Follow-up since 06:03:17.942740Z has one pre-install maintenance interruption,
+one mutation, ten commands, 94 observations, seven diagnostics and one repository
+checkpoint. Duration is unmeasured; aggregate zero is not elapsed time. The
+prior TinyPP start resolves to that interruption. Separate this from the clean
+post-125 cohort beginning at launch 06:38:22.9279706Z. Clean snapshot generated
+06:39:14.498725Z: zero terminal outcomes, one active KerTeX start
+28a362ffa3244780a973838043b5abac at 06:38:31.921989Z. No delivery claim.
+Next cursor: 06:39:14.498725Z. Retain all unfinished blockers and historical
+Silver/KerTeX gaps. Proof: out/checks/automation-20261118-pre125-followup.json
+and automation-20261118-post125.json.
+
+Functional command/context retention is verified; live accepted-delivery gain
+remains unproven. Next measure post-125 batch retention, repeated observations,
+technical execution and independently accepted tasks. Previously omitted process
+output is not recovered. Acceptance, project ownership and exclusions remain.
+Unrelated wsp, out and tools/_dev_show.ps1 were not committed.
