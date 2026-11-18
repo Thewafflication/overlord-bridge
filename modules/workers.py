@@ -446,32 +446,53 @@ def _bounded_tail(text: str, max_chars: int) -> tuple[str, bool]:
 
 
 class _CommandTail:
-    """Keep enough UTF-8 bytes for the final character-limited tool result."""
+    """Keep bounded beginning/end excerpts while draining both process pipes."""
 
     def __init__(self, max_chars: int):
         self.max_chars = max_chars
         self.limit = max_chars * 4
+        self.head_limit = self.limit // 2
+        self.head = bytearray()
         self.data = bytearray()
         self.dropped = 0
+        self.total = 0
 
     def append(self, chunk: bytes) -> None:
+        self.total += len(chunk)
+        self.head.extend(chunk[:max(0, self.head_limit - len(self.head))])
         self.data.extend(chunk)
-        excess = len(self.data) - self.limit
+        excess = len(self.data) - (self.limit - self.head_limit)
         if excess > 0:
             del self.data[:excess]
-            self.dropped += excess
+        self.dropped = max(0, self.total - self.limit)
 
     def result(self) -> tuple[str, bool]:
         raw = bytes(self.data)
         if self.dropped:
-            # Discard the incomplete leading line. It can start inside a UTF-8
-            # character or a credential whose redaction prefix was discarded.
+            # Never expose a cut credential or UTF-8 character at either edge
+            # of the omitted interval. Redact complete excerpts before cutting
+            # them again to the character budget.
+            head = bytes(self.head)
+            head = head[:head.rfind(b"\n") + 1]
             newline = raw.find(b"\n")
             raw = raw[newline + 1:] if newline >= 0 else b""
-        text, truncated = _bounded_tail(raw.decode(errors="replace"), self.max_chars)
-        if self.dropped:
-            text = f"[... {self.dropped} earlier output bytes and partial line omitted ...]\n" + text
-        return text, truncated or bool(self.dropped)
+            beginning = _sanitize_text(redact_text(head.decode(errors="replace"))).strip()
+            ending = _sanitize_text(redact_text(raw.decode(errors="replace"))).strip()
+            head_chars = min(len(beginning), self.max_chars // 3)
+            tail_chars = self.max_chars - head_chars
+            omitted_chars = len(beginning) + len(ending) - head_chars - min(len(ending), tail_chars)
+            marker = (f"\n[... {self.dropped} middle output bytes and boundary lines omitted; "
+                      f"{omitted_chars} additional chars omitted ...]\n")
+            return beginning[:head_chars] + marker + (ending[-tail_chars:] if tail_chars else ""), True
+        # Before overflow the two buffers may overlap. Reconstruct exactly once.
+        raw = bytes(self.head[:self.total - len(raw)]) + raw
+        text = _sanitize_text(redact_text(raw.decode(errors="replace"))).strip()
+        if len(text) <= self.max_chars:
+            return text, False
+        head_chars = self.max_chars // 3
+        tail_chars = self.max_chars - head_chars
+        return (text[:head_chars] + f"\n[... {len(text) - self.max_chars} middle chars omitted ...]\n" +
+                (text[-tail_chars:] if tail_chars else "")), True
 
 
 async def _capture_command_output(proc, stdout: _CommandTail, stderr: _CommandTail) -> None:

@@ -973,6 +973,18 @@ after launch. The baseline remains zero verified deliveries; the dated ledger
 records the checksum, CI, preservation evidence and next measurement cursor.
 
 
+## 1.0.126 - retain initial process diagnostics
+
+Process capture discarded the beginning of large command output before context
+fitting, losing initial compiler errors and invocations. Bounded beginning/end
+buffers now share the previous raw-byte limit. Redaction precedes character
+shortening; partial lines at a byte gap are omitted. Three new cases failed
+before repair. Real subprocess and scripted edit/validation regressions retain
+both ends. A controlled 1,800,045-byte replay improves initial diagnostic
+retention from zero to one while retaining the final diagnostic and the same
+96,000-byte raw storage. No live accepted-delivery gain is claimed. See
+docs/releases/1.0.126.md and the November 18 automation ledger.
+
 ## 1.0.125 - keep command results in fitted context
 
 Mixed source/command batches could disappear when large command results did

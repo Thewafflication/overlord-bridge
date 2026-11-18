@@ -3239,6 +3239,7 @@ def test_worker_uses_large_command_result_before_edit_and_validation(isolated, t
             rows = [json.loads(m['content']) for m in messages if m.get('role') == 'tool']
             probe = next(row for row in rows if row.get('tool') == 'run_python')
             assert probe['exit_code'] == 0 and probe['ok']
+            assert probe['stdout'].startswith('PROBE_START')
             assert probe['stdout'].endswith('PROBE_END') and probe['stdout_truncated']
             assert any('value = "old"' in row.get('content', '') for row in rows)
         return await delegate(messages, tools)

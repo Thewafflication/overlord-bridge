@@ -1090,18 +1090,18 @@ def test_command_capture_drains_large_streams_and_preserves_final_diagnostics(is
     for stream in ('stdout', 'stderr'):
         assert result[stream + '_truncated']
         assert len(result[stream]) < workers.DEFAULT_LOCAL_AGENT_TOOL_OUTPUT_CHARS + 150
-        assert 'earlier output bytes and partial line omitted' in result[stream]
+        assert 'middle output bytes and boundary lines omitted' in result[stream]
 
 
 def test_stream_capture_keeps_memory_bounded_and_unicode_boundary_intact():
-    tail = workers._CommandTail(10)
+    tail = workers._CommandTail(32)
     for _ in range(1000):
         tail.append(('\u4e16' * 10 + '\n').encode())
-        assert len(tail.data) <= 40
+        assert len(tail.head) + len(tail.data) <= 128
     text, truncated = tail.result()
     assert truncated and text.endswith('\u4e16' * 10)
     assert '\ufffd' not in text
-    assert tail.dropped == 31000 - 40
+    assert tail.dropped == 31000 - 128
 
 
 def test_capture_does_not_expose_partial_credential_after_truncation():
@@ -1109,6 +1109,53 @@ def test_capture_does_not_expose_partial_credential_after_truncation():
     tail.append(b'API_KEY=' + b'x' * 1000 + b'\nuseful\n')
     text, truncated = tail.result()
     assert truncated and text.endswith('useful') and 'xxx' not in text
+
+
+@pytest.mark.parametrize('size', [5000, 300000])
+def test_command_capture_preserves_first_and_last_diagnostics_on_both_streams(isolated, size):
+    code = ("import sys\n"
+            f"for stream in (sys.stdout, sys.stderr):\n"
+            " stream.write('FIRST diagnostic \\u4e16\\u754c\\n')\n"
+            f" stream.write('noise\\n' * {size})\n"
+            " stream.write('LAST diagnostic \\U0001f642\\n')\n"
+            "sys.exit(9)\n")
+    result = execute('run_python', {'code': code}, isolated)
+    assert result['exit_code'] == 9 and not result['ok'] and not result['timed_out']
+    for stream in ('stdout', 'stderr'):
+        assert result[stream].startswith('FIRST diagnostic \u4e16\u754c')
+        assert result[stream].endswith('LAST diagnostic \U0001f642')
+        assert result[stream + '_truncated'] and 'omitted' in result[stream]
+        assert len(result[stream]) < workers.DEFAULT_LOCAL_AGENT_TOOL_OUTPUT_CHARS + 150
+        assert '\ufffd' not in result[stream]
+
+
+def test_command_capture_redacts_before_shortening_each_excerpt(monkeypatch):
+    secret = 'capture-secret-value'
+    monkeypatch.setenv('CAPTURE_TEST_TOKEN', secret)
+    capture = workers._CommandTail(1000)
+    data = (f'FIRST {secret}\nAPI_KEY=' + 'x' * 20000 + f'\nLAST {secret}\n').encode()
+    for offset in range(0, len(data), 17):
+        capture.append(data[offset:offset + 17])
+    text, truncated = capture.result()
+    assert truncated and text.startswith('FIRST ') and 'LAST ' in text
+    assert secret not in text and 'xxx' not in text
+
+
+@pytest.mark.parametrize('chunk_size', [1, 13, 1000])
+def test_command_capture_reconstructs_overlapping_buffers_exactly(chunk_size):
+    # Fits the character budget but exceeds one raw half, so the buffers overlap.
+    value = ('\u4e16\u754c\n' * 330).encode()
+    capture = workers._CommandTail(1000)
+    for offset in range(0, len(value), chunk_size):
+        capture.append(value[offset:offset + chunk_size])
+    assert capture.result() == (value.decode().strip(), False)
+
+
+def test_command_capture_drops_both_partial_lines_at_byte_gap():
+    capture = workers._CommandTail(100)
+    capture.append(b'API_KEY=' + b'x' * 1000 + b'\n')
+    text, truncated = capture.result()
+    assert truncated and 'xxx' not in text and 'omitted' in text
 
 
 def test_file_discovery_filters_before_traversal_and_can_target_a_folder(isolated, monkeypatch):

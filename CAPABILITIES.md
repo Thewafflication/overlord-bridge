@@ -6,6 +6,12 @@ workflow lands.
 
 ## Current Capabilities
 
+- Worker process capture retains bounded beginning/end stdout and stderr
+  excerpts before context fitting, with explicit middle omission markers.
+  Partial boundary lines are discarded before redaction; the existing raw-byte
+  bound, concurrent draining, timeout cleanup and exit status remain.
+  See [1.0.126](docs/releases/1.0.126.md).
+
 - Worker context fitting structurally shortens command stdout/stderr as well as
   source pages, retaining paired batches, exit/timeout metadata and marked
   beginning/end excerpts of both streams. Command transport uses the same

@@ -206,3 +206,52 @@ remains unproven. Next measure post-125 batch retention, repeated observations,
 technical execution and independently accepted tasks. Previously omitted process
 output is not recovered. Acceptance, project ownership and exclusions remain.
 Unrelated wsp, out and tools/_dev_show.ps1 were not committed.
+
+
+## 12:05 UTC audit and 1.0.126 initial diagnostic capture
+
+Since 06:39:14.498725Z, snapshot generated 12:05:46.595431Z has 21 terminal
+outcomes: three finished, eleven incomplete, five skipped and two stalled.
+All three finished reports are model_reviewed with acceptance null: zero
+independently verified runs or unique accepted tasks, and no delivery-rate gain.
+Recorded duration is 19,112.093 worker seconds. Sixteen measured runs show eleven
+confirmed direct mutations across four runs, 275 distinct successful command
+results, 1,224 successful observations, 158 failure diagnostics and three
+repository-change checkpoints. These are activity counts, not accepted work.
+Twenty-one new starts have twenty terminal matches and one unresolved Silver
+start 10fa334353fe496ebbc4d66324861528 at 11:58:06.029475Z. Historical Silver
+04a908cc104e4ce19cba7219a2553008 and KerTeX1a21f81bcb564cc1923d1e9c163c195b
+remain unproven resolved outside retention. Evidence:
+out/checks/automation-20261118-1200-{cohort,evidence}.json.
+
+TinyPP reports include actual test executions and claimed completions, but the
+independent monitoring audit at 10:42:31.620939Z still identifies unsupported
+TPP-001 acceptance (duplicate storage membership check and placeholder record
+parameter validation). This run does not take over TinyPP implementation or
+count those claims as deliveries. Repeated source discovery and false missing
+SDK assessments remain unresolved. Live acknowledgement at this audit confirms
+v1.0.125, instance50d8313c0eca4b79a6ef08f1984ca3ba, Silver active.
+
+The 1.0.125 context repair cannot recover output already dropped by process
+capture. _CommandTail kept only final stdout/stderr. The Silver continuation
+includes a linker failure whose retained stdout starts mid-diagnostic; full
+initial output is unavailable. The new controlled regressions exercise that
+capture mechanism, not an exact replay of the original build output.
+
+1.0.126 retains bounded beginning/end process excerpts before context fitting.
+Three new regressions failed before repair; fourteen focused capture/timeout/
+scripted-worker checks passed in 13.79s. Another three strengthened overlap
+reconstruction cases passed in 0.42s. The scripted worker must now receive the
+initial probe marker before editing and validating a real file. Controlled
+1,800,045-byte replay: first diagnostic absent -> present, final diagnostic
+present -> present, raw storage96,000 ->96,000bytes, output24,094 ->24,098chars
+including explicit omission markers. Both real subprocess streams preserve
+initial/final Unicode diagnostics and exit9. No live delivery improvement is
+claimed. Proof:out/checks/command-capture-1.0.126-before-after.json.
+
+
+Canonical local lint/fresh wheel/offline suite passed:1,707tests/five skips in
+239.06s. Seven new test cases; the strengthened overlap reconstruction cases
+also passed separately. Release version guard and pre-commit config validation
+passed. Full output:out/checks/check-1.0.126.txt. Release/installation evidence
+will be appended after verification.
