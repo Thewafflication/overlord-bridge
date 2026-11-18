@@ -1022,3 +1022,11 @@ pass, including repeated failures and visibility on the next attempt. Current
 owner instructions still win and current status/counters remain separate.
 The latest30-outcome cohort has zero verified deliveries; continuity repair
 is not proof of accepted work. See the November18ledger for deployment results.
+
+1.0.127 is committed,pushed,signed,released and installed. Canonical checks:
+1,709passed/five skips;Windows/Linux tagCIpassed;13installed checks passed.
+Three actual historical handoffs retain all12,258evidence characters through
+repeated controlled startup failures. Exact17schedules/ownerqueue,36evidence
+files and4sessionmetadata records survived;4active60second schedules/13pauses
+restored and live-verified. No live accepted-delivery gain is claimed. See
+the dated ledger for checksum,CIartifact download limit and next cohort cursor.

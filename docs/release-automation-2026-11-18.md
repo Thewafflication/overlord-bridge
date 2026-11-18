@@ -355,7 +355,7 @@ replacement mechanism; it does not prove all subsequent discovery was caused
 by handoff loss. Already lost latest handoffs are not automatically restored.
 Live126acknowledged18:00:13Zsameinstance,TinyPPactive; installedsource matches
 126tag.17schedules4active60s13paused/completedWSH/originalPydecipherhashes
-retained.2,480memoryarchive links/zero retrievals are not effective recall.
+retained.2,374memoryarchive links/zero retrievals are not effective recall.
 Read-only proof:automation-20261118-1800-verification.json.
 
 
@@ -363,3 +363,58 @@ Canonical lint/freshwheel/full offline suite passed:1,709tests/five skips in
 294.03s. Release version guard and pre-commit configuration validation passed.
 Full output:out/checks/check-1.0.127.txt. Two added worker regressions; focused
 handoff checks passed12cases. Skips retain existing Tk/platform/symlink limits.
+
+Code09f2c4a0ca42216dc311c0dae4878e76631faed0 is committed/pushed/tagged
+v1.0.127. MainCI44365803431/tagCI44365809923 passed on Windows/Linux;
+signedbuild44365809975passed. Published non-draft/non-prerelease release:
+https://github.com/Thewafflication/overlord-bridge/releases/tag/v1.0.127.
+WPM verifies the existing trusted signing key and matching normalized public
+key. Published archive SHA256 matches:
+562dc452fc164c5d71a973304908bb03061840859ac7c0d13ccb6e5e3bc74dfe.
+Evidence:out/checks/release-1.0.127/verification.json and run JSON. Detailed
+CIartifact download returned HTTP503account egress limit; platform pass status
+is independently verified from run/job results. No precise hosted test counts
+are claimed without those artifacts.
+
+Pre-install follow-up at18:10:06.824115Z adds one incomplete/one skipped,
+zero verified deliveries,828.86recorded seconds,20commands,34observations,
+27diagnostics,zero mutations. Prior Silver start resolves; TinyPPstart
+cecb077fb13b4a3ca3f22e1bca21968b remained active. Evidence collection seconds
+after the baseline snapshot originally included this later Silver terminal;
+raw31rows are retained separately and baseline evidence is now bounded to the
+exact30-outcome snapshot. Baseline memory links corrected to2,374; no retrievals.
+
+Paused4/froze17, local stop acknowledged idle. Normal shutdown removed discovery
+and oldPID40956exited before install; no force/no automatic restart. WPMinstall
+exited0. Frozen schedules/ownerqueue matched exactly;36report/memory/capture
+hashes and4sessionmetadata records survived;settingssizeonly. The inherited
+hash helper had included a forbidden log file; it was corrected to exclude
+logs before restoration checks. No log content was shown. Owned installed
+source matched the release before final ledger edits. Restored4active60second
+schedules/13intentional pauses while stopped,then launched and reverified
+policy/completedWSH/originalPydecipherprotectedhashes. Proof:
+out/checks/project-task-1.0.127-install-preservation.json.
+
+Installed-module handoff checks:13passed5.45s. Three exact historical handoff
+objects replayed through two controlled outages each retain all12,258evidence
+characters/plans/feedback unchanged. Proof:startup-handoff-1.0.127-installed.json
+and verify-installed-startup-handoff-1.0.127.txt. This is controlled continuity
+proof; erased historical latest handoffs were not restored automatically.
+
+Separate maintenance cohort:one interruptedTinyPP,zero mutations,17commands,
+80observations,15diagnostics,two unverified model-completed steps. Duration is
+unmeasured,not zero elapsed. The prior TinyPP start resolves. Clean post127
+starts at launch18:14:21.2992186Z. Snapshot18:14:32.852397Z has zero terminals
+and one new KerTeXstart3fec6fbb5e5644d79feb2ef4ca600727 at18:14:25.957266Z.
+Live acknowledgement18:14:33.595564Z:127instance7c203ea3f36844258a795be0be1675ad,
+KerTeXactive. Nextcursor2026-11-18T18:14:32.852397Z. Evidence:
+automation-20261118-{maintenance127,post127,post127-verification}.json.
+Monitor startup_handoff_retention_repair records installed_verified.
+
+No live accepted-delivery gain is proven:32pre-maintenance outcomes have zero
+independent acceptances. Next measure actual post127startup continuity/useful
+execution/owneracceptance; retain provider failures,read loops,falseSDK
+assessments,TinyPPvalidator failures and historical retention gaps. Current
+owner task and original acceptance contracts remain authoritative. No other
+project implementation was taken over. Unrelatedwsp,out andtools/_dev_show.ps1
+were not committed.
