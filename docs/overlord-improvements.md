@@ -952,3 +952,14 @@ session metadata preservation passed, with four active schedules and thirteen
 pauses restored and verified after launch. The controlled restart retrieved
 339 characters before an actual edit/assertion/commit; no live delivery-rate
 improvement is claimed. See the dated ledger for CI, SHA256 and preservation.
+
+## 1.0.124 - explicit next action before owner-decision stops
+
+A TinyPP readiness review asked the owner whether tests had run, despite
+identifying running those tests as pending authorized work. Review now requires
+an explicit next_action assessment for needs_planning; a nonempty technical
+action contradicts the stop and requires a corrected ready plan. Existing
+three-attempt limits and incomplete outcomes remain. Two worker regressions
+failed before the repair and now reach an edit and assertion after correction.
+The model can still wrongly report no available action; live delivery gains
+must be measured separately. See docs/releases/1.0.124.md and the dated ledger.

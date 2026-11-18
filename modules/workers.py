@@ -2910,11 +2910,8 @@ class WorkerManager:
                     result["plan"]["readiness"] = worker_readiness.owner_contract(project_task)
                 if result.get("ok"):
                     assessment = result["plan"].get("readiness")
-                    readiness_issues = worker_readiness.issues(assessment, required=True)
-                    if (review_pending and not readiness_issues and assessment["state"] == "needs_planning"
-                            and not assessment.get("owner_question", "").strip()):
-                        readiness_issues.append("Confirm needs_planning only with a specific readiness.owner_question. "
-                                                "If no owner input is needed, select ready and plan the next action.")
+                    readiness_issues = (worker_readiness.review_issues(assessment) if review_pending else
+                                        worker_readiness.issues(assessment, required=True))
                     if (review_pending and not readiness_issues and assessment["state"] == "discovery"
                             and discovery_used):
                         readiness_issues.append("Discovery allowance was already used and cannot be renewed. "

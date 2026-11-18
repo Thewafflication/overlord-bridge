@@ -67,3 +67,13 @@ early stop and receives review. The reviewer is told the allowance was used;
 another discovery decision consumes the existing three correction attempts.
 The harness never converts that decision into needs_planning itself. Review can
 admit bounded technical work or confirm a concrete stop with the usual contract.
+
+Reviewers confirming needs_planning must also supply next_action: useful
+authorized technical work possible before an owner answer, or an empty string
+only when none exists. A nonempty action contradicts needs_planning and receives
+bounded correction asking for ready plus that action. Missing or malformed
+assessments also consume the existing three review attempts. Exhaustion preserves
+the proposal and yields incomplete without project actions. The model interprets
+actionability; Python checks the explicit contract, never question keywords.
+An incorrect empty action can still produce an unjustified stop. This does not
+guarantee model quality or replace independent acceptance.

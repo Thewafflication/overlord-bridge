@@ -369,6 +369,7 @@ def test_unready_deliverable_yields_before_any_project_action(isolated, tmp_path
     assessment = ready_contract(state)
     if state == 'needs_planning':
         assessment['owner_question'] = 'Which ordering should equal-priority items use?'
+        assessment['next_action'] = ''
     plan = call('update_plan', {'plan': [{'step': 'Await requirement', 'status': 'pending'}],
                                'readiness': assessment})
     completer, seen = scripted_pool([], plans=[plan, plan], raw_plans=True)
@@ -463,6 +464,53 @@ def test_review_without_owner_question_replans_and_executes(isolated, tmp_path):
     assert 'specific readiness.owner_question' in str(completer.planning[2])
     assert events(mgr)[-1]['readiness_review']['decision']['state'] == 'ready'
     assert (project / 'result.txt').read_text() == 'repair'
+
+
+@pytest.mark.parametrize('next_action', [None, 'Run the supplied semantic IR unittest and diagnose its failures'])
+def test_owner_question_cannot_hide_available_technical_work(isolated, tmp_path, next_action):
+    project = isolated / 'technical-question'
+    project.mkdir()
+    (project / 'result.txt').write_text('broken')
+    assessment = ready_contract('needs_planning')
+    assessment['owner_question'] = (
+        'Has the version edit been verified, and do existing fixtures need the version field added?')
+    if next_action is not None:
+        assessment['next_action'] = next_action
+    stop = call('update_plan', {'plan': [{'step': 'Run supplied test', 'status': 'pending'}],
+                                'readiness': assessment})
+    completer, seen = scripted_pool([
+        call('edit_file', {'path': 'result.txt', 'old_text': 'broken', 'new_text': 'fixed'}),
+        call('run_python', {'code': "from pathlib import Path; assert Path('result.txt').read_text() == 'fixed'"}),
+        final_result('Repaired and checked'),
+    ], plans=[stop, stop, readiness_plan('ready')], raw_plans=True)
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    assert len(completer.planning) == 3
+    assert 'next_action' in str(completer.planning[2])
+    assert (project / 'result.txt').read_text() == 'fixed'
+    assert len(seen) == 3
+    report = events(mgr)[-1]
+    assert report['readiness_review']['decision']['state'] == 'ready'
+    assert report['status'] == 'finished' and completer.reviews
+
+
+def test_contradictory_action_review_exhaustion_preserves_work(isolated, tmp_path):
+    project = isolated / 'contradictory-review'
+    project.mkdir()
+    (project / 'owned.txt').write_text('preserve')
+    assessment = ready_contract('needs_planning')
+    assessment.update(owner_question='Have the tests passed?', next_action='Run the supplied tests')
+    stop = call('update_plan', {'plan': [{'step': 'Run tests', 'status': 'pending'}],
+                                'readiness': assessment})
+    completer, seen = scripted_pool([], plans=[stop] * 4, raw_plans=True)
+    mgr, _, _ = manager(tmp_path, completer)
+    start(mgr, project)
+    report = events(mgr)[-1]
+    assert not seen and len(completer.planning) == 4
+    assert report['status'] == 'incomplete'
+    assert report['readiness_review']['decision'] is None
+    assert report['continuation']['plan']['readiness'] == assessment
+    assert (project / 'owned.txt').read_text() == 'preserve'
 
 
 @pytest.mark.parametrize('initial_invalid', [0, 2])

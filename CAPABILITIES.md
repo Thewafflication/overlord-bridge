@@ -6,6 +6,12 @@ workflow lands.
 
 ## Current Capabilities
 
+- Readiness reviewers must explicitly assess remaining authorized technical
+  work before confirming an owner-decision stop. A nonempty next_action
+  contradicts needs_planning and requires correction within existing retries.
+  See [1.0.124](docs/releases/1.0.124.md).
+
+
 - Planning-context fitting refines the interval skipped by a coarse budget
   reduction before reporting protected-content overflow. Task, preloads, plan
   and feedback remain protected; genuinely oversized requests still fail.
