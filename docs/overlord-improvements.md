@@ -985,6 +985,15 @@ retention from zero to one while retaining the final diagnostic and the same
 96,000-byte raw storage. No live accepted-delivery gain is claimed. See
 docs/releases/1.0.126.md and the November 18 automation ledger.
 
+1.0.126 is committed, pushed, signed, released and installed. Canonical local
+checks:1,707passed/five skips; Windows/Linux tag CI passed. Fourteen installed
+checks and a separate real subprocess proof passed. All seventeen schedules,
+the owner queue,37evidence files and four session metadata records survived;
+four active schedules/thirteen pauses were restored and live-verified. The
+controlled first diagnostic is now retained with the same96,000-byte raw bound.
+No accepted-delivery gain is claimed; see the dated ledger for CI,checksum,
+preservation evidence and the next cohort cursor.
+
 ## 1.0.125 - keep command results in fitted context
 
 Mixed source/command batches could disappear when large command results did

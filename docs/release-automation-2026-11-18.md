@@ -255,3 +255,67 @@ Canonical local lint/fresh wheel/offline suite passed:1,707tests/five skips in
 also passed separately. Release version guard and pre-commit config validation
 passed. Full output:out/checks/check-1.0.126.txt. Release/installation evidence
 will be appended after verification.
+
+Code cb8cdd81aef47d6fb8246531bb36c89e9e028530 is committed/pushed/tagged
+v1.0.126. Main CI44302156945 and tag CI44302156719 passed; tag Windows:
+1,710passes/two skips/162.677s; Linux:1,665passes/47skips/51.262s. Signed
+build44302156677 passed. Local skips are one missing Tk installation, two
+platform exclusions and two unavailable symlink privileges; hosted Windows
+covers the Tk and symlink cases. Published non-draft/non-prerelease release:
+https://github.com/Thewafflication/overlord-bridge/releases/tag/v1.0.126.
+Existing WPM trust verifies read-only; public signing key matches repository
+with newline normalization. Archive SHA256 matches published checksums:
+31d2b66955b67c8217b83c777afbc9a3339a2e76443cd9bd4647a41099b692a5.
+Raw release/CI/JUnit evidence:out/checks/release-1.0.126/.
+
+Pre-install follow-up since12:05:46.595431Z captured12:19:14.637739Z has one
+incomplete and one skipped outcome, zero verified deliveries,1,116.938recorded
+seconds. One measured run has three direct mutations,29commands,104observations,
+32diagnostics and three repository checkpoints. Three completed model steps
+remain unverified. The prior Silver start resolves to incomplete; TinyPP
+f030603e04c34c5190ac1d2388815506 remains unresolved before maintenance.
+Proof:out/checks/automation-20261118-pre126.json. Memory audit at12:12:15Z
+counts2,821archive links/zero searches/pages/retrieved characters; archiving
+alone is not effective recall. See automation-20261118-1200-verification.json.
+
+Paused four active schedules, froze seventeen and confirmed local-control
+stop idle. Normal shutdown exited old PID37224 and removed discovery before
+installation. No forced termination or automatic restart was needed before
+install. Installation/preservation verification follows.
+
+WPM install exited zero. There was no automatic restart. Exact frozen seventeen
+schedules and owner queue survived; all37report/memory/capture hashes and four
+session metadata records passed preservation. Settings size only was checked;
+no secret content was read. Owned installed source matched release code before
+these final ledger edits. Restored four active60-second schedules and thirteen
+intentional pauses while stopped, then verified policy after launch, including
+completed WSH and original Pydecipher protected-file hashes. Proof:
+out/checks/project-task-1.0.126-install-preservation.json.
+
+Fourteen installed-module checks passed in11.81s, including the real large
+subprocess and scripted edit/assertion workflow. Installed controlled replay
+matches checkout exactly (24,098characters,96,000rawbytes,both diagnostics).
+An additional real installed subprocess preserves first/final Unicode
+diagnostics in both stdout/stderr, each24,098characters, exit9, no timeout.
+Proof:out/checks/command-capture-1.0.126-installed.json and
+verify-installed-command-capture-1.0.126.txt.
+
+The maintenance-only cohort has one interrupted TinyPP run, zero direct
+mutations,five commands,twelve observations and two unverified model-completed
+steps. Duration is unmeasured; aggregate zero is not elapsed time. It resolves
+the prior TinyPP start. Proof:automation-20261118-maintenance126.json.
+
+Live acknowledgement at12:23:37.222062Z confirmsv1.0.126,
+instance61ad0e03ca2d48f49e0904aaed68c340, KerTeX active. Clean post-install
+cohort starts at launch12:23:10.597177Z; snapshot generated12:23:36.735738Z has
+zero terminals and one new KerTeX start,e504e917cfb34759af2cc90f9993e772,
+at12:23:14.237957Z. Next cursor:2026-11-18T12:23:36.735738Z. Evidence:
+automation-20261118-post126.json and post126-verification.json.
+
+Initial/final process diagnostic retention is verified. Live accepted-delivery
+gain remains unproven; the23pre-maintenance outcomes include zero independent
+acceptances. Next measure actual post126capture/diagnostic retention, useful
+execution and owner acceptance; retain unfinished read loops, false SDK
+assessments, TinyPP validator failures and historical retention gaps. Other
+project implementation was not taken over. Unrelated wsp,out and
+tools/_dev_show.ps1 were not committed.
