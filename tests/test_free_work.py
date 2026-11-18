@@ -3166,6 +3166,87 @@ def test_source_transport_cap_keeps_page_and_cursor_instead_of_json_tail():
     index = row['next_line'] - 25
     assert row['content'] + ''.join(result['content'].splitlines(keepends=True)[index:])[row['next_column'] - 1:] == result['content']
 
+
+@pytest.mark.parametrize('fallback', [False, True])
+def test_context_keeps_command_and_source_batch_after_large_output(fallback):
+    command = {'ok': False, 'tool': 'run_python', 'command': 'probe SDK',
+               'exit_code': 7, 'timed_out': False, 'timeout_seconds': 180,
+               'stdout': 'FOUND_TCC\n' + 'listing\n' * 3000 + 'FINAL_PATH\n',
+               'stderr': 'FIRST_ERROR\n' + 'detail\n' * 2000 + 'LAST_ERROR',
+               'stdout_truncated': False, 'stderr_truncated': False}
+    source = {'ok': True, 'tool': 'read_file', 'path': 'toolchain.cmake',
+              'content': 'compiler = known\n' * 500, 'start_line': 1, 'start_column': 1}
+    prefix = [{'role': 'system', 'content': 'instructions ' * 500},
+              {'role': 'user', 'content': 'owner task'}]
+    if fallback:
+        group = [{'role': 'assistant', 'content': 'run source and probe'},
+                 {'role': 'user', 'content': 'Tool result for read_file:\n' + json.dumps(source)},
+                 {'role': 'user', 'content': 'Tool result for run_python:\n' + json.dumps(command)}]
+    else:
+        group = [{'role': 'assistant', 'tool_calls': [
+                    {'id': 'source', 'function': {'name': 'read_file', 'arguments': '{}'}},
+                    {'id': 'probe', 'function': {'name': 'run_python', 'arguments': '{}'}}]},
+                 {'role': 'tool', 'tool_call_id': 'source', 'content': json.dumps(source)},
+                 {'role': 'tool', 'tool_call_id': 'probe', 'content': json.dumps(command)}]
+    original = json.dumps(prefix + group)
+    bounded = workers._bounded_worker_messages(prefix + group, [], limit=14000)
+    assert len(json.dumps(bounded, ensure_ascii=False)) <= 14000
+    results = [json.loads(m['content'].split('\n', 1)[1] if fallback else m['content'])
+               for m in bounded if (m['role'] == 'tool' or m.get('content', '').startswith('Tool result for '))]
+    assert len(results) == 2
+    row = next(r for r in results if r['tool'] == 'run_python')
+    assert row['exit_code'] == 7 and row['timed_out'] is False and row['ok'] is False
+    assert row['stdout'].startswith('FOUND_TCC\n') and row['stdout'].endswith('FINAL_PATH\n')
+    assert row['stderr'].startswith('FIRST_ERROR\n') and row['stderr'].endswith('LAST_ERROR')
+    assert row['stdout_truncated'] and row['stderr_truncated'] and row['context_compacted']
+    assert 'omitted' in row['stdout'] and 'omitted' in row['stderr']
+    assert json.dumps(prefix + group) == original
+
+
+def test_command_transport_preserves_status_and_both_streams_under_json_escaping():
+    result = {'ok': False, 'tool': 'run_command', 'command': 'build', 'exit_code': 9,
+              'timed_out': True, 'timeout_seconds': 12, 'shell': 'powershell',
+              'stdout': 'start\n' + '\\"雪\n' * 8000 + 'end',
+              'stderr': 'error\n' + 'x' * 20000 + 'final error',
+              'stdout_truncated': True, 'stderr_truncated': False}
+    encoded = workers._local_agent_json_result(result, 24000)
+    row = json.loads(encoded)
+    assert len(encoded) <= 24000 and 'tail' not in row
+    assert row['exit_code'] == 9 and row['timed_out'] and row['timeout_seconds'] == 12
+    assert row['shell'] == 'powershell' and row['stdout_truncated'] and row['stderr_truncated']
+    assert row['stdout'].startswith('start\n') and row['stdout'].endswith('end')
+    assert row['stderr'].startswith('error\n') and row['stderr'].endswith('final error')
+
+
+def test_worker_uses_large_command_result_before_edit_and_validation(isolated, tmp_path, monkeypatch):
+    project = isolated / 'command-batch-edit'
+    project.mkdir()
+    (project / 'source.py').write_text('value = "old"\n' + '# padding\n' * 1000)
+    original = workers._bounded_worker_messages
+    def tighter(messages, evidence, limit=48000, **kwargs):
+        return original(messages, evidence, limit=min(limit, 20000), **kwargs)
+    monkeypatch.setattr(workers, '_bounded_worker_messages', tighter)
+    batch = [call('read_file', {'path': 'source.py'}, 'source')['tool_calls'][0],
+             call('run_python', {'code': "print('PROBE_START\\n' + 'listing\\n'*6000 + 'PROBE_END')"}, 'probe')['tool_calls'][0]]
+    delegate, seen = scripted_pool([
+        {'content': '', 'tool_calls': batch},
+        call('edit_file', {'path': 'source.py', 'old_text': 'value = "old"', 'new_text': 'value = "new"'}),
+        call('run_python', {'code': '''from pathlib import Path; assert Path('source.py').read_text().startswith('value = "new"')'''}),
+        final_result('Correction validated'),
+    ])
+    async def complete(messages, tools):
+        if len(seen) == 1 and tools and len(tools) > 1:
+            rows = [json.loads(m['content']) for m in messages if m.get('role') == 'tool']
+            probe = next(row for row in rows if row.get('tool') == 'run_python')
+            assert probe['exit_code'] == 0 and probe['ok']
+            assert probe['stdout'].endswith('PROBE_END') and probe['stdout_truncated']
+            assert any('value = "old"' in row.get('content', '') for row in rows)
+        return await delegate(messages, tools)
+    mgr, _, _ = manager(tmp_path, complete)
+    start(mgr, project)
+    assert (project / 'source.py').read_text().startswith('value = "new"')
+    assert events(mgr)[-1]['status'] == 'finished'
+
 def test_execution_capture_keeps_source_and_following_decision_without_planning(isolated, tmp_path):
     project = isolated / 'request-capture'
     project.mkdir()

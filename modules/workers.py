@@ -1230,10 +1230,42 @@ def _local_agent_path_denial(path: Path, folder: Path, *, write: bool) -> str | 
     return None
 
 
+_COMMAND_RESULT_TOOLS = {"run_command", "run_python", "run", "bash", "shell"}
+
+
+def _compact_command_result(result: dict[str, Any], chars: int) -> dict[str, Any]:
+    """Keep command status and both output ends, marking every shortened field."""
+    compacted = dict(result)
+    for field in ("stdout", "stderr", "command", "original_command"):
+        value = result.get(field)
+        if not isinstance(value, str):
+            continue
+        # Redact before cutting: a tail must not lose its credential prefix.
+        value = _sanitize_text(value)
+        compacted[field] = value
+        if len(value) > chars:
+            head = chars // 2
+            tail = chars - head
+            compacted[field] = (value[:head] +
+                f"\n[... {len(value) - chars} chars omitted ...]\n" + value[-tail:])
+            compacted[field + "_truncated"] = True
+            compacted["context_compacted"] = True
+    return compacted
+
+
 def _local_agent_json_result(result: dict[str, Any], limit: int) -> str:
     text = json.dumps(result, ensure_ascii=False, sort_keys=True)
     bounded, truncated = _bounded_tail(text, limit)
     if truncated:
+        if result.get("tool") in _COMMAND_RESULT_TOOLS:
+            chars = max(len(str(result.get(key, ""))) for key in
+                        ("stdout", "stderr", "command", "original_command")) // 2
+            while chars >= 1:
+                compacted = _sanitize_text(json.dumps(
+                    _compact_command_result(result, chars), ensure_ascii=False, sort_keys=True))
+                if len(compacted) <= limit:
+                    return compacted
+                chars //= 2
         # Escaping a full source page can exceed the transport cap too. Keep
         # source structured and resumable rather than returning a JSON tail.
         if result.get("tool") in {"read_file", "memory_read"} and isinstance(result.get("content"), str):
@@ -1289,11 +1321,11 @@ def _finish_task_error(arguments: Any) -> dict[str, Any] | None:
 
 
 def _compact_source_exchange(group: list[dict[str, Any]], chars: int) -> list[dict[str, Any]]:
-    """Shorten source pages structurally, retaining paired calls and exact cursors."""
+    """Shorten source/command results structurally, retaining paired calls."""
     compacted = []
     for message in group:
         replacement = message
-        prefix = next((candidate for tool in ('read_file', 'memory_read')
+        prefix = next((candidate for tool in ('read_file', 'memory_read', *_COMMAND_RESULT_TOOLS)
             for candidate in (f'Tool result for {tool}:\n', f'Tool result ({tool}):\n')
             if message.get('role') == 'user' and str(message.get('content', '')).startswith(
                 candidate)), '')
@@ -1302,7 +1334,10 @@ def _compact_source_exchange(group: list[dict[str, Any]], chars: int) -> list[di
                 result = json.loads(message.get("content", "")[len(prefix):])
             except (TypeError, ValueError):
                 result = None
-            if (isinstance(result, dict) and result.get("tool") == "memory_read"
+            if isinstance(result, dict) and result.get("tool") in _COMMAND_RESULT_TOOLS:
+                replacement = {**message, 'content': prefix + json.dumps(
+                    _compact_command_result(result, chars), ensure_ascii=False)}
+            elif (isinstance(result, dict) and result.get("tool") == "memory_read"
                     and result.get("ok") is True and isinstance(result.get("content"), str)
                     and len(result["content"]) > chars):
                 result = {**result, 'content': result['content'][:chars],
@@ -1419,7 +1454,7 @@ def _bounded_worker_messages(messages: list[dict[str, Any]], evidence: list[str]
                         group = candidate
                         break
                 else:
-                    # Non-source oversized requests (e.g. a huge write) keep
+                    # Other oversized requests (e.g. a huge write) keep
                     # their existing whole-batch eviction behavior.
                     note["content"] = heading + evidence_tail + mutation_text + plan_text + review_text
                     break

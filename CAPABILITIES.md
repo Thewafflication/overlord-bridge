@@ -6,6 +6,11 @@ workflow lands.
 
 ## Current Capabilities
 
+- Worker context fitting structurally shortens command stdout/stderr as well as
+  source pages, retaining paired batches, exit/timeout metadata and marked
+  beginning/end excerpts of both streams. Command transport uses the same
+  bounded JSON representation. See [1.0.125](docs/releases/1.0.125.md).
+
 - Readiness reviewers must explicitly assess remaining authorized technical
   work before confirming an owner-decision stop. A nonempty next_action
   contradicts needs_planning and requires correction within existing retries.

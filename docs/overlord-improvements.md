@@ -971,3 +971,14 @@ Exact schedules/owner queue, 37 evidence files and four session metadata records
 survived. Four active schedules and thirteen pauses were restored and checked
 after launch. The baseline remains zero verified deliveries; the dated ledger
 records the checksum, CI, preservation evidence and next measurement cursor.
+
+
+## 1.0.125 - keep command results in fitted context
+
+Mixed source/command batches could disappear when large command results did
+not fit: only source pages were shortened. Commands now retain structured
+status and marked beginning/end stdout/stderr excerpts through history fitting
+and transport. Three new cases failed before; a scripted worker now retains a
+large real command result before editing and validation. Actual Silver captures
+show omitted exchanges; no exact preceding-output replay or live delivery gain
+is claimed. See docs/releases/1.0.125.md and the November 18 release ledger.

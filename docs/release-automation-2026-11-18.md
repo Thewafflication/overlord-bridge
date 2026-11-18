@@ -114,3 +114,49 @@ outside journal retention. Unrelated wsp, out and tools/_dev_show.ps1 were not
 committed. No other project implementation or acceptance was changed. Live
 accepted-delivery improvement is unproven; measure actual review corrections,
 continued technical actions and independently accepted tasks next.
+
+
+## 06:00 UTC cohort and command-context repair (1.0.125)
+
+Post-install cohort since02:45:23.526873Z captured06:03:17.942740Z: three
+terminal outcomes, two stalled and one skipped; zero finished/verified/unique
+accepted tasks. One confirmed mutation,143 distinct successful command results,
+249 observations,97 diagnostics,one repository checkpoint across two measured
+runs;10,765.016 recorded worker seconds. Three new starts,two resolved,one
+TinyPP unresolved/current start dfd8bbdf45a442fbbcf20488a9e27f71 at05:44:46Z.
+The previous active KerTeX start now has a real terminal stall. Older Silver
+04a908cc104e4ce19cba7219a2553008 and KerTeX1a21f81bcb564cc1923d1e9c163c195b
+remain unproven resolved outside journal retention.
+
+Silver execution captures at steps248/249 contain only instructions,task,
+preloads and checkpoint: zero paired tool results after source/SDK probe
+batches. Its reasoning explicitly notices missing initial command output and
+repeats probes/source reads. The fitter only compacted source results; command
+output could evict the whole paired batch. Full prior output is unavailable,
+so the regressions reproduce this mechanism with controlled output rather than
+claiming an exact live request replay. Preserved redacted captures:
+out/checks/command-context-1.0.125-live-samples/; summary command-context-1.0.125-observed.json.
+
+Three new cases fail before repair: native/fallback mixed batches lose both
+results; escaped command transport becomes41,160 characters for a24,000 limit
+and loses structured status. They now retain both results with marked excerpts,
+status/timeout metadata and valid bounded JSON. A scripted worker additionally
+uses a real large subprocess result before an edit/assertion. Source cursors,
+paired calls and protected context remain. No other project implementation,
+acceptance contract or scheduling policy changed. Final checks/release/install
+evidence follows.
+
+Controlled before/after proof command-context-1.0.125-before-after.json:
+paired results0 ->2 within14,000characters(13,616after,prefix identical);
+escaped command transport41,160 ->22,310characters under24,000,with exit9,
+timeout status and both streams retained. This proof uses controlled output.
+Focused suite281passed/one symlink-privilege skip in101.77s; the added full
+worker edit/assertion regression passed separately. Live control06:09:44Z
+acknowledged124instancefda5bf35d96745cfb9e2dc059efc5080 TinyPPactive; installed
+ownedsource matches prior commit.17IDs,4active60s/13paused,completedWSH and
+originalPydecipherhashes retained.666archive links/zero retrievals in cohort
+are not delivery proof. Existing124release verified published non-prerelease.
+
+Canonical lint/fresh wheel/full offline suite:1,701passed/four skips in246.98s.
+Release version guard passes1.0.125. Four new tests,including the real subprocess
+worker edit/assertion case. Full output:out/checks/check-1.0.125.txt.
