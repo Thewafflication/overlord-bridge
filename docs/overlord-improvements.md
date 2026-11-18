@@ -963,3 +963,11 @@ three-attempt limits and incomplete outcomes remain. Two worker regressions
 failed before the repair and now reach an edit and assertion after correction.
 The model can still wrongly report no available action; live delivery gains
 must be measured separately. See docs/releases/1.0.124.md and the dated ledger.
+
+1.0.124 is committed, pushed, signed, released and installed. Canonical checks
+passed 1,697 tests / four skips; tag CI passed on Windows and Linux. Forty-two
+installed checks passed, including edit/assertion after a corrected review.
+Exact schedules/owner queue, 37 evidence files and four session metadata records
+survived. Four active schedules and thirteen pauses were restored and checked
+after launch. The baseline remains zero verified deliveries; the dated ledger
+records the checksum, CI, preservation evidence and next measurement cursor.
